@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Вход — Рин</title>
+  <style>
+    body{margin:0;display:grid;place-items:center;height:100vh;background:#0f0f0f;color:#eee;font:16px system-ui}
+    form{display:flex;gap:8px;background:#1c1c1c;border:1px solid #2a2a2a;padding:16px;border-radius:12px}
+    input{padding:10px 12px;border:none;border-radius:8px;background:#2a2a2a;color:#eee;min-width:220px}
+    button{padding:10px 14px;border-radius:8px;border:none;background:#0099ff;color:#fff;cursor:pointer}
+  </style>
+</head>
+<body>
+  <form onsubmit="event.preventDefault(); login()">
+    <input id="pin" type="password" placeholder="PIN" autocomplete="current-password" autofocus />
+    <button type="submit">Войти</button>
+  </form>
+  <script>
+    async function login(){
+      const pin = document.getElementById('pin').value.trim();
+      const r = await fetch('/api/login', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({pin})
+      });
+      if(r.ok){ 
+        localStorage.setItem('rin-auth','ok'); 
+        location.href = '/'; 
+      } else {
+        alert('Неверный PIN'); 
+      }
+    }
+  </script>
+</body>
+</html>
