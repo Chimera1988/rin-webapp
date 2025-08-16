@@ -1,0 +1,34 @@
+{
+  "cheerful": [
+    { "type": "sticker", "src": "/stickers/0.webp" },
+    { "type": "sticker", "src": "/stickers/1.webp" },
+    { "type": "sticker", "src": "/stickers/2.webp" },
+    { "type": "sticker", "src": "/stickers/3.webp" },
+    { "type": "sticker", "src": "/stickers/4.webp" },
+    { "type": "sticker", "src": "/stickers/5.webp" }
+  ],
+  "thoughtful": [
+    { "type": "sticker", "src": "/stickers/6.webp" },
+    { "type": "sticker", "src": "/stickers/7.webp" },
+    { "type": "sticker", "src": "/stickers/8.webp" },
+    { "type": "sticker", "src": "/stickers/9.webp" },
+    { "type": "sticker", "src": "/stickers/10.webp" },
+    { "type": "sticker", "src": "/stickers/11.webp" }
+  ],
+  "romantic": [
+    { "type": "sticker", "src": "/stickers/12.webp" },
+    { "type": "sticker", "src": "/stickers/13.webp" },
+    { "type": "sticker", "src": "/stickers/14.webp" },
+    { "type": "sticker", "src": "/stickers/15.webp" },
+    { "type": "sticker", "src": "/stickers/16.webp" },
+    { "type": "sticker", "src": "/stickers/17.webp" }
+  ],
+  "melancholic": [
+    { "type": "sticker", "src": "/stickers/18.webp" },
+    { "type": "sticker", "src": "/stickers/19.webp" },
+    { "type": "sticker", "src": "/stickers/20.webp" },
+    { "type": "sticker", "src": "/stickers/21.webp" },
+    { "type": "sticker", "src": "/stickers/22.webp" },
+    { "type": "sticker", "src": "/stickers/23.webp" }
+  ]
+}
