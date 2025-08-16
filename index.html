@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Рин Акихара — твой компаньон</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>Рин Акихара</h1>
+      <p class="sub">Тёплая поддержка, лёгкий флирт, бережные советы</p>
+    </header>
+
+    <section id="chat" class="chat"></section>
+
+    <form id="form">
+      <input id="input" type="text" placeholder="Напиши Рин..." maxlength="1000" autocomplete="off" required />
+      <button id="send" type="submit">Отправить</button>
+    </form>
+  </main>
+
+  <script>
+    const chatEl = document.getElementById('chat');
+    const formEl = document.getElementById('form');
+    const inputEl = document.getElementById('input');
+
+    // Бережная "память" пользователя в localStorage
+    const STORAGE_KEY = 'rin-history-v1';
+    function loadHistory(){ try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; } }
+    function saveHistory(h){ localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-30))); } // до 30 последних реплик
+    let history = loadHistory();
+
+    function addBubble(text, who='assistant'){
+      const wrap = document.createElement('div');
+      wrap.className = 'bubble ' + (who === 'user' ? 'me' : 'her');
+      wrap.textContent = text;
+      chatEl.appendChild(wrap);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    // Показать историю при загрузке
+    history.forEach(m => addBubble(m.content, m.role === 'user' ? 'user' : 'assistant'));
+
+    // Приветствие, если пусто
+    if (history.length === 0) {
+      addBubble('Привет, я Рин. Хочешь, буду рядом и помогу разобрать мысли? 💫');
+    }
+
+    formEl.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = inputEl.value.trim();
+      if (!text) return;
+      addBubble(text, 'user');
+      history.push({ role: 'user', content: text });
+      saveHistory(history);
+      inputEl.value = '';
+      inputEl.focus();
+
+      // индикатор набора
+      const typing = document.createElement('div');
+      typing.className = 'bubble her typing';
+      typing.innerHTML = '<span></span><span></span><span></span>';
+      chatEl.appendChild(typing);
+      chatEl.scrollTop = chatEl.scrollHeight;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ history })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        typing.remove();
+        addBubble(data.reply, 'assistant');
+        history.push({ role: 'assistant', content: data.reply });
+        saveHistory(history);
+      } catch (err) {
+        typing.remove();
+        addBubble('Ой… связь шалит. Попробуем ещё раз?', 'assistant');
+      }
+    });
+  </script>
+</body>
+</html>
