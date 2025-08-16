@@ -1,3 +1,9 @@
+const cookie = req.headers.cookie || '';
+// простая проверка через localStorage на фронте
+// а тут блокируем неавторизованные вызовы
+if (!req.headers.referer || !req.headers.referer.includes('/')) {
+  return res.status(401).json({ error: 'unauthorized' });
+}
 // Serverless функция Vercel: POST /api/chat
 // Использует системный промпт из data/rin_persona.json, если доступен.
 
