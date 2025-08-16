@@ -2,35 +2,77 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Вход — Рин</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Вход — Рин Акихара</title>
   <style>
-    body{margin:0;display:grid;place-items:center;height:100vh;background:#0f0f0f;color:#eee;font:16px system-ui}
-    form{display:flex;gap:8px;background:#1c1c1c;border:1px solid #2a2a2a;padding:16px;border-radius:12px}
-    input{padding:10px 12px;border:none;border-radius:8px;background:#2a2a2a;color:#eee;min-width:220px}
-    button{padding:10px 14px;border-radius:8px;border:none;background:#0099ff;color:#fff;cursor:pointer}
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    h1 { margin-bottom: 1rem; }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      width: 250px;
+    }
+    input {
+      padding: 0.7rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 6px;
+      outline: none;
+    }
+    button {
+      padding: 0.7rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 6px;
+      background: #0088cc;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0077b3;
+    }
   </style>
 </head>
 <body>
-  <form onsubmit="event.preventDefault(); login()">
-    <input id="pin" type="password" placeholder="PIN" autocomplete="current-password" autofocus />
+  <h1>Вход</h1>
+  <form id="form">
+    <input id="pin" type="password" placeholder="PIN" required />
     <button type="submit">Войти</button>
   </form>
+
   <script>
-    async function login(){
-      const pin = document.getElementById('pin').value.trim();
-      const r = await fetch('/api/login', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({pin})
+    const form = document.getElementById("form");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const pin = document.getElementById("pin").value;
+
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin })
       });
-      if(r.ok){ 
-        localStorage.setItem('rin-auth','ok'); 
-        location.href = '/'; 
+
+      if (res.ok) {
+        // сохраняем флажок + сам пин
+        localStorage.setItem("rin-auth", "ok");
+        localStorage.setItem("rin-pin", pin);
+        window.location.href = "/";
       } else {
-        alert('Неверный PIN'); 
+        alert("Неверный PIN");
       }
-    }
+    });
   </script>
 </body>
 </html>
