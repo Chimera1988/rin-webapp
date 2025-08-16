@@ -11,17 +11,19 @@
 </head>
 <body>
 
-  <!-- Проверка авторизации -->
   <script>
-    if (localStorage.getItem('rin-auth') !== 'ok') {
-      location.href = '/login.html';
+    // Проверка авторизации
+    if (localStorage.getItem("rin-auth") !== "ok") {
+      location.href = "/login.html";
     }
   </script>
 
-  <!-- HEADER (минимализм Telegram) -->
+  <!-- HEADER (в стиле Telegram) -->
   <header class="tg-header">
     <button class="tg-ico btn-back" aria-label="Назад" title="Назад">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </button>
     <div class="tg-peer">
       <img id="avatarTop" class="avatar" src="/avatar.jpg" alt="Рин" />
@@ -47,232 +49,148 @@
     </form>
   </main>
 
-  <!-- Весь JS (как у тебя было) -->
   <script>
-    // -------- CONFIG / DATA --------
-    const TZ_OFFSET_MIN = 3 * 60; // GMT+3
-    const STORAGE_KEY = 'rin-history-v2';   // с таймштампами
-    const DAILY_INIT_KEY = 'rin-init-count';
+  // -------- CONFIG --------
+  const TZ_OFFSET_MIN = 3 * 60; // GMT+3
+  const STORAGE_KEY = 'rin-history-v2';
+  const DAILY_INIT_KEY = 'rin-init-count';
 
-    // -------- STATE --------
-    const chatEl  = document.getElementById('chat');
-    const formEl  = document.getElementById('form');
-    const inputEl = document.getElementById('input');
-    const peerStatus = document.getElementById('peerStatus');
+  // -------- STATE --------
+  const chatEl  = document.getElementById('chat');
+  const formEl  = document.getElementById('form');
+  const inputEl = document.getElementById('input');
+  const peerStatus = document.getElementById('peerStatus');
 
-    let persona = null, phrases = null, schedule = null;
-    let history = [];
+  let persona = null, phrases = null, schedule = null;
+  let history = [];
 
-    // -------- HELPERS --------
-    const nowLocal = () => new Date();
-    const fmtDateKey = (d) => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  // -------- HELPERS --------
+  const nowLocal = () => new Date();
+  const fmtDateKey = (d) => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 
-    function loadHistory(){
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
-    }
-    function saveHistory(h){
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-60))); // до 60 реплик с датами
-    }
-    function getInitCountFor(dateKey){
-      const data = JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}');
-      return data[dateKey] || 0;
-    }
-    function bumpInitCount(dateKey){
-      const data = JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}');
-      data[dateKey] = (data[dateKey] || 0) + 1;
-      localStorage.setItem(DAILY_INIT_KEY, JSON.stringify(data));
-    }
+  function loadHistory(){
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+  }
+  function saveHistory(h){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-60)));
+  }
 
-    // вставить разделитель дат («Сегодня/Вчера»)
-    function ensureDateDivider(dateObj){
-      const lastDivider = chatEl.querySelector('.date-divider:last-of-type');
-      const today = new Date(); const todayKey = fmtDateKey(today);
-      const msgKey = fmtDateKey(dateObj);
+  // Вставка разделителя дат
+  function ensureDateDivider(dateObj){
+    const lastDivider = chatEl.querySelector('.date-divider:last-of-type');
+    const today = new Date(); const todayKey = fmtDateKey(today);
+    const msgKey = fmtDateKey(dateObj);
 
-      if (lastDivider && lastDivider.dataset.key === msgKey) return;
+    if (lastDivider && lastDivider.dataset.key === msgKey) return;
 
-      const label = (() => {
-        const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
-        const yKey = fmtDateKey(yesterday);
-        if (msgKey === todayKey) return phrases?.date_dividers?.today || 'Сегодня';
-        if (msgKey === yKey)    return phrases?.date_dividers?.yesterday || 'Вчера';
-        return msgKey.split('-').reverse().join('.');
-      })();
-
-      const div = document.createElement('div');
-      div.className = 'date-divider';
-      div.dataset.key = msgKey;
-      div.innerHTML = `<span>${label}</span>`;
-      chatEl.appendChild(div);
-    }
-
-    // пузырь + строка (с аватаром слева у Рин)
-    function addBubble(text, who='assistant', ts = Date.now()){
-      const dateObj = new Date(ts);
-      ensureDateDivider(dateObj);
-
-      const row = document.createElement('div');
-      row.className = 'row ' + (who === 'user' ? 'me' : 'her');
-
-      if (who !== 'user') {
-        const ava = document.createElement('img');
-        ava.className = 'avatar small';
-        ava.src = '/avatar.jpg';
-        ava.alt = 'Рин';
-        row.appendChild(ava);
-      } else {
-        const spacer = document.createElement('div');
-        spacer.className = 'avatar small spacer';
-        row.appendChild(spacer);
-      }
-
-      const wrap = document.createElement('div');
-      wrap.className = 'bubble ' + (who === 'user' ? 'me' : 'her');
-      wrap.textContent = text;
-      row.appendChild(wrap);
-
-      chatEl.appendChild(row);
-      chatEl.scrollTop = chatEl.scrollHeight;
-    }
-
-    function addTyping(){
-      const row = document.createElement('div');
-      row.className = 'row her typing-row';
-      row.innerHTML = `
-        <img class="avatar small" src="/avatar.jpg" alt="Рин" />
-        <div class="bubble her typing"><span></span><span></span><span></span></div>
-      `;
-      chatEl.appendChild(row);
-      chatEl.scrollTop = chatEl.scrollHeight;
-      return row;
-    }
-
-    // -------- INIT --------
-    (async function init(){
-      try {
-        const [p1, p2, p3] = await Promise.all([
-          fetch('/data/rin_persona.json').then(r=>r.json()),
-          fetch('/data/rin_phrases.json').then(r=>r.json()),
-          fetch('/data/rin_schedule.json').then(r=>r.json())
-        ]);
-        persona = p1; phrases = p2; schedule = p3;
-      } catch (e) {
-        console.warn('Не удалось загрузить JSON, работаем по умолчанию', e);
-      }
-
-      history = loadHistory();
-
-      if (history.length) {
-        let prevDay = '';
-        for (const m of history) {
-          const d = new Date(m.ts || Date.now());
-          const key = fmtDateKey(d);
-          if (key !== prevDay) { ensureDateDivider(d); prevDay = key; }
-          addBubble(m.content, m.role === 'user' ? 'user' : 'assistant', m.ts);
-        }
-      } else {
-        ensureDateDivider(new Date());
-        addBubble('Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸', 'assistant');
-        history.push({ role:'assistant', content:'Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸', ts: Date.now() });
-        saveHistory(history);
-      }
-
-      setInterval(tryInitiateBySchedule, 60 * 1000);
-      tryInitiateBySchedule();
-
-      setInterval(()=>{
-        const r = Math.random();
-        peerStatus.textContent = r < 0.85 ? 'онлайн' : 'была недавно';
-      }, 15000);
+    const label = (() => {
+      const yesterday = new Date(); yesterday.setDate(today.getDate()-1);
+      const yKey = fmtDateKey(yesterday);
+      if (msgKey === todayKey) return 'Сегодня';
+      if (msgKey === yKey)    return 'Вчера';
+      return msgKey.split('-').reverse().join('.');
     })();
 
-    function inWindow(local, fromHHMM, toHHMM){
-      const [fh, fm] = fromHHMM.split(':').map(Number);
-      const [th, tm] = toHHMM.split(':').map(Number);
-      const min = local.getHours()*60 + local.getMinutes();
-      const a = fh*60+fm, b = th*60+tm;
-      return min >= a && min <= b;
+    const div = document.createElement('div');
+    div.className = 'date-divider';
+    div.dataset.key = msgKey;
+    div.innerHTML = `<span>${label}</span>`;
+    chatEl.appendChild(div);
+  }
+
+  // Добавить пузырь
+  function addBubble(text, who='assistant', ts = Date.now()){
+    const dateObj = new Date(ts);
+    ensureDateDivider(dateObj);
+
+    const row = document.createElement('div');
+    row.className = 'row ' + (who === 'user' ? 'me' : 'her');
+
+    if (who !== 'user') {
+      const ava = document.createElement('img');
+      ava.className = 'avatar small';
+      ava.src = '/avatar.jpg';
+      ava.alt = 'Рин';
+      row.appendChild(ava);
+    } else {
+      const spacer = document.createElement('div');
+      spacer.className = 'avatar small spacer';
+      row.appendChild(spacer);
     }
 
-    function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+    const wrap = document.createElement('div');
+    wrap.className = 'bubble ' + (who === 'user' ? 'me' : 'her');
+    wrap.textContent = text;
+    row.appendChild(wrap);
 
-    async function tryInitiateBySchedule(){
-      if (!schedule || !phrases) return;
-      const d = nowLocal();
-      const dateKey = fmtDateKey(d);
+    chatEl.appendChild(row);
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
 
-      const lastKeyInStore = Object.keys(JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}')).pop();
-      if (lastKeyInStore && lastKeyInStore !== dateKey) {
-        localStorage.setItem(DAILY_INIT_KEY, JSON.stringify({}));
+  // -------- INIT --------
+  (async function init(){
+    history = loadHistory();
+
+    if (history.length) {
+      let prevDay = '';
+      for (const m of history) {
+        const d = new Date(m.ts || Date.now());
+        const key = fmtDateKey(d);
+        if (key !== prevDay) { ensureDateDivider(d); prevDay = key; }
+        addBubble(m.content, m.role === 'user' ? 'user' : 'assistant', m.ts);
       }
-
-      const count = getInitCountFor(dateKey);
-      if (count >= (schedule.max_daily_initiations || 2)) return;
-
-      const win = (schedule.windows || []).find(w => inWindow(d, w.from, w.to) && Math.random() < (w.probability || 0.5));
-      if (!win) return;
-
-      const last = history[history.length-1];
-      if (last && last.role === 'assistant' && d - new Date(last.ts || Date.now()) < 15*60*1000) return;
-
-      const pool = phrases[win.pool] || phrases.morning;
-      const text = pick(pool);
-
-      peerStatus.textContent = 'печатает…';
-      const trow = addTyping();
-      setTimeout(async () => {
-        trow.remove();
-        peerStatus.textContent = 'онлайн';
-        addBubble(text, 'assistant');
-        history.push({ role:'assistant', content:text, ts: Date.now() });
-        saveHistory(history);
-        bumpInitCount(dateKey);
-      }, 1200 + Math.random()*1200);
-    }
-
-    // -------- SEND --------
-    formEl.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const text = inputEl.value.trim();
-      if (!text) return;
-
-      addBubble(text, 'user');
-      history.push({ role: 'user', content: text, ts: Date.now() });
+    } else {
+      ensureDateDivider(new Date());
+      addBubble('Привет, это я — Рин. 🌸', 'assistant');
+      history.push({ role:'assistant', content:'Привет, это я — Рин. 🌸', ts: Date.now() });
       saveHistory(history);
-      inputEl.value = '';
-      inputEl.focus();
+    }
+  })();
 
-      peerStatus.textContent = 'печатает…';
-      const typingRow = addTyping();
+  // -------- SEND --------
+  formEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = inputEl.value.trim();
+    if (!text) return;
 
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ history })
-        });
-        const data = await res.json();
-        typingRow.remove();
-        if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP ' + res.status));
-        peerStatus.textContent = 'онлайн';
-        addBubble(data.reply, 'assistant');
-        history.push({ role:'assistant', content:data.reply, ts: Date.now() });
-        saveHistory(history);
-      } catch (err) {
-        typingRow.remove();
-        peerStatus.textContent = 'онлайн';
-        addBubble('Ой… связь шалит. ' + (err?.message || ''), 'assistant');
-      }
-    });
+    addBubble(text, 'user');
+    history.push({ role: 'user', content: text, ts: Date.now() });
+    saveHistory(history);
+    inputEl.value = '';
+    inputEl.focus();
 
-    (function () {
-      function keepBottom(){ setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50); }
-      inputEl.addEventListener('focus', keepBottom);
-      if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', keepBottom);
-        window.visualViewport.addEventListener('scroll', keepBottom);
-      }
-    })();
+    peerStatus.textContent = 'печатает…';
+    const typingRow = document.createElement('div');
+    typingRow.className = 'row her typing-row';
+    typingRow.innerHTML = `
+      <img class="avatar small" src="/avatar.jpg" alt="Рин" />
+      <div class="bubble her typing"><span></span><span></span><span></span></div>
+    `;
+    chatEl.appendChild(typingRow);
+    chatEl.scrollTop = chatEl.scrollHeight;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          history, 
+          pin: localStorage.getItem("rin-pin") // 🔑 передаём PIN
+        })
+      });
+      const data = await res.json();
+      typingRow.remove();
+      if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP ' + res.status));
+      peerStatus.textContent = 'онлайн';
+      addBubble(data.reply, 'assistant');
+      history.push({ role:'assistant', content:data.reply, ts: Date.now() });
+      saveHistory(history);
+    } catch (err) {
+      typingRow.remove();
+      peerStatus.textContent = 'онлайн';
+      addBubble('Ой… связь шалит. ' + (err?.message || ''), 'assistant');
+    }
+  });
   </script>
 </body>
 </html>
