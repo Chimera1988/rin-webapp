@@ -9,7 +9,11 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-
+<script>
+  if (localStorage.getItem('rin-auth') !== 'ok') {
+    location.href = '/login.html';
+  }
+</script>
   <!-- HEADER -->
   <header class="tg-header">
     <button class="tg-ico btn-back" aria-label="Назад" title="Назад">
