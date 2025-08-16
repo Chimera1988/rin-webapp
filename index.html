@@ -90,3 +90,22 @@
   </script>
 </body>
 </html>
+<script>
+  // iOS: когда клавиатура открывается, держим последний месседж в видимой области
+  (function () {
+    const chatEl = document.getElementById('chat');
+    const inputEl = document.getElementById('input');
+
+    function keepBottom() {
+      // Скроллим к низу с небольшой задержкой — когда раскладка уже изменила высоту
+      setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50);
+    }
+
+    // При фокусе в поле ввода и при изменении визуального вьюпорта — держимся внизу
+    inputEl.addEventListener('focus', keepBottom);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', keepBottom);
+      window.visualViewport.addEventListener('scroll', keepBottom);
+    }
+  })();
+</script>
