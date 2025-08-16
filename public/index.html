@@ -12,7 +12,9 @@
 
   <header class="tg-header">
     <button class="tg-ico btn-back" aria-label="Назад" title="Назад">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </button>
     <div class="tg-peer">
       <img id="avatarTop" class="avatar" src="/avatar.jpg" alt="Рин" />
@@ -127,11 +129,6 @@
     catch { return null; }
   }
 
-  async function fetchNews() {
-    try { const r = await fetch(`/api/news`); if (!r.ok) return null; return await r.json(); }
-    catch { return null; }
-  }
-
   // --- INIT ---
   (async function init(){
     try {
@@ -211,14 +208,6 @@
       const h = await fetchHockey();
       if (h?.lastMatch) {
         text += ` Кстати, «Металлург» сыграл: ${h.lastMatch}.`;
-      }
-    }
-
-    // --- NEWS ---
-    if (Math.random() < 0.3) {
-      const n = await fetchNews();
-      if (n?.headline) {
-        text += ` Видела новость: ${n.headline}`;
       }
     }
 
