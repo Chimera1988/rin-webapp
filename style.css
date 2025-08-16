@@ -1,24 +1,136 @@
-:root { --w: 840px; --pad: 14px; --gap: 10px; }
+:root{
+  --w: 840px;
+  --pad: 14px;
+  --gap: 10px;
+
+  /* размеры по месту, масштабируемые */
+  --radius: 14px;
+  --bubble-max: 78%;
+
+  /* типографика с clamp: читаемо на мелких и крупных экранах */
+  --fz-regular: clamp(15px, 1.7vw, 17px);
+  --fz-title: clamp(22px, 3.6vw, 28px);
+}
+
+/* Базовая типографика и фон */
 * { box-sizing: border-box; }
-body { margin: 0; font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif; background: #0b0f14; color: #e8eef7; }
-.app { max-width: var(--w); margin: 0 auto; padding: 24px var(--pad) 100px; }
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #0b0f14;
+  color: #e8eef7;
+  /* Убираем резкие зумы на iOS при кликах */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+  font-size: var(--fz-regular);
+  /* Полноэкранность с учётом «безопасных» зон */
+  min-height: 100dvh; /* динамическая высота вьюпорта (iOS 16+) */
+}
+
+/* Контейнер приложения */
+.app {
+  max-width: var(--w);
+  margin: 0 auto;
+  padding: 24px var(--pad) calc(100px + env(safe-area-inset-bottom));
+  padding-left: calc(var(--pad) + env(safe-area-inset-left));
+  padding-right: calc(var(--pad) + env(safe-area-inset-right));
+}
+
+/* Шапка */
 header { margin-bottom: 16px; }
-h1 { margin: 0 0 6px; font-size: 28px; }
+h1 { margin: 0 0 6px; font-size: var(--fz-title); line-height: 1.1; }
 .sub { margin: 0; opacity: .7; }
 
-.chat { display: flex; flex-direction: column; gap: var(--gap); min-height: 64vh; overflow: auto; padding: 8px 0; border-top: 1px solid #1a2533; border-bottom: 1px solid #1a2533; }
+/* Лента чата */
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-height: 60svh;            /* учитывает появление клавиатуры */
+  max-height: calc(100dvh - 200px);
+  overflow: auto;
+  padding: 8px 0;
+  border-top: 1px solid #1a2533;
+  border-bottom: 1px solid #1a2533;
+  -webkit-overflow-scrolling: touch; /* инерционная прокрутка на iOS */
+}
 
-.bubble { max-width: 78%; padding: 12px 14px; border-radius: 14px; line-height: 1.35; white-space: pre-wrap; }
+/* Сообщения */
+.bubble {
+  max-width: var(--bubble-max);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  line-height: 1.38;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
 .her { background: #132033; border: 1px solid #1e3550; align-self: flex-start; }
-.me { background: #1b2a3f; border: 1px solid #2a4466; align-self: flex-end; }
+.me  { background: #1b2a3f; border: 1px solid #2a4466; align-self: flex-end; }
 
+/* Инерция "печатает" */
 .typing { display: inline-flex; gap: 6px; align-items: center; }
 .typing span { width: 6px; height: 6px; border-radius: 50%; background: #9fb7d6; opacity: .4; animation: blink 1.2s infinite; }
 .typing span:nth-child(2){ animation-delay: .2s; }
 .typing span:nth-child(3){ animation-delay: .4s; }
 @keyframes blink { 0%, 80%, 100% { opacity: .2 } 40% { opacity: 1 } }
 
-form { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 10px var(--pad); background: linear-gradient(180deg, rgba(11,15,20,.0) 0%, rgba(11,15,20,.85) 35%, rgba(11,15,20,.95) 100%); }
-form #input { width: calc(100% - 120px); padding: 12px 14px; border-radius: 12px; border: 1px solid #2a4466; background: #0f1722; color: #e8eef7; }
-form #send { width: 110px; margin-left: 8px; padding: 12px 14px; border-radius: 12px; border: 0; background: #2b79ff; color: #fff; font-weight: 600; }
+/* Форма ввода — «приподнята» над Home Indicator и учитывает вырез */
+form {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  margin: 0;
+  padding: calc(10px + env(safe-area-inset-bottom)) calc(var(--pad) + env(safe-area-inset-right)) 10px calc(var(--pad) + env(safe-area-inset-left));
+  background: linear-gradient(180deg, rgba(11,15,20,.0) 0%, rgba(11,15,20,.85) 35%, rgba(11,15,20,.95) 100%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  /* предотвратить "рывки" при появлении клавиатуры */
+  /* iOS 16+: браузер сам сокращает 100dvh; дополнительная логика — в JS */
+}
+
+/* Поля ввода — увеличенные тап-зоны */
+form #input {
+  flex: 1 1 auto;
+  min-height: 44px; /* Apple HIG: минимум 44pt */
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #2a4466;
+  background: #0f1722;
+  color: #e8eef7;
+  outline: none;
+}
+form #send {
+  flex: 0 0 auto;
+  min-width: 110px;
+  min-height: 44px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 0;
+  background: #2b79ff;
+  color: #fff;
+  font-weight: 600;
+}
 form #send:active { transform: translateY(1px); }
+
+/* Узкие экраны — больше ширины для пузырей и крупнее кнопка */
+@media (max-width: 420px) {
+  :root { --bubble-max: 86%; }
+  form #send { min-width: 96px; }
+}
+
+/* Поддержка лайт‑темы по системной настройке (можно отключить) */
+@media (prefers-color-scheme: light) {
+  body { background: #f6f8fb; color: #0b172a; }
+  .chat { border-color: #dde6f5; }
+  .her { background: #ffffff; border-color: #e8eef7; }
+  .me  { background: #f0f4ff; border-color: #d6e4ff; }
+  form { background: linear-gradient(180deg, rgba(246,248,251,0) 0%, rgba(246,248,251,.90) 35%, rgba(246,248,251,.98) 100%); }
+  form #input { background: #fff; color: #0b172a; border-color: #d3ddf0; }
+}
+
+/* Чуть аккуратнее скролл‑индикатор в iOS */
+::-webkit-scrollbar { width: 0; height: 0; }
