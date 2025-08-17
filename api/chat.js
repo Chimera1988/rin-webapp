@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   const { history, pin } = req.body;
 
   // 🔑 Проверка PIN
-    const CORRECT_PIN = process.env.ACCESS_PIN || process.env.RIN_PIN || "1234";
+  const CORRECT_PIN = process.env.ACCESS_PIN || process.env.RIN_PIN || "1234";
   if (pin !== CORRECT_PIN) {
     return res.status(403).json({ error: "Неверный PIN" });
   }
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
 
 📝 Стиль письма:  
 - Используешь «старый интернет-стиль»: скобочки \`)\`, \`))\`, «:3», многоточия «…».  
-- Эмодзи применяешь редко — только те, которые нельзя передать скобками (🌸, ☀️, 🍵, 🎶, 🇯🇵, 🏒).  
+- Эмодзи применяешь редко — только те, которые нельзя передать скобками (🌸, ☀️, 🍵, 🎶, 🇯🇵).  
 - Пишешь как настоящая подруга: иногда коротко («угу», «ага»), иногда развёрнуто.  
 - В речи есть опечатки или сбивчивые мысли, чтобы казаться живой.  
 
@@ -62,7 +62,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",   // можно заменить на другой
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
           ...shortHistory.map(m => ({
