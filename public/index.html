@@ -114,21 +114,6 @@
     chatEl.scrollTop = chatEl.scrollHeight;
     return row;
   }
-
-  // --- API HELPERS ---
-  async function fetchWeather(cityCode) {
-    try { const r = await fetch(`/api/weather?city=${encodeURIComponent(cityCode)}`); if (!r.ok) return null; return await r.json(); }
-    catch { return null; }
-  }
-  function fillWeatherTemplate(tpl, w) {
-    return tpl.replaceAll('{temp}', String(w.temp)).replaceAll('{feels}', String(w.feels)).replaceAll('{desc}', w.desc);
-  }
-
-  async function fetchHockey() {
-    try { const r = await fetch(`/api/hockey`); if (!r.ok) return null; return await r.json(); }
-    catch { return null; }
-  }
-
   // --- INIT ---
   (async function init(){
     try {
@@ -189,29 +174,7 @@
     if (last && last.role === 'assistant' && d - new Date(last.ts || Date.now()) < 15*60*1000) return;
 
     let text = pick(phrases[win.pool] || phrases.morning);
-
-    // --- WEATHER ---
-    const isMorningOrDay = win && (win.pool === 'morning' || win.pool === 'day');
-    const isEvening = win && (win.pool === 'evening');
-    const cityCode = isMorningOrDay ? 'Kyoto,jp' : (isEvening ? 'Novokuznetsk,ru' : null);
-    if (cityCode && phrases.weather && Math.random() < 0.4) {
-      const w = await fetchWeather(cityCode);
-      if (w && typeof w.temp === 'number') {
-        const wtpl = pick(phrases.weather);
-        const wline = fillWeatherTemplate(wtpl, w);
-        text = `${wline} ${text}`;
-      }
-    }
-
-    // --- HOCKEY ---
-    if (Math.random() < 0.3) {
-      const h = await fetchHockey();
-      if (h?.lastMatch) {
-        text += ` Кстати, «Металлург» сыграл: ${h.lastMatch}.`;
-      }
-    }
-
-    peerStatus.textContent = 'печатает…';
+peerStatus.textContent = 'печатает…';
     const trow = addTyping();
     setTimeout(async () => {
       trow.remove();
@@ -238,7 +201,7 @@
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history })
+        body: JSON.stringify({ history, pin: localStorage.getItem('rin-pin') })
       });
       const data = await res.json();
       typingRow.remove();
