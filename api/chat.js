@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   const { history, pin } = req.body;
 
   // 🔑 Проверка PIN
-  const CORRECT_PIN = process.env.RIN_PIN || "1234"; // можно задать в настройках Vercel
+    const CORRECT_PIN = process.env.ACCESS_PIN || process.env.RIN_PIN || "1234";
   if (pin !== CORRECT_PIN) {
     return res.status(403).json({ error: "Неверный PIN" });
   }
