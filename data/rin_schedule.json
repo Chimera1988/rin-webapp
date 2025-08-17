@@ -1,9 +1,0 @@
-{
-  "timezone": "GMT+3",
-  "windows": [
-    { "label": "morning",  "from": "08:00", "to": "10:00", "pool": "morning",  "probability": 0.9 },
-    { "label": "day_ping", "from": "13:00", "to": "16:00", "pool": "day_busy", "probability": 0.5 },
-    { "label": "evening",  "from": "21:30", "to": "23:30", "pool": "evening",  "probability": 0.9 }
-  ],
-  "max_daily_initiations": 2
-}
