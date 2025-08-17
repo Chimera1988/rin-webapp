@@ -1,3 +1,4 @@
+/public/index.html
 <!doctype html>
 <html lang="ru">
 <head>
@@ -50,7 +51,7 @@
   const inputEl = document.getElementById('input');
   const peerStatus = document.getElementById('peerStatus');
 
-  let persona = null, phrases = null, schedule = null;
+  let persona = null, phrases = null, schedule = null, stickers = null;
   let history = [];
 
   const nowLocal = () => new Date();
@@ -114,15 +115,49 @@
     chatEl.scrollTop = chatEl.scrollHeight;
     return row;
   }
+
+  // --- STICKERS ---
+  function pickSticker(mood) {
+    if (!stickers) return null;
+    const pool = stickers[mood] || stickers.cheerful || [];
+    if (!Array.isArray(pool) || pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  function moodByTime(winPoolHint) {
+    const hour = new Date().getHours();
+    const fromWin = (winPoolHint||'').toLowerCase();
+    if (fromWin === 'morning') return 'cheerful';
+    if (fromWin === 'day') return 'thoughtful';
+    if (fromWin === 'evening') return 'romantic';
+    if (fromWin === 'night') return 'melancholic';
+    if (hour >= 6 && hour < 12) return 'cheerful';
+    if (hour >= 12 && hour < 18) return 'thoughtful';
+    if (hour >= 18 && hour < 23) return 'romantic';
+    return 'melancholic';
+  }
+  function addStickerBubble(src, who='assistant') {
+    const row = document.createElement('div');
+    row.className = 'row ' + (who === 'user' ? 'me' : 'her');
+    row.innerHTML = (who === 'user'
+      ? `<div class="bubble me"><img class="sticker" src="${src}" alt="sticker"/></div>`
+      : `<img class="avatar small" src="/avatar.jpg" alt="Рин" />
+         <div class="bubble her"><img class="sticker" src="${src}" alt="sticker"/></div>`
+    );
+    chatEl.appendChild(row);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return row;
+  }
+
   // --- INIT ---
   (async function init(){
     try {
-      const [p1, p2, p3] = await Promise.all([
+      const [p1, p2, p3, p4] = await Promise.all([
         fetch('/data/rin_persona.json').then(r=>r.json()),
         fetch('/data/rin_phrases.json').then(r=>r.json()),
-        fetch('/data/rin_schedule.json').then(r=>r.json())
+        fetch('/data/rin_schedule.json').then(r=>r.json()),
+        fetch('/data/rin_stickers.json').then(r=>r.json())
       ]);
-      persona = p1; phrases = p2; schedule = p3;
+      persona = p1; phrases = p2; schedule = p3; stickers = p4;
     } catch (e) { console.warn('Не удалось загрузить JSON', e); }
 
     history = loadHistory();
@@ -137,6 +172,10 @@
     } else {
       ensureDateDivider(new Date());
       addBubble('Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸', 'assistant');
+      if (stickers) {
+        const st = pickSticker('cheerful');
+        if (st) addStickerBubble(st.src, 'assistant');
+      }
       history.push({ role:'assistant', content:'Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸', ts: Date.now() });
       saveHistory(history);
     }
@@ -174,12 +213,18 @@
     if (last && last.role === 'assistant' && d - new Date(last.ts || Date.now()) < 15*60*1000) return;
 
     let text = pick(phrases[win.pool] || phrases.morning);
-peerStatus.textContent = 'печатает…';
+
+    peerStatus.textContent = 'печатает…';
     const trow = addTyping();
     setTimeout(async () => {
       trow.remove();
       peerStatus.textContent = 'онлайн';
       addBubble(text, 'assistant');
+      if (stickers && Math.random() < 0.5) {
+        const mood = moodByTime(win.pool);
+        const st = pickSticker(mood);
+        if (st) addStickerBubble(st.src, 'assistant');
+      }
       history.push({ role:'assistant', content:text, ts: Date.now() });
       saveHistory(history);
       bumpInitCount(dateKey);
@@ -208,6 +253,11 @@ peerStatus.textContent = 'печатает…';
       if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP ' + res.status));
       peerStatus.textContent = 'онлайн';
       addBubble(data.reply, 'assistant');
+      if (stickers && Math.random() < 0.35) {
+        const mood = moodByTime();
+        const st = pickSticker(mood);
+        if (st) addStickerBubble(st.src, 'assistant');
+      }
       history.push({ role:'assistant', content:data.reply, ts: Date.now() });
       saveHistory(history);
     } catch (err) {
