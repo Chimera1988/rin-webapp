@@ -1,4 +1,3 @@
-/public/index.html
 <!doctype html>
 <html lang="ru">
 <head>
@@ -8,6 +7,13 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Рин Акихара — твой компаньон</title>
   <link rel="stylesheet" href="/style.css" />
+
+  <!-- ✅ Автопереход на логин, если PIN ещё не сохранён -->
+  <script>
+    if (!localStorage.getItem('rin-pin')) {
+      window.location.href = '/login.html';
+    }
+  </script>
 </head>
 <body>
 
