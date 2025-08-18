@@ -1,16 +1,13 @@
-/* Базовые стили под Telegram-like интерфейс */
-
-* {
-  box-sizing: border-box;
-}
-
+/public/style.css
+/* Базовые стили приложения */
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: #111;
-  color: #fff;
+  background: #f0f0f0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  color: #111;
 }
 
 body {
@@ -20,45 +17,34 @@ body {
   overflow: hidden;
 }
 
-/* Шапка */
-.tg-header {
-  flex: 0 0 auto;
+header.tg-header {
   display: flex;
   align-items: center;
-  padding: 0.5rem;
-  background: #202020;
-  border-bottom: 1px solid #333;
+  padding: 8px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  flex-shrink: 0;
 }
 
 .tg-ico {
   background: none;
   border: none;
-  padding: 0.2rem;
-  color: #ccc;
+  color: #333;
+  padding: 4px;
   cursor: pointer;
 }
 
 .tg-peer {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex: 1;
+  flex-grow: 1;
 }
 
-.avatar {
+.tg-peer .avatar {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  object-fit: cover;
-}
-
-.avatar.small {
-  width: 32px;
-  height: 32px;
-}
-
-.avatar.small.spacer {
-  visibility: hidden;
+  margin-right: 8px;
 }
 
 .peer-meta {
@@ -68,160 +54,139 @@ body {
 
 .peer-name {
   font-weight: 600;
-  color: #fff;
+  font-size: 16px;
 }
 
 .peer-status {
-  font-size: 0.8rem;
-  color: #aaa;
+  font-size: 12px;
+  color: #666;
 }
 
-/* Чат */
 .app {
-  flex: 1 1 auto;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 0.5rem;
+  flex-grow: 1;
+  overflow: hidden;
 }
 
 .chat {
-  flex: 1 1 auto;
+  flex-grow: 1;
   overflow-y: auto;
-  padding-bottom: 0.5rem;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Сообщения */
+.date-divider {
+  text-align: center;
+  margin: 12px 0;
+  color: #888;
+  font-size: 13px;
+}
+
 .row {
   display: flex;
   align-items: flex-end;
-  margin-bottom: 0.4rem;
+  margin-bottom: 6px;
+}
+
+.row.me {
+  justify-content: flex-end;
+}
+
+.avatar.small {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  margin: 0 6px;
+}
+
+.avatar.small.spacer {
+  visibility: hidden;
 }
 
 .bubble {
   max-width: 70%;
-  padding: 0.5rem 0.75rem;
+  padding: 8px 12px;
   border-radius: 16px;
-  line-height: 1.3;
-  font-size: 0.95rem;
-  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.4;
   word-wrap: break-word;
 }
 
-.bubble.me {
-  background: #0088cc;
-  color: #fff;
-  margin-left: auto;
-  border-bottom-right-radius: 4px;
-}
-
 .bubble.her {
-  background: #2a2a2a;
-  color: #fff;
+  background: #e5e5ea;
   border-bottom-left-radius: 4px;
 }
 
-/* Стикеры */
-.bubble img.sticker {
-  display: block;
-  max-width: 220px;
-  max-height: 220px;
-  border-radius: 12px;
-  width: auto;
-  height: auto;
+.bubble.me {
+  background: #0b93f6;
+  color: white;
+  border-bottom-right-radius: 4px;
 }
 
-/* Разделитель дат */
-.date-divider {
-  text-align: center;
-  margin: 1rem 0;
-  color: #888;
-  font-size: 0.85rem;
-  position: relative;
-}
-
-.date-divider span {
-  background: #111;
-  padding: 0 0.5rem;
-  position: relative;
-  z-index: 1;
-}
-
-.date-divider::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: #333;
-  z-index: 0;
-}
-
-/* Поле ввода */
-form {
-  flex: 0 0 auto;
+.typing {
   display: flex;
-  padding: 0.5rem;
-  background: #202020;
-  border-top: 1px solid #333;
+  gap: 3px;
 }
 
-form input {
-  flex: 1;
-  padding: 0.6rem;
-  border: none;
-  border-radius: 20px;
-  margin-right: 0.5rem;
-  font-size: 1rem;
-  outline: none;
-  background: #333;
-  color: #fff;
-}
-
-form button {
-  background: #0088cc;
-  border: none;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  cursor: pointer;
-}
-
-form button:hover {
-  background: #0077b3;
-}
-
-/* Анимация "печатает" */
-.bubble.typing {
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-.bubble.typing span {
+.typing span {
   width: 6px;
   height: 6px;
-  background: #888;
+  background: #999;
   border-radius: 50%;
-  display: inline-block;
   animation: blink 1.4s infinite both;
 }
 
-.bubble.typing span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.bubble.typing span:nth-child(3) {
-  animation-delay: 0.4s;
-}
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes blink {
-  0% { opacity: .2; }
+  0% { opacity: 0.2; }
   20% { opacity: 1; }
-  100% { opacity: .2; }
+  100% { opacity: 0.2; }
+}
+
+form {
+  display: flex;
+  padding: 8px;
+  background: #fff;
+  border-top: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
+form input {
+  flex-grow: 1;
+  border: 1px solid #ccc;
+  border-radius: 16px;
+  padding: 8px 12px;
+  font-size: 15px;
+}
+
+form button {
+  margin-left: 8px;
+  background: #0b93f6;
+  border: none;
+  color: white;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* ✅ СТИКЕРЫ БЕЗ СЕРОГО ОРЕОЛА */
+img.sticker {
+  display: block;
+  background: transparent;
+  border-radius: 50%;   /* кружок */
+  max-width: 220px;
+  height: auto;
+}
+
+/* убираем фон у пузыря, если там только стикер */
+.bubble.her:has(img.sticker),
+.bubble.me:has(img.sticker) {
+  background: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
 }
