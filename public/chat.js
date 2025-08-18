@@ -302,10 +302,10 @@ async function tryInitiateBySchedule(){
   try {
     const [p1, p2, p3, p4, p5] = await Promise.all([
       fetch('/data/rin_persona.json').then(r=>r.json()),
-      fetch('/data/rin_phrases.json').then(r=>r.json()),
+      fetch('/data/rin_phrases.json?v=20250303').then(r=>r.json()),
       fetch('/data/rin_schedule.json').then(r=>r.json()),
-      fetch('/data/rin_stickers.json?v=4').then(r=>r.json()),
-      fetch('/data/rin_backstory.json?v=1').then(r=>r.json())
+      fetch('/data/rin_stickers.json?v=20250303').then(r=>r.json()),
+      fetch('/data/rin_backstory.json?v=20250303').then(r=>r.json()),
     ]);
     persona = p1; phrases = p2; schedule = p3; stickers = p4; backstory = p5;
   } catch (e) {
