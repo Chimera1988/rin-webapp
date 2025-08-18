@@ -1,3 +1,4 @@
+/public/index.html
 <!doctype html>
 <html lang="ru">
 <head>
@@ -41,7 +42,6 @@
   </main>
 
   <script>
-  const TZ_OFFSET_MIN = 3 * 60; 
   const STORAGE_KEY = 'rin-history-v2';
   const DAILY_INIT_KEY = 'rin-init-count';
 
@@ -52,6 +52,7 @@
 
   let persona = null, phrases = null, schedule = null, stickers = null;
   let history = [];
+  let chainStickerCount = 0;
 
   const nowLocal = () => new Date();
   const fmtDateKey = (d) => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -115,36 +116,62 @@
     return row;
   }
 
-  // --- STICKERS ---
-  function pickSticker(mood) {
-    if (!stickers) return null;
-    const pool = stickers[mood] || stickers.cheerful || [];
-    if (!Array.isArray(pool) || pool.length === 0) return null;
-    return pool[Math.floor(Math.random() * pool.length)];
+  // ---------- helpers ----------
+  function weightedPick(arr){
+    const total = arr.reduce((s,a)=>s+(a.weight||1),0);
+    let r = Math.random()*total;
+    for (const a of arr){ r -= (a.weight||1); if (r <= 0) return a; }
+    return arr[0];
   }
-  function moodByTime(winPoolHint) {
-    const hour = new Date().getHours();
-    const fromWin = (winPoolHint||'').toLowerCase();
-    if (fromWin === 'morning') return 'cheerful';
-    if (fromWin === 'day') return 'thoughtful';
-    if (fromWin === 'evening') return 'romantic';
-    if (fromWin === 'night') return 'melancholic';
-    if (hour >= 6 && hour < 12) return 'cheerful';
-    if (hour >= 12 && hour < 18) return 'thoughtful';
-    if (hour >= 18 && hour < 23) return 'romantic';
-    return 'melancholic';
+  function hourMood(){
+    const h = new Date().getHours();
+    if (h >= 6 && h < 12) return 'morning';
+    if (h >= 12 && h < 18) return 'day';
+    if (h >= 18 && h < 23) return 'evening';
+    return 'night';
   }
-  function addStickerBubble(src, who='assistant') {
-    const row = document.createElement('div');
-    row.className = 'row ' + (who === 'user' ? 'me' : 'her');
-    row.innerHTML = (who === 'user'
-      ? `<div class="bubble me"><img class="sticker" src="${src}" alt="sticker"/></div>`
-      : `<img class="avatar small" src="/avatar.jpg" alt="Рин" />
-         <div class="bubble her"><img class="sticker" src="${src}" alt="sticker"/></div>`
-    );
-    chatEl.appendChild(row);
-    chatEl.scrollTop = chatEl.scrollHeight;
-    return row;
+
+  // ------- STICKERS: SMART PICK (v2 priority: userText) -------
+  function pickStickerSmart(replyText, windowPool, userText) {
+    if (!stickers || stickers._schema !== 'v2') return null;
+    const list = stickers.stickers || [];
+    if (!list.length) return null;
+
+    const DISCOURAGE = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|совет|план|границ)/i;
+    const KEY_FLIRT = /(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
+
+    // 0) прямой запрос нежности от пользователя → приоритет
+    if (userText && KEY_FLIRT.test(userText)) {
+      const hit = list.filter(s => (s.keywords||[]).some(k => new RegExp(k,'i').test(userText)));
+      if (hit.length) return weightedPick(hit);
+      const romanticPool = list.filter(s => (s.moods||[]).some(m => ['tender','romantic','shy','cosy','playful'].includes(m)));
+      if (romanticPool.length) return weightedPick(romanticPool);
+    }
+
+    // 1) «тяжёлые» слова — проверяем ТОЛЬКО текст пользователя
+    if (userText && DISCOURAGE.test(userText)) return null;
+
+    // 2) ключи в ответе Рин
+    if (replyText){
+      const hitKw = list.filter(s => (s.keywords||[]).some(k => new RegExp(k,'i').test(replyText)));
+      if (hitKw.length) return weightedPick(hitKw);
+    }
+
+    // 3) по времени суток
+    const tMood = windowPool || hourMood();
+    const def = stickers.defaults?.byTime?.[tMood];
+    if (def && Math.random() < (def.p ?? 0.1)) {
+      const pool = list.filter(s => (s.moods||[]).some(m => def.moods.includes(m)));
+      if (pool.length) return weightedPick(pool);
+    }
+
+    // 4) флирт по ключам в ответе Рин
+    if (replyText && KEY_FLIRT.test(replyText)) {
+      const pool = list.filter(s => (s.moods||[]).some(m => ['romantic','playful','cosy','tender','shy'].includes(m)));
+      if (pool.length && Math.random() < 0.35) return weightedPick(pool);
+    }
+
+    return null;
   }
 
   // --- INIT ---
@@ -154,9 +181,11 @@
         fetch('/data/rin_persona.json').then(r=>r.json()),
         fetch('/data/rin_phrases.json').then(r=>r.json()),
         fetch('/data/rin_schedule.json').then(r=>r.json()),
-        fetch('/data/rin_stickers.json').then(r=>r.json())
+        // cache-buster для iOS/PWA
+        fetch('/data/rin_stickers.json?v=4').then(r=>r.json())
       ]);
       persona = p1; phrases = p2; schedule = p3; stickers = p4;
+      console.log('stickers loaded:', stickers?.stickers?.length || 0);
     } catch (e) { console.warn('Не удалось загрузить JSON', e); }
 
     history = loadHistory();
@@ -170,12 +199,11 @@
       }
     } else {
       ensureDateDivider(new Date());
-      addBubble('Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸', 'assistant');
-      if (stickers) {
-        const st = pickSticker('cheerful');
-        if (st) addStickerBubble(st.src, 'assistant');
-      }
-      history.push({ role:'assistant', content:'Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸', ts: Date.now() });
+      const greeting = 'Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸';
+      addBubble(greeting, 'assistant');
+      const st = pickStickerSmart(greeting, 'morning', ''); // приветствие
+      if (st) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
+      history.push({ role:'assistant', content:greeting, ts: Date.now() });
       saveHistory(history);
     }
 
@@ -197,11 +225,24 @@
   }
   function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
+  function addStickerBubble(src, who='assistant') {
+    const row = document.createElement('div');
+    row.className = 'row ' + (who === 'user' ? 'me' : 'her');
+    row.innerHTML = (who === 'user'
+      ? `<div class="bubble me"><img class="sticker" src="${src}" alt="sticker"/></div>`
+      : `<img class="avatar small" src="/avatar.jpg" alt="Рин" />
+         <div class="bubble her"><img class="sticker" src="${src}" alt="sticker"/></div>`
+    );
+    chatEl.appendChild(row);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return row;
+  }
+
   async function tryInitiateBySchedule(){
     if (!schedule || !phrases) return;
     const d = nowLocal(); const dateKey = fmtDateKey(d);
     const lastKeyInStore = Object.keys(JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}')).pop();
-    if (lastKeyInStore && lastKeyInStore !== dateKey) { localStorage.setItem(DAILY_INIT_KEY, JSON.stringify({})); }
+    if (lastKeyInStore && lastKeyInStore !== dateKey) { localStorage.setItem(DAILY_INIT_KEY, JSON.stringify({})); chainStickerCount = 0; }
     const count = getInitCountFor(dateKey);
     if (count >= (schedule.max_daily_initiations || 2)) return;
 
@@ -211,7 +252,8 @@
     const last = history[history.length-1];
     if (last && last.role === 'assistant' && d - new Date(last.ts || Date.now()) < 15*60*1000) return;
 
-    let text = pick(phrases[win.pool] || phrases.morning);
+    const pool = phrases[win.pool] ? win.pool : 'morning';
+    let text = pick(phrases[pool] || phrases.morning);
 
     peerStatus.textContent = 'печатает…';
     const trow = addTyping();
@@ -219,11 +261,8 @@
       trow.remove();
       peerStatus.textContent = 'онлайн';
       addBubble(text, 'assistant');
-      if (stickers && Math.random() < 0.5) {
-        const mood = moodByTime(win.pool);
-        const st = pickSticker(mood);
-        if (st) addStickerBubble(st.src, 'assistant');
-      }
+      const st = pickStickerSmart(text, win.pool, ''); // инициативы по расписанию
+      if (st) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
       history.push({ role:'assistant', content:text, ts: Date.now() });
       saveHistory(history);
       bumpInitCount(dateKey);
@@ -252,11 +291,8 @@
       if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP ' + res.status));
       peerStatus.textContent = 'онлайн';
       addBubble(data.reply, 'assistant');
-      if (stickers && Math.random() < 0.35) {
-        const mood = moodByTime();
-        const st = pickSticker(mood);
-        if (st) addStickerBubble(st.src, 'assistant');
-      }
+      const st = pickStickerSmart(data.reply, null, text); // <— тут передаём текст пользователя
+      if (st) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
       history.push({ role:'assistant', content:data.reply, ts: Date.now() });
       saveHistory(history);
     } catch (err) {
