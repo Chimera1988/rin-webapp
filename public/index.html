@@ -6,13 +6,31 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Рин Акихара — твой компаньон</title>
-  <link rel="stylesheet" href="/style.css?v=2" />
+  <link rel="stylesheet" href="/style.css?v=3" />
 
-  <!-- Автологин: если нет PIN — отправляем на login.html -->
+  <!-- Автологин -->
   <script>
     if (!localStorage.getItem('rin-pin')) {
       window.location.href = '/login.html';
     }
+  </script>
+
+  <!-- ТЕМА: применяем до показа страницы -->
+  <script>
+    (function(){
+      const key = 'rin-theme';
+      let t = localStorage.getItem(key);
+      if (!t) {
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        t = prefersDark ? 'theme-dark' : 'theme-light';
+      }
+      document.documentElement.classList.add(t);
+      window.__rinSetTheme = function(next){
+        document.documentElement.classList.remove('theme-dark','theme-light');
+        document.documentElement.classList.add(next);
+        localStorage.setItem(key, next);
+      }
+    })();
   </script>
 </head>
 <body>
@@ -23,6 +41,7 @@
         <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
+
     <div class="tg-peer">
       <img id="avatarTop" class="avatar" src="/avatar.jpg" alt="Рин" />
       <div class="peer-meta">
@@ -30,7 +49,11 @@
         <div id="peerStatus" class="peer-status">онлайн</div>
       </div>
     </div>
-    <div class="tg-actions"></div>
+
+    <div class="tg-actions">
+      <!-- Переключатель темы -->
+      <button id="themeToggle" class="tg-ico" title="Тема">☾</button>
+    </div>
   </header>
 
   <main class="app">
@@ -55,6 +78,16 @@
   const formEl  = document.getElementById('form');
   const inputEl = document.getElementById('input');
   const peerStatus = document.getElementById('peerStatus');
+  const themeBtn = document.getElementById('themeToggle');
+
+  // Тоггл темы
+  themeBtn.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.contains('theme-dark');
+    const next = isDark ? 'theme-light' : 'theme-dark';
+    window.__rinSetTheme(next);
+    themeBtn.textContent = next === 'theme-dark' ? '☾' : '☀︎';
+  });
+  themeBtn.textContent = document.documentElement.classList.contains('theme-dark') ? '☾' : '☀︎';
 
   let persona = null, phrases = null, schedule = null, stickers = null;
   let history = [];
@@ -122,7 +155,6 @@
     return row;
   }
 
-  /* helpers */
   function weightedPick(arr){
     const total = arr.reduce((s,a)=>s+(a.weight||1),0);
     let r = Math.random()*total;
@@ -137,16 +169,12 @@
     return 'night';
   }
 
-  /* 📌 показывать ли стикер сейчас:
-     — если пользователь попросил нежность → всегда
-     — иначе с вероятностью 30% */
   function shouldShowSticker(userText, replyText){
     const KEY_FLIRT = /(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
     if (userText && KEY_FLIRT.test(userText)) return true;
-    return Math.random() < 0.30;
+    return Math.random() < 0.30; // 30%
   }
 
-  /* ------- STICKERS: SMART PICK (v2 priority: userText) ------- */
   function pickStickerSmart(replyText, windowPool, userText) {
     if (!stickers || stickers._schema !== 'v2') return null;
     const list = stickers.stickers || [];
@@ -184,7 +212,6 @@
     return null;
   }
 
-  /* ——— sticker bubble без «ореола» ——— */
   function addStickerBubble(src, who='assistant') {
     const row = document.createElement('div');
     row.className = 'row ' + (who === 'user' ? 'me' : 'her');
@@ -207,7 +234,6 @@
     return row;
   }
 
-  /* --- INIT --- */
   (async function init(){
     try {
       const [p1, p2, p3, p4] = await Promise.all([
