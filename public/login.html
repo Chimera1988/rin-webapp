@@ -3,74 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Вход — Рин Акихара</title>
-  <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #111;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-    }
-    h1 { margin-bottom: 1rem; }
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      width: 250px;
-    }
-    input {
-      padding: 0.7rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 6px;
-      outline: none;
-    }
-    button {
-      padding: 0.7rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 6px;
-      background: #0088cc;
-      color: #fff;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #0077b3;
-    }
-  </style>
+  <title>Вход — Рин</title>
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <h1>Вход</h1>
-  <form id="form">
-    <input id="pin" type="password" placeholder="PIN" required />
-    <button type="submit">Войти</button>
-  </form>
+  <main class="login-screen">
+    <h1>Добро пожаловать 🌸</h1>
+    <form id="loginForm">
+      <input id="pinInput" type="password" placeholder="Введите PIN" required />
+      <button type="submit">Войти</button>
+    </form>
+  </main>
 
   <script>
-    const form = document.getElementById("form");
-
-    form.addEventListener("submit", async (e) => {
+    const form = document.getElementById('loginForm');
+    form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const pin = document.getElementById("pin").value;
-
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin })
-      });
-
-      if (res.ok) {
-        // сохраняем флажок + сам пин
-        localStorage.setItem("rin-auth", "ok");
-        localStorage.setItem("rin-pin", pin);
-        window.location.href = "/";
-      } else {
-        alert("Неверный PIN");
+      const pin = document.getElementById('pinInput').value.trim();
+      if (pin) {
+        localStorage.setItem('rin-pin', pin);
+        window.location.href = '/index.html'; // сразу в чат
       }
     });
   </script>
