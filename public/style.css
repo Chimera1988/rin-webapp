@@ -1,12 +1,41 @@
-/* Базовые стили приложения */
+/* ====== THEME VARIABLES ====== */
+:root {
+  color-scheme: light dark;            /* пусть iOS не красит своё */
+  --bg: #0f0f11;
+  --text: #e9e9ee;
+  --header-bg: #121214;
+  --header-border: #222;
+  --bubble-her: #232327;
+  --bubble-me: #0b93f6;
+  --bubble-me-text: #fff;
+  --divider: #3a3a40;
+  --input-bg: #1b1b1f;
+  --input-border: #2b2b33;
+}
+
+/* Светлая тема переопределяет переменные */
+.theme-light {
+  --bg: #f0f0f3;
+  --text: #111;
+  --header-bg: #fff;
+  --header-border: #ddd;
+  --bubble-her: #e5e5ea;
+  --bubble-me: #0b93f6;
+  --bubble-me-text: #fff;
+  --divider: #cfd0d4;
+  --input-bg: #fff;
+  --input-border: #ddd;
+}
+
+/* ====== BASE ====== */
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: #f0f0f0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 16px;
-  color: #111;
+  background: var(--bg);
+  color: var(--text);
 }
 
 body {
@@ -16,26 +45,34 @@ body {
   overflow: hidden;
 }
 
+/* ====== HEADER ====== */
 header.tg-header {
   display: flex;
   align-items: center;
-  padding: 8px;
-  background: #fff;
-  border-bottom: 1px solid #ddd;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 8px 8px; /* ✅ не уезжает под остров */
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
-.tg-ico { background:none; border:none; color:#333; padding:4px; cursor:pointer; }
-.tg-peer { display:flex; align-items:center; flex-grow:1; }
-.tg-peer .avatar { width:40px; height:40px; border-radius:50%; margin-right:8px; }
+.tg-ico { background:none; border:none; color:var(--text); padding:4px; cursor:pointer; }
+.tg-actions { margin-left: auto; display:flex; gap:6px; }
+
+.tg-peer { display:flex; align-items:center; gap:8px; }
+.tg-peer .avatar { width:40px; height:40px; border-radius:50%; }
 .peer-meta { display:flex; flex-direction:column; }
 .peer-name { font-weight:600; font-size:16px; }
-.peer-status { font-size:12px; color:#666; }
+.peer-status { font-size:12px; opacity:.7; }
 
+/* ====== LAYOUT ====== */
 .app { display:flex; flex-direction:column; flex-grow:1; overflow:hidden; }
 .chat { flex-grow:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; }
 
-.date-divider { text-align:center; margin:12px 0; color:#888; font-size:13px; }
+.date-divider { text-align:center; margin:12px 0; color: var(--divider); font-size:13px; }
 
 .row { display:flex; align-items:flex-end; margin-bottom:6px; }
 .row.me { justify-content:flex-end; }
@@ -44,15 +81,25 @@ header.tg-header {
 .avatar.small.spacer { visibility:hidden; }
 
 .bubble {
-  max-width:70%;
-  padding:8px 12px;
-  border-radius:16px;
-  font-size:15px;
-  line-height:1.4;
-  word-wrap:break-word;
+  max-width: 70%;
+  padding: 8px 12px;
+  border-radius: 16px;
+  font-size: 15px;
+  line-height: 1.4;
+  word-wrap: break-word;
 }
-.bubble.her { background:#e5e5ea; border-bottom-left-radius:4px; }
-.bubble.me  { background:#0b93f6; color:#fff; border-bottom-right-radius:4px; }
+
+.bubble.her {
+  background: var(--bubble-her);
+  border-bottom-left-radius: 4px;
+  color: var(--text);
+}
+
+.bubble.me  {
+  background: var(--bubble-me);
+  color: var(--bubble-me-text);
+  border-bottom-right-radius: 4px;
+}
 
 .typing { display:flex; gap:3px; }
 .typing span { width:6px; height:6px; background:#999; border-radius:50%; animation:blink 1.4s infinite both; }
@@ -60,13 +107,38 @@ header.tg-header {
 .typing span:nth-child(3){ animation-delay:.4s; }
 @keyframes blink { 0%{opacity:.2} 20%{opacity:1} 100%{opacity:.2} }
 
-form { display:flex; padding:8px; background:#fff; border-top:1px solid #ddd; flex-shrink:0; }
-form input {
-  flex-grow:1; border:1px solid #ccc; border-radius:16px; padding:8px 12px; font-size:15px;
+/* ====== INPUT ====== */
+form {
+  display:flex;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); /* ✅ не упирается в жестовую панель */
+  background: var(--header-bg);
+  border-top: 1px solid var(--header-border);
+  flex-shrink: 0;
 }
-form button { margin-left:8px; background:#0b93f6; border:none; color:#fff; padding:0 16px; border-radius:16px; font-size:15px; cursor:pointer; }
 
-/* ✅ СТИКЕРЫ: чистая картинка без «ореола» */
+form input {
+  flex-grow:1;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
+  border-radius: 16px;
+  padding: 8px 12px;
+  font-size: 15px;
+  outline: none;
+}
+
+form button {
+  margin-left: 8px;
+  background: var(--bubble-me);
+  border: none;
+  color: #fff;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* ====== STICKERS (без серого ореола) ====== */
 .bubble.sticker-only {
   background: none !important;
   padding: 0 !important;
@@ -76,7 +148,7 @@ form button { margin-left:8px; background:#0b93f6; border:none; color:#fff; padd
 img.sticker {
   display: block;
   background: transparent;
-  border-radius: 50%;   /* кружок */
+  border-radius: 50%;
   max-width: 220px;
   height: auto;
 }
