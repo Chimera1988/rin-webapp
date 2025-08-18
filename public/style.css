@@ -1,4 +1,3 @@
-/public/style.css
 /* Базовые стили приложения */
 html, body {
   margin: 0;
@@ -26,167 +25,58 @@ header.tg-header {
   flex-shrink: 0;
 }
 
-.tg-ico {
-  background: none;
-  border: none;
-  color: #333;
-  padding: 4px;
-  cursor: pointer;
-}
+.tg-ico { background:none; border:none; color:#333; padding:4px; cursor:pointer; }
+.tg-peer { display:flex; align-items:center; flex-grow:1; }
+.tg-peer .avatar { width:40px; height:40px; border-radius:50%; margin-right:8px; }
+.peer-meta { display:flex; flex-direction:column; }
+.peer-name { font-weight:600; font-size:16px; }
+.peer-status { font-size:12px; color:#666; }
 
-.tg-peer {
-  display: flex;
-  align-items: center;
-  flex-grow: 1;
-}
+.app { display:flex; flex-direction:column; flex-grow:1; overflow:hidden; }
+.chat { flex-grow:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; }
 
-.tg-peer .avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  margin-right: 8px;
-}
+.date-divider { text-align:center; margin:12px 0; color:#888; font-size:13px; }
 
-.peer-meta {
-  display: flex;
-  flex-direction: column;
-}
+.row { display:flex; align-items:flex-end; margin-bottom:6px; }
+.row.me { justify-content:flex-end; }
 
-.peer-name {
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.peer-status {
-  font-size: 12px;
-  color: #666;
-}
-
-.app {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  overflow: hidden;
-}
-
-.chat {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-}
-
-.date-divider {
-  text-align: center;
-  margin: 12px 0;
-  color: #888;
-  font-size: 13px;
-}
-
-.row {
-  display: flex;
-  align-items: flex-end;
-  margin-bottom: 6px;
-}
-
-.row.me {
-  justify-content: flex-end;
-}
-
-.avatar.small {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  margin: 0 6px;
-}
-
-.avatar.small.spacer {
-  visibility: hidden;
-}
+.avatar.small { width:28px; height:28px; border-radius:50%; margin:0 6px; }
+.avatar.small.spacer { visibility:hidden; }
 
 .bubble {
-  max-width: 70%;
-  padding: 8px 12px;
-  border-radius: 16px;
-  font-size: 15px;
-  line-height: 1.4;
-  word-wrap: break-word;
+  max-width:70%;
+  padding:8px 12px;
+  border-radius:16px;
+  font-size:15px;
+  line-height:1.4;
+  word-wrap:break-word;
 }
+.bubble.her { background:#e5e5ea; border-bottom-left-radius:4px; }
+.bubble.me  { background:#0b93f6; color:#fff; border-bottom-right-radius:4px; }
 
-.bubble.her {
-  background: #e5e5ea;
-  border-bottom-left-radius: 4px;
-}
+.typing { display:flex; gap:3px; }
+.typing span { width:6px; height:6px; background:#999; border-radius:50%; animation:blink 1.4s infinite both; }
+.typing span:nth-child(2){ animation-delay:.2s; }
+.typing span:nth-child(3){ animation-delay:.4s; }
+@keyframes blink { 0%{opacity:.2} 20%{opacity:1} 100%{opacity:.2} }
 
-.bubble.me {
-  background: #0b93f6;
-  color: white;
-  border-bottom-right-radius: 4px;
-}
-
-.typing {
-  display: flex;
-  gap: 3px;
-}
-
-.typing span {
-  width: 6px;
-  height: 6px;
-  background: #999;
-  border-radius: 50%;
-  animation: blink 1.4s infinite both;
-}
-
-.typing span:nth-child(2) { animation-delay: 0.2s; }
-.typing span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes blink {
-  0% { opacity: 0.2; }
-  20% { opacity: 1; }
-  100% { opacity: 0.2; }
-}
-
-form {
-  display: flex;
-  padding: 8px;
-  background: #fff;
-  border-top: 1px solid #ddd;
-  flex-shrink: 0;
-}
-
+form { display:flex; padding:8px; background:#fff; border-top:1px solid #ddd; flex-shrink:0; }
 form input {
-  flex-grow: 1;
-  border: 1px solid #ccc;
-  border-radius: 16px;
-  padding: 8px 12px;
-  font-size: 15px;
+  flex-grow:1; border:1px solid #ccc; border-radius:16px; padding:8px 12px; font-size:15px;
 }
+form button { margin-left:8px; background:#0b93f6; border:none; color:#fff; padding:0 16px; border-radius:16px; font-size:15px; cursor:pointer; }
 
-form button {
-  margin-left: 8px;
-  background: #0b93f6;
-  border: none;
-  color: white;
-  padding: 0 16px;
-  border-radius: 16px;
-  font-size: 15px;
-  cursor: pointer;
+/* ✅ СТИКЕРЫ: чистая картинка без «ореола» */
+.bubble.sticker-only {
+  background: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
 }
-
-/* ✅ СТИКЕРЫ БЕЗ СЕРОГО ОРЕОЛА */
 img.sticker {
   display: block;
   background: transparent;
   border-radius: 50%;   /* кружок */
   max-width: 220px;
   height: auto;
-}
-
-/* убираем фон у пузыря, если там только стикер */
-.bubble.her:has(img.sticker),
-.bubble.me:has(img.sticker) {
-  background: none !important;
-  padding: 0 !important;
-  box-shadow: none !important;
 }
