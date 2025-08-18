@@ -1,27 +1,27 @@
+/public/data/rin_stickers.json
 {
   "_schema": "v2",
   "stickers": [
-    { "src": "/stickers/calm.png",         "moods": ["thoughtful","cosy"],     "keywords": ["спокой","тихо","умиротвор","равновес"], "weight": 1 },
-    { "src": "/stickers/curious.png",      "moods": ["curious","playful"],     "keywords": ["интерес","что","почему","как"], "weight": 1 },
-    { "src": "/stickers/gentle_smile.png", "moods": ["cheerful","romantic"],   "keywords": ["улыб","мила","приятно"], "weight": 1 },
-    { "src": "/stickers/serious.png",      "moods": ["serious","thoughtful"],  "keywords": ["важно","серьёзно","правда"], "weight": 1 },
-    { "src": "/stickers/warm_smile.png",   "moods": ["cheerful","cosy"],       "keywords": ["тепло","добро","радос"], "weight": 2 },
-    { "src": "/stickers/neutral.png",      "moods": ["neutral"],               "keywords": ["ладно","понятно","хорошо"], "weight": 1 },
-    { "src": "/stickers/shy.png",          "moods": ["shy","romantic"],        "keywords": ["смущ","неловко","краснею"], "weight": 1 },
-    { "src": "/stickers/peaceful.png",     "moods": ["cosy","night"],          "keywords": ["сон","покой","спокойной","ночь"], "weight": 1 },
-    { "src": "/stickers/hopeful.png",      "moods": ["romantic","thoughtful"], "keywords": ["надеюсь","жду","верю","будущее"], "weight": 1 },
+    { "src": "/stickers/calm.webp",         "moods": ["thoughtful","cosy"],     "keywords": ["спокой","тихо","умиротвор","равновес"], "weight": 1 },
+    { "src": "/stickers/curious.webp",      "moods": ["curious","playful"],     "keywords": ["интерес","что","почему","как"], "weight": 1 },
+    { "src": "/stickers/gentle_smile.webp", "moods": ["cheerful","romantic"],   "keywords": ["улыб","мила","приятно"], "weight": 1 },
+    { "src": "/stickers/serious.webp",      "moods": ["serious","thoughtful"],  "keywords": ["важно","серьёзно","правда"], "weight": 1 },
+    { "src": "/stickers/warm_smile.webp",   "moods": ["cheerful","cosy"],       "keywords": ["тепло","добро","радос"], "weight": 2 },
+    { "src": "/stickers/neutral.webp",      "moods": ["neutral"],               "keywords": ["ладно","понятно","хорошо"], "weight": 1 },
+    { "src": "/stickers/shy.webp",          "moods": ["shy","romantic"],        "keywords": ["смущ","неловко","краснею"], "weight": 1 },
+    { "src": "/stickers/peaceful.webp",     "moods": ["cosy","night"],          "keywords": ["сон","покой","спокойной","ночь"], "weight": 1 },
+    { "src": "/stickers/hopeful.webp",      "moods": ["romantic","thoughtful"], "keywords": ["надеюсь","жду","верю","будущее"], "weight": 1 },
 
-    { "src": "/stickers/attentive.png",    "moods": ["attentive","curious"],   "keywords": ["слушаю","вним","расскажи"], "weight": 1 },
-    { "src": "/stickers/joyful_smile.png", "moods": ["cheerful","playful"],    "keywords": ["ха","ура","весел","смешно"], "weight": 2 },
-    { "src": "/stickers/surprised.png",    "moods": ["surprised"],             "keywords": ["что?!","ого","правда","неужел"], "weight": 1 },
-    { "src": "/stickers/soft_smile.png",   "moods": ["cosy","romantic"],       "keywords": ["мила","тихо","нежно"], "weight": 1 },
-    { "src": "/stickers/tender.png",       "moods": ["romantic","tender"],     "keywords": ["люблю","дорог","родной","обнять"], "weight": 2 },
-    { "src": "/stickers/relaxed.png",      "moods": ["cosy","night"],          "keywords": ["устал","отдых","расслаб"], "weight": 1 },
-    { "src": "/stickers/playful_look.png", "moods": ["playful"],               "keywords": ["флирт","подразн","игриво"], "weight": 1 },
-    { "src": "/stickers/shy_smile.png",    "moods": ["shy","romantic"],        "keywords": ["смущ","застенч","неудобно"], "weight": 1 },
-    { "src": "/stickers/skeptical.png",    "moods": ["skeptical","serious"],   "keywords": ["правда?","сомнева","серьёзно?"], "weight": 1 }
+    { "src": "/stickers/attentive.webp",    "moods": ["attentive","curious"],   "keywords": ["слушаю","вним","расскажи"], "weight": 1 },
+    { "src": "/stickers/joyful_smile.webp", "moods": ["cheerful","playful"],    "keywords": ["ха","ура","весел","смешно"], "weight": 2 },
+    { "src": "/stickers/surprised.webp",    "moods": ["surprised"],             "keywords": ["что?!","ого","правда","неужел"], "weight": 1 },
+    { "src": "/stickers/soft_smile.webp",   "moods": ["cosy","romantic"],       "keywords": ["мила","тихо","нежно"], "weight": 1 },
+    { "src": "/stickers/tender.webp",       "moods": ["romantic","tender"],     "keywords": ["люблю","дорог","родной","обнять"], "weight": 2 },
+    { "src": "/stickers/relaxed.webp",      "moods": ["cosy","night"],          "keywords": ["устал","отдых","расслаб"], "weight": 1 },
+    { "src": "/stickers/playful_look.webp", "moods": ["playful"],               "keywords": ["флирт","подразн","игриво"], "weight": 1 },
+    { "src": "/stickers/shy_smile.webp",    "moods": ["shy","romantic"],        "keywords": ["смущ","застенч","неудобно"], "weight": 1 },
+    { "src": "/stickers/skeptical.webp",    "moods": ["skeptical","serious"],   "keywords": ["правда?","сомнева","серьёзно?"], "weight": 1 }
   ],
-
   "defaults": {
     "byTime": {
       "morning": { "moods": ["cheerful","playful"],           "p": 0.12 },
