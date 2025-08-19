@@ -83,10 +83,13 @@ if (themeToggle){
 /* — Обои — применяем CSS‑переменные (см. style.css) — */
 function applyWallpaper(){
   const data = localStorage.getItem(LS_WP_DATA) || '';
-  const op   = + (localStorage.getItem(LS_WP_OPACITY) || '90');
-  document.documentElement.style.setProperty('--wp-url', data ? `url("${data}")` : 'none');
-  document.documentElement.style.setProperty('--wp-opacity', String(op/100));
-  if (wpOpacity) wpOpacity.value = op;
+  const op   = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100;
+
+  // ❗ Используем те же имена, что в style.css
+  document.documentElement.style.setProperty('--wallpaper-url', data ? `url("${data}")` : 'none');
+  document.documentElement.style.setProperty('--wallpaper-opacity', String(op));
+
+  if (wpOpacity) wpOpacity.value = Math.round(op * 100);
 }
 applyWallpaper();
 
