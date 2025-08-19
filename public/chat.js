@@ -1,70 +1,133 @@
-/* ============================
-   RIN — public/chat.js
-   ============================ */
-
-const STORAGE_KEY    = 'rin-history-v2';
+/* chat.js — логика Рин WebApp */
+const STORAGE_KEY = 'rin-history-v2';
 const DAILY_INIT_KEY = 'rin-init-count';
+const SETTINGS_KEY = 'rin-settings-v1';
 
-const chatEl     = document.getElementById('chat');
-const formEl     = document.getElementById('form');
-const inputEl    = document.getElementById('input');
+const chatEl = document.getElementById('chat');
+const formEl = document.getElementById('form');
+const inputEl = document.getElementById('input');
 const peerStatus = document.getElementById('peerStatus');
 
-/* ====== Настройки (панель) ====== */
-const settingsBtn      = document.getElementById('settingsToggle');
-const settingsPanel    = document.getElementById('settingsPanel');
-const closeSettingsBtn = document.getElementById('closeSettings');
-const themeToggleBtn   = document.getElementById('themeToggle');
-const resetBtn         = document.getElementById('resetApp');
+// === SETTINGS ===
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsPanel = document.getElementById('settingsPanel');
+const closeSettings = document.getElementById('closeSettings');
+const closeSettingsBtn = document.getElementById('closeSettingsBtn');
 
-settingsBtn.addEventListener('click', () => settingsPanel.classList.remove('hidden'));
-closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.add('hidden'));
+const themeBtn = document.getElementById('themeToggle');
+const wallpaperFile = document.getElementById('wallpaperFile');
+const wallpaperClear = document.getElementById('wallpaperClear');
+const wallpaperOpacity = document.getElementById('wallpaperOpacity');
 
-themeToggleBtn.addEventListener('click', () => {
-  const isDark = document.documentElement.classList.contains('theme-dark');
-  const next = isDark ? 'theme-light' : 'theme-dark';
-  window.__rinSetTheme(next);
-  alert('Тема переключена на: ' + (next === 'theme-dark' ? 'тёмную' : 'светлую'));
-});
+const stickerProb = document.getElementById('stickerProb');
+const stickerProbVal = document.getElementById('stickerProbVal');
+const stickerMode = document.getElementById('stickerMode');
+const stickerSafe = document.getElementById('stickerSafe');
 
-resetBtn.addEventListener('click', () => {
-  if (confirm('Очистить историю и данные?')) {
-    localStorage.clear();
-    location.reload();
-  }
-});
+const voiceEnabled = document.getElementById('voiceEnabled');
+const voiceRate = document.getElementById('voiceRate');
+const voiceRateVal = document.getElementById('voiceRateVal');
 
-/* ====== Глобальные данные ====== */
+const resetApp = document.getElementById('resetApp');
+
+// === STATE ===
 let persona = null, phrases = null, schedule = null, stickers = null;
 let history = [];
 let chainStickerCount = 0;
+let settings = loadSettings();
 
-/* ====== Утилиты ====== */
-const nowLocal   = () => new Date();
-const fmtDateKey = (d) => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-const fmtTime    = (d) => d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+// === HELPERS ===
+function nowLocal(){ return new Date(); }
+function fmtDateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtTime(d){ return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
 
 function loadHistory(){ try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; } }
-function saveHistory(h){ localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-60))); }
+function saveHistory(h){ localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-80))); }
 
-function getInitCountFor(dateKey){ const data = JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}'); return data[dateKey] || 0; }
-function bumpInitCount(dateKey){ const data = JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}'); data[dateKey] = (data[dateKey] || 0) + 1; localStorage.setItem(DAILY_INIT_KEY, JSON.stringify(data)); }
+function loadSettings(){ try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; } }
+function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
 
-function weightedPick(arr){
-  const total = arr.reduce((s,a)=>s+(a.weight||1),0);
-  let r = Math.random()*total;
-  for (const a of arr){ r -= (a.weight||1); if (r <= 0) return a; }
-  return arr[0];
+// === UI SETTINGS PANEL ===
+settingsToggle.onclick = () => settingsPanel.classList.remove('hidden');
+closeSettings.onclick = closeSettingsBtn.onclick = () => settingsPanel.classList.add('hidden');
+
+themeBtn.onclick = () => {
+  const isDark = document.documentElement.classList.contains('theme-dark');
+  const next = isDark ? 'theme-light' : 'theme-dark';
+  window.__rinSetTheme(next);
+};
+
+wallpaperFile.onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    settings.wallpaper = reader.result;
+    saveSettings();
+    applyWallpaper();
+  };
+  reader.readAsDataURL(file);
+};
+wallpaperClear.onclick = () => {
+  delete settings.wallpaper;
+  saveSettings();
+  applyWallpaper();
+};
+wallpaperOpacity.oninput = () => {
+  settings.wallpaperOpacity = wallpaperOpacity.value;
+  saveSettings();
+  applyWallpaper();
+};
+
+stickerProb.oninput = () => {
+  stickerProbVal.textContent = stickerProb.value+'%';
+  settings.stickerProb = parseInt(stickerProb.value,10);
+  saveSettings();
+};
+stickerMode.onchange = () => { settings.stickerMode = stickerMode.value; saveSettings(); };
+stickerSafe.onchange = () => { settings.stickerSafe = stickerSafe.checked; saveSettings(); };
+
+voiceEnabled.onchange = () => { settings.voiceEnabled = voiceEnabled.checked; saveSettings(); };
+voiceRate.oninput = () => {
+  voiceRateVal.textContent = voiceRate.value+'%';
+  settings.voiceRate = parseInt(voiceRate.value,10);
+  saveSettings();
+};
+
+resetApp.onclick = () => {
+  if (confirm('Сбросить все данные и настройки?')) {
+    localStorage.clear();
+    location.reload();
+  }
+};
+
+// === APPLY SETTINGS ===
+function applyWallpaper(){
+  if (settings.wallpaper){
+    chatEl.style.backgroundImage = `url(${settings.wallpaper})`;
+    chatEl.style.backgroundSize = 'cover';
+    chatEl.style.backgroundPosition = 'center';
+    chatEl.style.backgroundRepeat = 'no-repeat';
+    chatEl.style.opacity = (settings.wallpaperOpacity||90)/100;
+  } else {
+    chatEl.style.backgroundImage = '';
+    chatEl.style.opacity = 1;
+  }
 }
-function hourMood(){
-  const h = new Date().getHours();
-  if (h >= 6 && h < 12) return 'morning';
-  if (h >= 12 && h < 18) return 'day';
-  if (h >= 18 && h < 23) return 'evening';
-  return 'night';
+function applySettingsUI(){
+  stickerProb.value = settings.stickerProb ?? 30;
+  stickerProbVal.textContent = (settings.stickerProb ?? 30)+'%';
+  stickerMode.value = settings.stickerMode || 'smart';
+  stickerSafe.checked = settings.stickerSafe || false;
+  voiceEnabled.checked = settings.voiceEnabled || false;
+  voiceRate.value = settings.voiceRate ?? 20;
+  voiceRateVal.textContent = (settings.voiceRate ?? 20)+'%';
+  wallpaperOpacity.value = settings.wallpaperOpacity ?? 90;
+  applyWallpaper();
 }
+applySettingsUI();
 
-/* ====== Разметка чат‑сообщений ====== */
+// === BUBBLES ===
 function addBubble(text, who='assistant', ts = Date.now()){
   const dateObj = new Date(ts);
   const row = document.createElement('div');
@@ -86,7 +149,7 @@ function addBubble(text, who='assistant', ts = Date.now()){
   wrap.className = 'bubble ' + (who === 'user' ? 'me' : 'her');
 
   const msg = document.createElement('span');
-  msg.textContent = text;
+  msg.textContent = text.replace(/\?{2,}/g,'?'); // фикс "???" стиля
 
   const timeEl = document.createElement('span');
   timeEl.className = 'bubble-time';
@@ -97,268 +160,63 @@ function addBubble(text, who='assistant', ts = Date.now()){
   row.appendChild(wrap);
   chatEl.appendChild(row);
   chatEl.scrollTop = chatEl.scrollHeight;
+
+  // озвучка (короткие ответы)
+  if (who==='assistant' && settings.voiceEnabled && Math.random() < (settings.voiceRate||20)/100) {
+    speakTTS(text);
+  }
 }
-function addTyping(){
+
+function addStickerBubble(src, who='assistant'){
   const row = document.createElement('div');
-  row.className = 'row her typing-row';
-  row.innerHTML = `<img class="avatar small" src="/avatar.jpg" alt="Рин" />
-    <div class="bubble her typing"><span></span><span></span><span></span></div>`;
-  chatEl.appendChild(row);
-  chatEl.scrollTop = chatEl.scrollHeight;
-  return row;
-}
-
-/* ============================
-   СТИКЕРЫ: триггеры и выбор
-   ============================ */
-
-// Ключевые триггеры (рус/транслит, несколько форм одного слова)
-const KEY_ROMANCE_RE = /(поцел\w*|обним\w*|любл\w*|скуч\w*|рядом|ласк\w*)/i;
-const KEY_NEG_RE     = /(злюсь|злой|зла|сердит|раздраж|бесит|груст|плохо|тревог|расстро|больно|обидно|устал|выгорел)/i;
-
-function shouldShowSticker(userText='', replyText='') {
-  // Романтика — всегда; иначе 30%
-  if (KEY_ROMANCE_RE.test(userText) || KEY_ROMANCE_RE.test(replyText)) return true;
-  return Math.random() < 0.30;
-}
-
-/**
- * Умный подбор стикера:
- *  - романтические ключи → романтика/нежность;
- *  - негатив → спокойные/поддерживающие;
- *  - иначе — по времени суток/keywords;
- *  - в позитивных контекстах исключаем angry/skeptical и т.п.
- */
-function pickStickerSmart(replyText, windowPool, userText, opts = {}) {
-  if (!stickers || stickers._schema !== 'v2' || !Array.isArray(stickers.stickers)) return null;
-  const list = stickers.stickers;
-  if (!list.length) return null;
-
-  const BAD_MOODS   = ['angry','skeptical','sad','frustrated'];
-  const hasNegative = KEY_NEG_RE.test(userText || '') || KEY_NEG_RE.test(replyText || '');
-  const forcePositive = !!opts.forcePositive;
-
-  // «Безопасный» пул (не даём строгие/скептичные в тёплом контексте)
-  const safeList = (!hasNegative || forcePositive)
-    ? list.filter(s => !BAD_MOODS.some(m => (s.moods||[]).includes(m)))
-    : list;
-
-  const byMood = (moods) => safeList.filter(s => (s.moods||[]).some(m => moods.includes(m)));
-  const byKw   = (text)  => safeList.filter(s => (s.keywords||[]).some(k => new RegExp(k,'i').test(text)));
-
-  // 1) РОМАНТИКА: keywords → романтичный пул
-  if (KEY_ROMANCE_RE.test(userText || '') || KEY_ROMANCE_RE.test(replyText || '')) {
-    const hit = byKw(userText || replyText || '');
-    if (hit.length) return weightedPick(hit);
-    const romanticPool = byMood(['romantic','tender','cosy','playful','shy','warm','soft','smile','happy']);
-    if (romanticPool.length) return weightedPick(romanticPool);
-  }
-
-  // 2) Негатив — поддерживающие/спокойные
-  if (hasNegative) {
-    const calm = byMood(['support','calm','cosy','tender','smile','warm','soft']);
-    if (calm.length) return weightedPick(calm);
-  }
-
-  // 3) Совпадение по keywords из ответа
-  if (replyText) {
-    const hitR = byKw(replyText);
-    if (hitR.length) return weightedPick(hitR);
-  }
-
-  // 4) По времени суток
-  const tMood = windowPool || hourMood();
-  const def = stickers.defaults?.byTime?.[tMood];
-  if (def && Math.random() < (def.p ?? 0.25)) {
-    const pool = byMood(def.moods || []);
-    if (pool.length) return weightedPick(pool);
-  }
-
-  // 5) Мягкий fallback — только тёплые
-  const fallback = byMood(['happy','smile','cosy','romantic','tender','playful','shy','warm','soft']);
-  return fallback.length ? weightedPick(fallback) : null;
-}
-
-/* ====== Вставка стикера ====== */
-function addStickerBubble(src, who='assistant') {
-  const row = document.createElement('div');
-  row.className = 'row ' + (who === 'user' ? 'me' : 'her');
+  row.className = 'row ' + (who==='user' ? 'me' : 'her');
   const timeStr = fmtTime(new Date());
-
-  if (who === 'user') {
-    row.innerHTML = `
-      <div class="bubble me sticker-only">
-        <img class="sticker" src="${src}" alt="sticker"/>
-        <span class="bubble-time">${timeStr}</span>
-      </div>`;
+  if (who==='user'){
+    row.innerHTML = `<div class="bubble me sticker-only"><img class="sticker" src="${src}" alt="sticker"/><span class="bubble-time">${timeStr}</span></div>`;
   } else {
-    row.innerHTML = `
-      <img class="avatar small" src="/avatar.jpg" alt="Рин" />
-      <div class="bubble her sticker-only">
-        <img class="sticker" src="${src}" alt="sticker"/>
-        <span class="bubble-time">${timeStr}</span>
-      </div>`;
+    row.innerHTML = `<img class="avatar small" src="/avatar.jpg" alt="Рин"/><div class="bubble her sticker-only"><img class="sticker" src="${src}" alt="sticker"/><span class="bubble-time">${timeStr}</span></div>`;
   }
-
   chatEl.appendChild(row);
   chatEl.scrollTop = chatEl.scrollHeight;
-  return row;
 }
 
-/* ============================
-   Инициализация
-   ============================ */
+// === TTS (OpenAI) ===
+async function speakTTS(text){
+  try{
+    const res = await fetch("/api/tts", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ text })
+    });
+    if(!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.play();
+  }catch(e){ console.warn("TTS error",e); }
+}
+
+// === INIT ===
 (async function init(){
   try {
-    const [p1, p2, p3, p4] = await Promise.all([
+    const [p1,p2,p3,p4] = await Promise.all([
       fetch('/data/rin_persona.json').then(r=>r.json()),
-      fetch('/data/rin_phrases.json?v=2025-03-05').then(r=>r.json()),
+      fetch('/data/rin_phrases.json').then(r=>r.json()),
       fetch('/data/rin_schedule.json').then(r=>r.json()),
-      fetch('/data/rin_stickers.json?v=2025-03-05').then(r=>r.json())
+      fetch('/data/rin_stickers.json').then(r=>r.json())
     ]);
-    persona = p1; phrases = p2; schedule = p3; stickers = p4;
-  } catch (e) { console.warn('Не удалось загрузить JSON', e); }
+    persona=p1; phrases=p2; schedule=p3; stickers=p4;
+  } catch(e){ console.warn("Не удалось загрузить JSON",e); }
 
-  history = loadHistory();
-  if (history.length) {
-    for (const m of history) {
-      addBubble(m.content, m.role === 'user' ? 'user' : 'assistant', m.ts);
+  history=loadHistory();
+  if(history.length){
+    for(const m of history){
+      addBubble(m.content, m.role==='user'?'user':'assistant', m.ts);
     }
   } else {
-    const greeting = 'Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸';
-    addBubble(greeting, 'assistant');
-
-    // На приветствии — только тёплые (никаких строгих/скептических)
-    const st = pickStickerSmart(greeting, 'morning', '', { forcePositive: true });
-    if (shouldShowSticker('', greeting) && st) {
-      addStickerBubble(st.src, 'assistant');
-      chainStickerCount++;
-    }
-
-    history.push({ role:'assistant', content:greeting, ts: Date.now() });
+    const greeting="Привет, это я — Рин 🌸 рада снова тебя видеть.";
+    addBubble(greeting,'assistant');
+    history.push({ role:'assistant', content:greeting, ts:Date.now() });
     saveHistory(history);
-  }
-
-  // Псевдо‑статус
-  setInterval(()=>{
-    const r = Math.random();
-    peerStatus.textContent = r < 0.85 ? 'онлайн' : 'была недавно';
-  }, 15000);
-
-  // Автоинициативы по расписанию
-  setInterval(tryInitiateBySchedule, 60 * 1000);
-  tryInitiateBySchedule();
-})();
-
-/* ====== Инициативы по расписанию ====== */
-function inWindow(local, fromHHMM, toHHMM){
-  const [fh, fm] = fromHHMM.split(':').map(Number);
-  const [th, tm] = toHHMM.split(':').map(Number);
-  const min = local.getHours()*60 + local.getMinutes();
-  const a = fh*60+fm, b = th*60+tm;
-  return min >= a && min <= b;
-}
-function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-
-async function tryInitiateBySchedule(){
-  if (!schedule || !phrases) return;
-  const d = nowLocal(); const dateKey = fmtDateKey(d);
-
-  // Смена дня — сбрасываем счётчик инициатив и серию стикеров
-  const lastKeyInStore = Object.keys(JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}')).pop();
-  if (lastKeyInStore && lastKeyInStore !== dateKey) {
-    localStorage.setItem(DAILY_INIT_KEY, JSON.stringify({}));
-    chainStickerCount = 0;
-  }
-
-  const count = getInitCountFor(dateKey);
-  if (count >= (schedule.max_daily_initiations || 2)) return;
-
-  const win = (schedule.windows || []).find(w => inWindow(d, w.from, w.to) && Math.random() < (w.probability || 0.5));
-  if (!win) return;
-
-  const last = history[history.length-1];
-  if (last && last.role === 'assistant' && d - new Date(last.ts || Date.now()) < 15*60*1000) return;
-
-  const pool = phrases[win.pool] ? win.pool : 'morning';
-  let text = pick(phrases[pool] || phrases.morning);
-
-  peerStatus.textContent = 'печатает…';
-  const trow = addTyping();
-  setTimeout(async () => {
-    trow.remove();
-    peerStatus.textContent = 'онлайн';
-    addBubble(text, 'assistant');
-
-    const st = pickStickerSmart(text, win.pool, '', { forcePositive: true });
-    if (shouldShowSticker('', text) && st) {
-      addStickerBubble(st.src, 'assistant');
-      chainStickerCount++;
-    }
-
-    history.push({ role:'assistant', content:text, ts: Date.now() });
-    saveHistory(history);
-    bumpInitCount(fmtDateKey(d));
-  }, 1200 + Math.random()*1200);
-}
-
-/* ====== Обработчик отправки ====== */
-formEl.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const text = inputEl.value.trim();
-  if (!text) return;
-
-  addBubble(text, 'user');
-  history.push({ role: 'user', content: text, ts: Date.now() });
-  saveHistory(history);
-  inputEl.value = '';
-  inputEl.focus();
-
-  peerStatus.textContent = 'печатает…';
-  const typingRow = addTyping();
-
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history, pin: localStorage.getItem('rin-pin') })
-    });
-    const data = await res.json();
-    typingRow.remove();
-
-    if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP ' + res.status));
-    peerStatus.textContent = 'онлайн';
-
-    addBubble(data.reply, 'assistant');
-
-    let st = pickStickerSmart(data.reply, null, text, { forcePositive: false });
-    if (shouldShowSticker(text, data.reply)) {
-      if (!st && stickers && stickers.stickers) {
-        // подстраховка: если ничего не подобралось, берём тёплые
-        const fb = stickers.stickers.filter(s => (s.moods||[]).some(m =>
-          ['romantic','tender','cosy','smile','happy','shy','warm','soft'].includes(m)
-        ));
-        st = fb.length ? weightedPick(fb) : null;
-      }
-      if (st) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
-    }
-
-    history.push({ role:'assistant', content:data.reply, ts: Date.now() });
-    saveHistory(history);
-
-  } catch (err) {
-    typingRow.remove();
-    peerStatus.textContent = 'онлайн';
-    addBubble('Ой… связь шалит. ' + (err?.message || ''), 'assistant');
-  }
-});
-
-/* ====== Скролл на дно при наборе (мобайл) ====== */
-(function () {
-  function keepBottom(){ setTimeout(() => { chatEl.scrollTop = chatEl.scrollHeight; }, 50); }
-  inputEl.addEventListener('focus', keepBottom);
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', keepBottom);
-    window.visualViewport.addEventListener('scroll', keepBottom);
   }
 })();
