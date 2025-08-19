@@ -1,75 +1,105 @@
-/* public/chat.js — фронт чата Рин, согласованный с твоим index.html */
+/* public/chat.js — Рин WebApp: чат, настройки, стикеры, обои, голос-кнопка (TTS) */
 
 const STORAGE_KEY    = 'rin-history-v2';
 const DAILY_INIT_KEY = 'rin-init-count';
 const THEME_KEY      = 'rin-theme';
 
-/* настройки, что храним в LS */
-const LS_STICKER_PROB   = 'rin-sticker-prob';    // 0..50 (%)
-const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off
-const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'
-const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0'
-const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
-const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
-const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
+/* Настройки (LS) */
+const LS_SETTINGS        = 'rin-settings';           // единый объект {voiceEnabled, voiceRate, ...}
+const LS_STICKER_PROB    = 'rin-sticker-prob';       // 0..50 (%)
+const LS_STICKER_MODE    = 'rin-sticker-mode';       // smart | keywords | off
+const LS_STICKER_SAFE    = 'rin-sticker-safe';       // '1' | '0'
+const LS_WP_DATA         = 'rin-wallpaper-data';     // dataURL
+const LS_WP_OPACITY      = 'rin-wallpaper-opacity';  // 0..100
 
 /* DOM */
-const chatEl        = document.getElementById('chat');
-const formEl        = document.getElementById('form');
-const inputEl       = document.getElementById('input');
-const peerStatus    = document.getElementById('peerStatus');
+const chatEl         = document.getElementById('chat');
+const formEl         = document.getElementById('form');
+const inputEl        = document.getElementById('input');
+const peerStatus     = document.getElementById('peerStatus');
 
-const settingsToggle= document.getElementById('settingsToggle');
-const settingsPanel = document.getElementById('settingsPanel');
-const closeSettings = document.getElementById('closeSettings');
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsPanel  = document.getElementById('settingsPanel');
+const closeSettings  = document.getElementById('closeSettings');
 const closeSettingsBtn = document.getElementById('closeSettingsBtn');
 
-const themeToggle   = document.getElementById('themeToggle');
+const themeToggle    = document.getElementById('themeToggle');
 
 /* Обои */
-const wpFile        = document.getElementById('wallpaperFile');
-const wpClear       = document.getElementById('wallpaperClear');
-const wpOpacity     = document.getElementById('wallpaperOpacity');
+const wpFile         = document.getElementById('wallpaperFile');
+const wpClear        = document.getElementById('wallpaperClear');
+const wpOpacity      = document.getElementById('wallpaperOpacity');
 
 /* Стикеры */
-const stickerProb   = document.getElementById('stickerProb');
-const stickerProbVal= document.getElementById('stickerProbVal');
-const stickerMode   = document.getElementById('stickerMode');
-const stickerSafe   = document.getElementById('stickerSafe');
+const stickerProb    = document.getElementById('stickerProb');
+const stickerProbVal = document.getElementById('stickerProbVal');
+const stickerMode    = document.getElementById('stickerMode');
+const stickerSafe    = document.getElementById('stickerSafe');
 
 /* Голос */
-const voiceEnabled  = document.getElementById('voiceEnabled');
-const voiceRate     = document.getElementById('voiceRate');
-const voiceRateVal  = document.getElementById('voiceRateVal');
+const voiceEnabledEl = document.getElementById('voiceEnabled');
+const voiceRateEl    = document.getElementById('voiceRate');
+const voiceRateValEl = document.getElementById('voiceRateVal');
 
 /* Данные */
-const resetApp      = document.getElementById('resetApp');
+const resetApp       = document.getElementById('resetApp');
 
-/* state */
+/* State */
 let persona=null, phrases=null, schedule=null, stickers=null;
 let history=[];
 let chainStickerCount=0;
 
-/* utils */
-const nowLocal=()=>new Date();
-const fmtDateKey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-const fmtTime=d=>d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+/* Для голосовой кнопки */
+let currentAudio = null;
+let currentBtn   = null;
+
+/* Utils */
+const nowLocal = () => new Date();
+const fmtDateKey = (d) => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const fmtTime = (d) => d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+function fmtSecs(s){
+  s = Math.max(0, Math.floor(s));
+  const m = Math.floor(s/60), ss = s%60;
+  return m + ':' + String(ss).padStart(2,'0');
+}
 
 function loadHistory(){ try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');}catch{return[];} }
-function saveHistory(h){ localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-60))); }
+function saveHistory(h){ localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-80))); }
 
 function getInitCountFor(k){ const m=JSON.parse(localStorage.getItem(DAILY_INIT_KEY)||'{}'); return m[k]||0; }
 function bumpInitCount(k){ const m=JSON.parse(localStorage.getItem(DAILY_INIT_KEY)||'{}'); m[k]=(m[k]||0)+1; localStorage.setItem(DAILY_INIT_KEY, JSON.stringify(m)); }
 
-/* === UI: SETTINGS === */
+/* === SETTINGS helpers === */
+function readSettings(){
+  try { return JSON.parse(localStorage.getItem(LS_SETTINGS)||'{}'); } catch { return {}; }
+}
+function writeSettings(next){
+  localStorage.setItem(LS_SETTINGS, JSON.stringify(next||{}));
+}
+function voiceSettings(){
+  const st = readSettings();
+  return {
+    enabled: !!st.voiceEnabled,
+    rate: Number(st.voiceRate ?? 20), // 0..100 (%), но UI по умолчанию 0..50
+  };
+}
+function shouldSpeakText(text){
+  const {enabled, rate} = voiceSettings();
+  if (!enabled) return false;
+  const len = (text||'').trim().length;
+  if (len < 12)  return Math.random() < Math.min(0.9, rate/100);
+  if (len < 140) return Math.random() < (rate/100);
+  return false;
+}
+
+/* === SETTINGS UI === */
 function openSettings(){ settingsPanel.classList.remove('hidden'); }
 function closeSettingsPanel(){ settingsPanel.classList.add('hidden'); }
+settingsToggle && (settingsToggle.onclick = openSettings);
+closeSettings && (closeSettings.onclick = closeSettingsPanel);
+closeSettingsBtn && (closeSettingsBtn.onclick = closeSettingsPanel);
 
-if (settingsToggle){ settingsToggle.onclick=openSettings; }
-if (closeSettings){ closeSettings.onclick=closeSettingsPanel; }
-if (closeSettingsBtn){ closeSettingsBtn.onclick=closeSettingsPanel; }
-
-/* — Тема — */
+/* Тема */
 if (themeToggle){
   themeToggle.onclick=()=>{
     const isDark=document.documentElement.classList.contains('theme-dark');
@@ -80,16 +110,13 @@ if (themeToggle){
   };
 }
 
-/* — Обои — применяем CSS‑переменные (см. style.css) — */
+/* Обои — используем те же имена переменных, что в style.css: --wallpaper-url / --wallpaper-opacity */
 function applyWallpaper(){
   const data = localStorage.getItem(LS_WP_DATA) || '';
   const op   = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100;
-
-  // ❗ Используем те же имена, что в style.css
   document.documentElement.style.setProperty('--wallpaper-url', data ? `url("${data}")` : 'none');
   document.documentElement.style.setProperty('--wallpaper-opacity', String(op));
-
-  if (wpOpacity) wpOpacity.value = Math.round(op * 100);
+  if (wpOpacity) wpOpacity.value = Math.round(op*100);
 }
 applyWallpaper();
 
@@ -118,17 +145,17 @@ if (wpOpacity){
   };
 }
 
-/* — Стикеры — */
+/* Стикеры */
 function lsStickerProb(){ return +(localStorage.getItem(LS_STICKER_PROB) || '30'); } // %
 function lsStickerMode(){ return localStorage.getItem(LS_STICKER_MODE) || 'smart'; }
-function lsStickerSafe(){ return localStorage.getItem(LS_STICKER_SAFE)==='1'; }
+function lsStickerSafe(){ return localStorage.getItem(LS_STICKER_SAFE) === '1'; }
 
 if (stickerProb){
   stickerProb.value = String(lsStickerProb());
-  if (stickerProbVal) stickerProbVal.textContent = `${stickerProb.value}%`;
+  stickerProbVal && (stickerProbVal.textContent = `${stickerProb.value}%`);
   stickerProb.oninput = () => {
     localStorage.setItem(LS_STICKER_PROB, String(stickerProb.value));
-    if (stickerProbVal) stickerProbVal.textContent = `${stickerProb.value}%`;
+    stickerProbVal && (stickerProbVal.textContent = `${stickerProb.value}%`);
   };
 }
 if (stickerMode){
@@ -140,31 +167,39 @@ if (stickerSafe){
   stickerSafe.onchange = ()=>localStorage.setItem(LS_STICKER_SAFE, stickerSafe.checked?'1':'0');
 }
 
-/* — Голос — */
-function lsSpeakEnabled(){ return localStorage.getItem(LS_SPEAK_ENABLED) === '1'; }
-function lsSpeakRate(){ return +(localStorage.getItem(LS_SPEAK_RATE) || '20'); } // %
-if (voiceEnabled){
-  voiceEnabled.checked = lsSpeakEnabled();
-  voiceEnabled.onchange = ()=>localStorage.setItem(LS_SPEAK_ENABLED, voiceEnabled.checked?'1':'0');
-}
-if (voiceRate){
-  voiceRate.value = String(lsSpeakRate());
-  if (voiceRateVal) voiceRateVal.textContent = `${voiceRate.value}%`;
-  voiceRate.oninput = ()=>{
-    localStorage.setItem(LS_SPEAK_RATE, String(voiceRate.value));
-    if (voiceRateVal) voiceRateVal.textContent = `${voiceRate.value}%`;
-  };
-}
+/* Голос: сохраняем в единый объект настроек */
+(function initVoiceSettingsUI(){
+  const st = readSettings();
+  if (voiceEnabledEl){
+    voiceEnabledEl.checked = !!st.voiceEnabled;
+    voiceEnabledEl.onchange = ()=>{
+      const cur = readSettings();
+      cur.voiceEnabled = voiceEnabledEl.checked;
+      writeSettings(cur);
+    };
+  }
+  if (voiceRateEl){
+    const rate = Number(st.voiceRate ?? 20);
+    voiceRateEl.value = String(rate);
+    voiceRateValEl && (voiceRateValEl.textContent = `${rate}%`);
+    voiceRateEl.oninput = ()=>{
+      const cur = readSettings();
+      cur.voiceRate = Number(voiceRateEl.value);
+      writeSettings(cur);
+      voiceRateValEl && (voiceRateValEl.textContent = `${voiceRateEl.value}%`);
+    };
+  }
+})();
 
-/* — Сброс — */
+/* Сброс приложения */
 if (resetApp){
   resetApp.onclick=()=>{
     if (!confirm('Сбросить историю чата, настройки и кэш?')) return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(DAILY_INIT_KEY);
-    // не трогаем PIN и тему, но чистим пользовательские настройки
-    [LS_STICKER_PROB,LS_STICKER_MODE,LS_STICKER_SAFE,LS_SPEAK_ENABLED,LS_SPEAK_RATE,LS_WP_DATA,LS_WP_OPACITY].forEach(k=>localStorage.removeItem(k));
-    chatEl.innerHTML='';
+    localStorage.removeItem(LS_SETTINGS);
+    [LS_STICKER_PROB,LS_STICKER_MODE,LS_STICKER_SAFE,LS_WP_DATA,LS_WP_OPACITY].forEach(k=>localStorage.removeItem(k));
+    chatEl.innerHTML = '';
     history=[];
     applyWallpaper();
     greet();
@@ -172,7 +207,7 @@ if (resetApp){
   };
 }
 
-/* === Рендер сообщений === */
+/* === Рендер пулек === */
 function addBubble(text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
   const row = document.createElement('div');
@@ -193,16 +228,28 @@ function addBubble(text, who='assistant', ts=Date.now()){
   wrap.className='bubble ' + (who==='user'?'me':'her');
 
   const msg=document.createElement('span');
-  msg.textContent=text;
+  msg.textContent=text.replace(/\?{2,}/g,'?');
 
-  const time=document.createElement('span');
-  time.className='bubble-time';
-  time.textContent=fmtTime(d);
+  // мета‑строка: время
+  const timeWrap=document.createElement('span');
+  timeWrap.className='bubble-time';
+  timeWrap.textContent=fmtTime(d);
 
-  wrap.appendChild(msg); wrap.appendChild(time);
+  // обёртка для времени + голос‑кнопки (если будет)
+  const metaHolder = document.createElement('span');
+  metaHolder.className = 'bubble-meta';
+  metaHolder.appendChild(timeWrap);
+
+  wrap.appendChild(msg);
+  wrap.appendChild(metaHolder);
   row.appendChild(wrap);
   chatEl.appendChild(row);
   chatEl.scrollTop=chatEl.scrollHeight;
+
+  // если это реплика Рин — можем добавить кнопку озвучки (по правилу)
+  if (who !== 'user' && shouldSpeakText(text)) {
+    makeVoiceBtn(metaHolder, text);
+  }
 }
 
 function addTyping(){
@@ -215,13 +262,107 @@ function addTyping(){
   return row;
 }
 
+/* === Голос‑кнопка === */
+function svgPlay(){ return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7V5z" fill="currentColor"/></svg>`; }
+function svgPause(){ return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/></svg>`; }
+function svgSpinner(){ return `<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><circle cx="12" cy="3" r="2" opacity=".2"/><circle cx="19.09" cy="6.91" r="2" opacity=".35"/><circle cx="21" cy="12" r="2" opacity=".5"/><circle cx="19.09" cy="17.09" r="2" opacity=".65"/><circle cx="12" cy="21" r="2" opacity=".8"/></g></svg>`; }
+
+function makeVoiceBtn(metaHolder, text){
+  const btn = document.createElement('button');
+  btn.className = 'voice-btn';
+  btn.type = 'button';
+  btn.setAttribute('aria-label','Воспроизвести озвучку');
+  btn.innerHTML = svgPlay();
+
+  const time = document.createElement('span');
+  time.className = 'voice-time';
+  time.hidden = true;
+
+  metaHolder.appendChild(btn);
+  metaHolder.appendChild(time);
+
+  let loaded = false;
+  let duration = 0;
+  const audio = new Audio();
+  audio.preload = 'none';
+
+  async function ensureAudioLoaded(){
+    if (loaded && audio.src) return true;
+    try{
+      btn.innerHTML = svgSpinner();
+      const url = `/api/tts?text=${encodeURIComponent(text)}`;
+      const res = await fetch(url, { method:'GET' });
+      if (!res.ok) throw new Error('TTS HTTP '+res.status);
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      if (currentAudio && currentAudio !== audio){
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      audio.src = objUrl;
+      await audio.load();
+      loaded = true;
+      duration = isFinite(audio.duration) ? audio.duration : 0;
+      time.textContent = fmtSecs(duration||0);
+    }catch(e){
+      btn.innerHTML = svgPlay();
+      console.warn('TTS load error', e);
+      return false;
+    }
+    return true;
+  }
+
+  audio.addEventListener('ended', () => {
+    btn.innerHTML = svgPlay();
+    time.hidden = false;
+    time.textContent = fmtSecs(duration||0);
+    currentAudio = null;
+    currentBtn = null;
+  });
+  audio.addEventListener('timeupdate', () => {
+    if (!time.hidden) {
+      const dur = duration || audio.duration || 0;
+      time.textContent = fmtSecs(Math.max(0, dur - (audio.currentTime||0)));
+    }
+  });
+  audio.addEventListener('pause', () => {
+    if (!audio.ended) btn.innerHTML = svgPlay();
+  });
+
+  btn.addEventListener('click', async () => {
+    if (currentAudio && currentAudio !== audio){
+      currentAudio.pause();
+      currentBtn && (currentBtn.innerHTML = svgPlay());
+    }
+    if (!audio.paused && !audio.ended){
+      audio.pause();
+      return;
+    }
+    const ok = await ensureAudioLoaded();
+    if (!ok) return;
+
+    try{
+      time.hidden = false;
+      // «волна» во время проигрывания
+      btn.innerHTML = `<span class="voice-wave"><i></i><i></i><i></i></span>`;
+      await audio.play();
+      currentAudio = audio;
+      currentBtn = btn;
+      btn.setAttribute('aria-label','Пауза озвучки');
+    }catch(e){
+      console.warn('Audio play error', e);
+      btn.innerHTML = svgPlay();
+    }
+  });
+}
+
 /* === Стикеры === */
 function weightedPick(arr){ const sum=arr.reduce((s,a)=>s+(a.weight||1),0); let r=Math.random()*sum; for(const a of arr){ r-= (a.weight||1); if(r<=0) return a; } return arr[0]; }
 function hourMood(){ const h=new Date().getHours(); if(h>=6&&h<12)return'morning'; if(h>=12&&h<18)return'day'; if(h>=18&&h<23)return'evening'; return'night'; }
 
 function shouldShowSticker(userText, replyText){
-  if (lsStickerMode()==='off') return false;
-  const base = (lsStickerProb()/100);
+  if ((localStorage.getItem(LS_STICKER_MODE)||'smart')==='off') return false;
+  const base = (+(localStorage.getItem(LS_STICKER_PROB)||'30')/100);
   const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
   if (userText && KEY_FLIRT.test(userText)) return true;
   return Math.random()<base;
@@ -235,15 +376,15 @@ function pickStickerSmart(replyText, windowPool, userText){
   const DISCOURAGE=/(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|совет|план|границ)/i;
   const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
 
-  if (lsStickerSafe() && (userText && DISCOURAGE.test(userText))) return null;
+  if ((localStorage.getItem(LS_STICKER_SAFE)==='1') && (userText && DISCOURAGE.test(userText))) return null;
 
-  if (lsStickerMode()==='keywords'){
+  const mode = localStorage.getItem(LS_STICKER_MODE)||'smart';
+  if (mode==='keywords'){
     const pool = (userText?userText:replyText)||'';
     const hit = list.filter(s=> (s.keywords||[]).some(k=>new RegExp(k,'i').test(pool)));
     return hit.length?weightedPick(hit):null;
   }
 
-  // smart
   if (userText && KEY_FLIRT.test(userText)) {
     const hit = list.filter(s=> (s.keywords||[]).some(k=>new RegExp(k,'i').test(userText)));
     if (hit.length) return weightedPick(hit);
@@ -312,7 +453,7 @@ function addStickerBubble(src, who='assistant'){
     greet();
   }
 
-  // карусель статуса
+  // статус
   setInterval(()=>{ peerStatus.textContent = Math.random()<0.85?'онлайн':'была недавно'; },15000);
 
   // планировщик авто‑инициаций
@@ -363,8 +504,8 @@ async function tryInitiateBySchedule(){
     const st=pickStickerSmart(text,win.pool,'');
     if (st && shouldShowSticker('',text)) addStickerBubble(st.src,'assistant');
     history.push({role:'assistant',content:text,ts:Date.now()});
-    saveHistory(history); bumpInitCount(dateKey);
-    maybeSpeak(text); // короткая озвучка
+    saveHistory(history);
+    bumpInitCount(dateKey);
   }, 1200+Math.random()*1200);
 }
 
@@ -404,29 +545,8 @@ formEl.addEventListener('submit', async (e)=>{
 
     history.push({role:'assistant',content:data.reply,ts:Date.now()});
     saveHistory(history);
-
-    maybeSpeak(data.reply);
   }catch(err){
     typingRow.remove(); peerStatus.textContent='онлайн';
     addBubble('Ой… связь шалит. '+(err?.message||''),'assistant');
   }
 });
-
-/* === Озвучка: короткие фразы, c шансом из настроек === */
-async function maybeSpeak(text){
-  if (!lsSpeakEnabled()) return;
-  const rate = lsSpeakRate()/100;     // 0..0.5
-  if (Math.random()>rate) return;
-  const t=(text||'').replace(/\s+/g,' ').trim();
-  if (!t || t.length>180) return;
-
-  try{
-    const r = await fetch('/api/tts',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text:t }) });
-    if (!r.ok) return;
-    const blob=await r.blob();
-    const url=URL.createObjectURL(blob);
-    const audio=new Audio(url);
-    audio.play().catch(()=>{});
-    audio.onended=()=>URL.revokeObjectURL(url);
-  }catch{}
-}
