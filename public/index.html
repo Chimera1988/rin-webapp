@@ -2,41 +2,45 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
+  <title>Рин Акихара — твой компаньон</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Рин Акихара — твой компаньон</title>
-  <link rel="stylesheet" href="/style.css?v=5" />
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/avatar.jpg" />
 
-  <!-- Автологин -->
-  <script>
-    if (!localStorage.getItem('rin-pin')) {
-      window.location.href = '/login.html';
-    }
-  </script>
-
-  <!-- Тема (сохранение выбора) -->
+  <!-- Тема: ставим класс на <html> до отрисовки -->
   <script>
     (function(){
-      const key = 'rin-theme';
-      let t = localStorage.getItem(key);
-      if (!t) {
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const K='rin-theme';
+      let t=localStorage.getItem(K);
+      if(!t){
+        const prefersDark=window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         t = prefersDark ? 'theme-dark' : 'theme-light';
       }
       document.documentElement.classList.add(t);
       window.__rinSetTheme = function(next){
         document.documentElement.classList.remove('theme-dark','theme-light');
         document.documentElement.classList.add(next);
-        localStorage.setItem(key, next);
+        localStorage.setItem(K, next);
       }
     })();
   </script>
+
+  <!-- Автологин по PIN -->
+  <script>
+    if (!localStorage.getItem('rin-pin')) {
+      window.location.replace('/login.html');
+    }
+  </script>
+
+  <link rel="stylesheet" href="/style.css?v=2025-03-05" />
 </head>
 <body>
 
+  <!-- Header -->
   <header class="tg-header">
-    <button class="tg-ico btn-back" aria-label="Назад" title="Назад">
+    <button class="tg-ico btn-back" aria-label="Назад" title="Назад" onclick="history.length>1?history.back():null">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
@@ -55,10 +59,11 @@
     </div>
   </header>
 
+  <!-- Основное приложение -->
   <main class="app">
     <section id="chat" class="chat" aria-live="polite"></section>
 
-    <form id="form" autocomplete="off">
+    <form id="form" class="composer" autocomplete="off">
       <input id="input" type="text" placeholder="Напиши Рин…" maxlength="1000" required />
       <button id="send" type="submit" aria-label="Отправить">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -70,13 +75,34 @@
   </main>
 
   <!-- Панель настроек -->
-  <div id="settingsPanel" class="settings hidden">
-    <h3>⚙️ Настройки</h3>
-    <button id="themeToggle">Переключить тему</button>
-    <button id="resetApp">Сбросить данные</button>
-    <button id="closeSettings">Закрыть</button>
+  <div id="settingsPanel" class="settings hidden" role="dialog" aria-modal="true">
+    <div class="settings__backdrop" id="closeSettings"></div>
+    <div class="settings__sheet">
+      <div class="settings__head">
+        <div class="settings__title">Настройки</div>
+        <button class="settings__close" id="closeSettingsBtn" aria-label="Закрыть">✕</button>
+      </div>
+
+      <div class="settings__row">
+        <div class="settings__label">Тема</div>
+        <div class="settings__actions">
+          <button id="themeToggle" class="btn">Переключить</button>
+        </div>
+      </div>
+
+      <div class="settings__row">
+        <div class="settings__label">Данные</div>
+        <div class="settings__actions">
+          <button id="resetApp" class="btn btn-danger">Сбросить</button>
+        </div>
+      </div>
+
+      <div class="settings__foot">
+        <small>Рин помнит переписку только на этом устройстве (localStorage).</small>
+      </div>
+    </div>
   </div>
 
-  <script src="/chat.js?v=2025-03-04" defer></script>
+  <script src="/chat.js?v=2025-03-05" defer></script>
 </body>
 </html>
