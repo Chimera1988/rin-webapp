@@ -9,7 +9,7 @@
   <link rel="icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" href="/avatar.jpg" />
 
-  <!-- Тема: ставим класс на <html> до отрисовки -->
+  <!-- Тема до отрисовки -->
   <script>
     (function(){
       const K='rin-theme';
@@ -38,7 +38,7 @@
 </head>
 <body>
 
-  <!-- Header -->
+  <!-- Шапка -->
   <header class="tg-header">
     <button class="tg-ico btn-back" aria-label="Назад" title="Назад" onclick="history.length>1?history.back():null">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -59,7 +59,7 @@
     </div>
   </header>
 
-  <!-- Основное приложение -->
+  <!-- Основной экран -->
   <main class="app">
     <section id="chat" class="chat" aria-live="polite"></section>
 
@@ -74,7 +74,7 @@
     </form>
   </main>
 
-  <!-- Панель настроек -->
+  <!-- Настройки -->
   <div id="settingsPanel" class="settings hidden" role="dialog" aria-modal="true">
     <div class="settings__backdrop" id="closeSettings"></div>
     <div class="settings__sheet">
@@ -83,22 +83,77 @@
         <button class="settings__close" id="closeSettingsBtn" aria-label="Закрыть">✕</button>
       </div>
 
+      <!-- Тема -->
       <div class="settings__row">
         <div class="settings__label">Тема</div>
         <div class="settings__actions">
-          <button id="themeToggle" class="btn">Переключить</button>
+          <button id="themeToggle" class="btn">Переключить тему</button>
         </div>
       </div>
 
+      <!-- Обои -->
+      <div class="settings__row">
+        <div class="settings__label">Обои чата</div>
+        <div class="settings__actions" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;">
+          <input id="wallpaperFile" type="file" accept="image/*" class="btn" />
+          <button id="wallpaperClear" class="btn" type="button">Сбросить</button>
+          <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin-top:6px;">
+            <label for="wallpaperOpacity" style="color:var(--muted);font-size:12px;">Непрозрачность</label>
+            <input id="wallpaperOpacity" type="range" min="0" max="100" value="90" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Стикеры -->
+      <div class="settings__row">
+        <div class="settings__label">Стикеры</div>
+        <div class="settings__actions" style="display:grid;gap:8px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label for="stickerProb" style="color:var(--muted);font-size:12px;">Вероятность</label>
+            <input id="stickerProb" type="range" min="0" max="50" value="30" />
+            <span id="stickerProbVal" style="font-size:12px;color:var(--muted);">30%</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label for="stickerMode" style="color:var(--muted);font-size:12px;">Режим</label>
+            <select id="stickerMode" class="btn">
+              <option value="smart">Умный</option>
+              <option value="keywords">Только по ключам</option>
+              <option value="off">Выключить</option>
+            </select>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="stickerSafe" type="checkbox" />
+            <span style="font-size:12px;color:var(--muted);">Не показывать в серьёзных темах</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Голос -->
+      <div class="settings__row">
+        <div class="settings__label">Голос Рин</div>
+        <div class="settings__actions" style="display:grid;gap:8px;">
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="voiceEnabled" type="checkbox" />
+            <span style="font-size:12px;color:var(--muted);">Озвучивать короткие реплики (Lumen)</span>
+          </label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label for="voiceRate" style="color:var(--muted);font-size:12px;">Частота</label>
+            <input id="voiceRate" type="range" min="0" max="50" value="20" />
+            <span id="voiceRateVal" style="font-size:12px;color:var(--muted);">20%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Данные -->
       <div class="settings__row">
         <div class="settings__label">Данные</div>
         <div class="settings__actions">
-          <button id="resetApp" class="btn btn-danger">Сбросить</button>
+          <button id="resetApp" class="btn btn-danger" type="button">Сбросить</button>
         </div>
       </div>
 
       <div class="settings__foot">
-        <small>Рин помнит переписку только на этом устройстве (localStorage).</small>
+        <small>Переписка и персональные настройки хранятся локально на этом устройстве.</small>
       </div>
     </div>
   </div>
