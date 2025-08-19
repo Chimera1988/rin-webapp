@@ -2,13 +2,12 @@
    RIN — public/style.css
    ============================ */
 
-/* Базовые переменные темы */
+/* Тема и переменные */
 :root {
   --bg: #ffffff;
   --bg-soft: #f6f7f9;
   --text: #14171a;
   --muted: #6b7280;
-  --brand: #d23c3c;
 
   --bubble-me: #1f2937;
   --bubble-her: #f1f5f9;
@@ -17,8 +16,12 @@
   --accent: #e11d48;
   --panel: #ffffff;
   --shadow: 0 10px 25px rgba(0,0,0,0.08);
-}
 
+  /* Обои: JS будет писать сюда url(...) */
+  --wallpaper-url: none;
+  --wallpaper-opacity: 1; /* 0..1 */
+  --ring: rgba(0,0,0,0.08); /* тонкая окантовка-тень (не белая линия) */
+}
 .theme-dark {
   --bg: #0e1113;
   --bg-soft: #151a1e;
@@ -31,9 +34,11 @@
 
   --panel: #0f1317;
   --shadow: 0 10px 25px rgba(0,0,0,0.35);
+
+  --ring: rgba(255,255,255,0.08);
 }
 
-/* Сброс и базовая типографика */
+/* Сброс и типографика */
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
@@ -71,7 +76,6 @@ body {
   padding: 8px;
   border-radius: 10px;
 }
-
 .tg-ico:active { opacity: .7; }
 
 .tg-peer {
@@ -81,16 +85,16 @@ body {
   align-items: center;
 }
 
+/* АВАТАР — без белой окантовки */
 .avatar {
   width: 36px; height: 36px;
   border-radius: 50%;
   object-fit: cover;
   display: block;
-  border: 2px solid rgba(255,255,255,0.8);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  border: 0;                                           /* рамка убрана */
+  box-shadow: 0 0 0 1px var(--ring), 0 2px 6px rgba(0,0,0,0.10);
 }
-
-.avatar.small { width: 28px; height: 28px; border-width: 1.5px; }
+.avatar.small { width: 28px; height: 28px; }
 .avatar.small.spacer { visibility: hidden; }
 
 .peer-meta { display: flex; flex-direction: column; line-height: 1.1; }
@@ -104,12 +108,28 @@ body {
   height: calc(100dvh - env(safe-area-inset-bottom, 0px));
 }
 
-/* Лента чата */
+/* Лента чата + обои */
 .chat {
+  position: relative;
   padding: 12px 12px 6px;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   background: var(--bg);
+  /* если есть обои — рисуем фоном через переменную */
+  background-image: var(--wallpaper-url);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  /* Лёгкая вуаль, чтобы текст читался на ярких обоях */
+  isolation: isolate;
+}
+.chat::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in oklab, var(--bg), transparent calc(100% - (var(--wallpaper-opacity) * 100%)));
+  pointer-events: none;
 }
 
 /* Ряд сообщения */
@@ -120,9 +140,7 @@ body {
   align-items: flex-end;
   margin: 6px 0;
 }
-.row.me {
-  grid-template-columns: 1fr 32px;
-}
+.row.me { grid-template-columns: 1fr 32px; }
 .row.me .avatar { order: 2; }
 .row.me .bubble { order: 1; }
 
@@ -176,7 +194,7 @@ body {
   50%      { transform: translateY(-2px); opacity: .9; }
 }
 
-/* Стикер‑бабблы (кружки, без «ореола») */
+/* Стикер-бабблы (кружки, без белой окантовки) */
 .bubble.sticker-only {
   padding: 6px;
   background: transparent;
@@ -189,20 +207,19 @@ body {
   margin-top: 4px;
 }
 
+/* СТИКЕР — без белой линии */
 .sticker {
   display: block;
   width: 140px;
   height: 140px;
   object-fit: cover;
   border-radius: 50%;
-  background: transparent;           /* убираем фон */
+  background: transparent;
   image-rendering: auto;
   -webkit-mask-image: radial-gradient(#000 98%, transparent 100%);
           mask-image: radial-gradient(#000 98%, transparent 100%);
-  /* окантовка, чтобы на тёмной теме не терялся */
-  outline: 2px solid rgba(255,255,255,0.9);
-  outline-offset: -2px;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+  outline: 0;                                   /* белый контур убран */
+  box-shadow: 0 0 0 1px var(--ring), 0 4px 14px rgba(0,0,0,0.12);
 }
 
 /* Компонент ввода */
@@ -299,6 +316,7 @@ body {
   color: var(--text);
   border-radius: 10px;
   padding: 8px 12px;
+  cursor: pointer;
 }
 .settings__actions .btn-danger {
   border-color: transparent;
