@@ -8,14 +8,14 @@
   <title>Рин Акихара — твой компаньон</title>
   <link rel="stylesheet" href="/style.css?v=5" />
 
-  <!-- Обязательный редирект на PIN перед первичной отрисовкой -->
+  <!-- Автологин -->
   <script>
     if (!localStorage.getItem('rin-pin')) {
       window.location.href = '/login.html';
     }
   </script>
 
-  <!-- Тема: применяем до покраски страницы -->
+  <!-- Тема (сохранение выбора) -->
   <script>
     (function(){
       const key = 'rin-theme';
@@ -29,7 +29,7 @@
         document.documentElement.classList.remove('theme-dark','theme-light');
         document.documentElement.classList.add(next);
         localStorage.setItem(key, next);
-      };
+      }
     })();
   </script>
 </head>
@@ -51,7 +51,7 @@
     </div>
 
     <div class="tg-actions">
-      <button id="themeToggle" class="tg-ico" title="Тема">☾</button>
+      <button id="settingsToggle" class="tg-ico" title="Настройки">⚙️</button>
     </div>
   </header>
 
@@ -69,6 +69,14 @@
     </form>
   </main>
 
-  <script src="/chat.js?v=20250303" defer></script>
+  <!-- Панель настроек -->
+  <div id="settingsPanel" class="settings hidden">
+    <h3>⚙️ Настройки</h3>
+    <button id="themeToggle">Переключить тему</button>
+    <button id="resetApp">Сбросить данные</button>
+    <button id="closeSettings">Закрыть</button>
+  </div>
+
+  <script src="/chat.js?v=2025-03-04" defer></script>
 </body>
 </html>
