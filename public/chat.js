@@ -550,3 +550,20 @@ formEl.addEventListener('submit', async (e)=>{
     addBubble('Ой… связь шалит. '+(err?.message||''),'assistant');
   }
 });
+// Панель настроек
+const settingsToggle = document.getElementById("settingsToggle");
+const settingsPanel = document.getElementById("settingsPanel");
+const closeSettings = document.getElementById("closeSettings");
+const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+
+if (settingsToggle && settingsPanel) {
+  settingsToggle.addEventListener("click", () => {
+    settingsPanel.classList.remove("hidden");
+  });
+
+  [closeSettings, closeSettingsBtn].forEach(btn => {
+    if (btn) btn.addEventListener("click", () => {
+      settingsPanel.classList.add("hidden");
+    });
+  });
+}
