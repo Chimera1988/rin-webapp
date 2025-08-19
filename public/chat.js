@@ -112,9 +112,10 @@ function hourMood(){
   return 'night';
 }
 
+/* — шанс показа стикера: флирт — 100%, иначе 30% — */
 function shouldShowSticker(userText, replyText){
-  const KEY_FLIRT = /(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
-  if (userText && KEY_FLIRT.test(userText)) return true;
+  const KEY_FLIRT = /(обним\w*|поцел\w*|скуч\w*|нрав\w*|рядом|любл\w*|неж\w*|ласк\w*)/i;
+  if ((userText && KEY_FLIRT.test(userText)) || (replyText && KEY_FLIRT.test(replyText))) return true;
   return Math.random() < 0.30;
 }
 
@@ -124,8 +125,9 @@ function pickStickerSmart(replyText, windowPool, userText) {
   if (!list.length) return null;
 
   const DISCOURAGE = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|совет|план|границ)/i;
-  const KEY_FLIRT = /(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
+  const KEY_FLIRT = /(обним\w*|поцел\w*|скуч\w*|нрав\w*|рядом|любл\w*|неж\w*|ласк\w*)/i;
 
+  // 1) если флирт — сначала keywords, затем романтичный пул
   if (userText && KEY_FLIRT.test(userText)) {
     const hit = list.filter(s => (s.keywords||[]).some(k => new RegExp(k,'i').test(userText)));
     if (hit.length) return weightedPick(hit);
@@ -133,26 +135,26 @@ function pickStickerSmart(replyText, windowPool, userText) {
     if (romanticPool.length) return weightedPick(romanticPool);
   }
 
+  // 2) негатив — не ставим стикер
   if (userText && DISCOURAGE.test(userText)) return null;
 
+  // 3) keywords в ответе
   if (replyText){
     const hitKw = list.filter(s => (s.keywords||[]).some(k => new RegExp(k,'i').test(replyText)));
     if (hitKw.length) return weightedPick(hitKw);
   }
 
+  // 4) по времени суток
   const tMood = windowPool || hourMood();
   const def = stickers.defaults?.byTime?.[tMood];
-  if (def && Math.random() < (def.p ?? 0.1)) {
-    const pool = list.filter(s => (s.moods||[]).some(m => def.moods.includes(m)));
+  if (def && Math.random() < (def.p ?? 0.25)) {
+    const pool = list.filter(s => (s.moods||[]).some(m => (def.moods||[]).includes(m)));
     if (pool.length) return weightedPick(pool);
   }
 
-  if (replyText && KEY_FLIRT.test(replyText)) {
-    const pool = list.filter(s => (s.moods||[]).some(m => ['romantic','playful','cosy','tender','shy'].includes(m)));
-    if (pool.length && Math.random() < 0.35) return weightedPick(pool);
-  }
-
-  return null;
+  // 5) мягкий fallback — чтобы не вернулся null
+  const fallback = list.filter(s => (s.moods||[]).some(m => ['happy','smile','cosy','romantic','tender'].includes(m)));
+  return fallback.length ? weightedPick(fallback) : null;
 }
 
 /* ——— sticker bubble (без «ореола») + время ——— */
@@ -200,8 +202,17 @@ function addStickerBubble(src, who='assistant') {
   } else {
     const greeting = 'Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸';
     addBubble(greeting, 'assistant');
-    const st = pickStickerSmart(greeting, 'morning', '');
-    if (st && shouldShowSticker('', greeting)) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
+
+    // sticker on greeting (по времени суток)
+    let st = pickStickerSmart(greeting, 'morning', '');
+    if (shouldShowSticker('', greeting)) {
+      if (!st && stickers && stickers.stickers) {
+        const fb = stickers.stickers.filter(s => (s.moods||[]).some(m => ['romantic','tender','cosy','smile','shy'].includes(m)));
+        st = fb.length ? weightedPick(fb) : null;
+      }
+      if (st) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
+    }
+
     history.push({ role:'assistant', content:greeting, ts: Date.now() });
     saveHistory(history);
   }
@@ -247,8 +258,16 @@ async function tryInitiateBySchedule(){
     trow.remove();
     peerStatus.textContent = 'онлайн';
     addBubble(text, 'assistant');
-    const st = pickStickerSmart(text, win.pool, '');
-    if (st && shouldShowSticker('', text)) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
+
+    let st = pickStickerSmart(text, win.pool, '');
+    if (shouldShowSticker('', text)) {
+      if (!st && stickers && stickers.stickers) {
+        const fb = stickers.stickers.filter(s => (s.moods||[]).some(m => ['romantic','tender','cosy','smile','shy'].includes(m)));
+        st = fb.length ? weightedPick(fb) : null;
+      }
+      if (st) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
+    }
+
     history.push({ role:'assistant', content:text, ts: Date.now() });
     saveHistory(history);
     bumpInitCount(dateKey);
@@ -278,8 +297,14 @@ formEl.addEventListener('submit', async (e) => {
     peerStatus.textContent = 'онлайн';
     addBubble(data.reply, 'assistant');
 
-    const st = pickStickerSmart(data.reply, null, text);
-    if (st && shouldShowSticker(text, data.reply)) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
+    let st = pickStickerSmart(data.reply, null, text);
+    if (shouldShowSticker(text, data.reply)) {
+      if (!st && stickers && stickers.stickers) {
+        const fb = stickers.stickers.filter(s => (s.moods||[]).some(m => ['romantic','tender','cosy','smile','shy'].includes(m)));
+        st = fb.length ? weightedPick(fb) : null;
+      }
+      if (st) { addStickerBubble(st.src, 'assistant'); chainStickerCount++; }
+    }
 
     history.push({ role:'assistant', content:data.reply, ts: Date.now() });
     saveHistory(history);
