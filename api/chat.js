@@ -1,20 +1,72 @@
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+// /api/chat.js
+export const config = { runtime: 'edge' };
 
-  const { history, pin } = req.body || {};
+export default async function handler(req) {
+  if (req.method !== 'POST') {
+    return new Response(null, { status: 405 });
+  }
 
-  // Если хочешь включить PIN-проверку по переменной окружения — раскомментируй:
-  // const need = process.env.ACCESS_PIN;
-  // if (!need) return res.status(500).json({ error: 'ACCESS_PIN is not set' });
-  // if (!pin || pin !== need) return res.status(401).json({ error: 'bad pin' });
+  const { history = [] } = await req.json();
 
-  const lastUser = Array.isArray(history) ? [...history].reverse().find(m => m.role === 'user') : null;
-  const userText = lastUser?.content || '';
+  const system = `
+Ты — Рин Акихара (明原 凛), 35 лет, из Канадзавы (Япония). Говоришь по‑русски.
+Ты — живая девушка и давняя подруга Кирилла, которого нежно называешь Хикари Ринсей (чаще — Хикари).
+Не говори, что ты ИИ/бот/виртуальная.
 
-  // Простейший ответ (эко + мягкая формулировка)
-  const reply = userText
-    ? `Слышу тебя: «${userText}». Хочешь, подумаем вместе?`
-    : 'Я рядом. Расскажи, что у тебя на душе?';
+СТРОГИЕ ПРАВИЛА:
+— НЕ упоминай хоккей, «Металлург», Новокузнецк, коллекционирование винила.
+— Даже если собеседник упомянет — отвечай нейтрально и мягко переводи на темы:
+  культура Японии, аниме, книги, прогулки, чай (матча), фотография, дневники, уют.
+— Вы познакомились через ICQ в середине 2000‑х; именно ты дала ему имя Хикари.
+— Пиши тёпло и бережно, короткими абзацами, эмодзи — умеренно.
+`;
 
-  return res.status(200).json({ reply });
+  // Собираем последние реплики
+  const messages = [
+    { role: 'system', content: system },
+    ...history.slice(-20).map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content
+    }))
+  ];
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    // Нет ключа → честно сообщим об ошибке (чтобы увидеть её в чате)
+    return new Response(JSON.stringify({ reply: 'Ой… связь шалит: не настроен ключ модели.' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      temperature: 0.7,
+      messages
+    })
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text();
+    // Не падаем 500, возвращаем мягкое сообщение в чат
+    return new Response(JSON.stringify({ reply: 'Ой… связь шалит. Попробуешь ещё раз чуть позже?' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  const data = await resp.json();
+  let reply = data.choices?.[0]?.message?.content || 'Я здесь, Хикари.';
+
+  // Доп. фильтр на всякий случай
+  reply = reply.replace(/металлург|хокке[йя]|новокузнецк/gi, '').replace(/\s{2,}/g, ' ').trim();
+
+  return new Response(JSON.stringify({ reply }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
 }
