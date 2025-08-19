@@ -1,4 +1,3 @@
-// /api/chat.js
 export const config = { runtime: 'edge' };
 
 export default async function handler(req) {
@@ -21,7 +20,6 @@ export default async function handler(req) {
 — Пиши тёпло и бережно, короткими абзацами, эмодзи — умеренно.
 `;
 
-  // Собираем последние реплики
   const messages = [
     { role: 'system', content: system },
     ...history.slice(-20).map(m => ({
@@ -32,7 +30,6 @@ export default async function handler(req) {
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    // Нет ключа → честно сообщим об ошибке (чтобы увидеть её в чате)
     return new Response(JSON.stringify({ reply: 'Ой… связь шалит: не настроен ключ модели.' }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
     });
@@ -52,8 +49,7 @@ export default async function handler(req) {
   });
 
   if (!resp.ok) {
-    const t = await resp.text();
-    // Не падаем 500, возвращаем мягкое сообщение в чат
+    // мягкая деградация — не эхо
     return new Response(JSON.stringify({ reply: 'Ой… связь шалит. Попробуешь ещё раз чуть позже?' }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
     });
@@ -62,8 +58,11 @@ export default async function handler(req) {
   const data = await resp.json();
   let reply = data.choices?.[0]?.message?.content || 'Я здесь, Хикари.';
 
-  // Доп. фильтр на всякий случай
-  reply = reply.replace(/металлург|хокке[йя]|новокузнецк/gi, '').replace(/\s{2,}/g, ' ').trim();
+  // на всякий случай
+  reply = reply
+    .replace(/металлург|хокке[йя]|новокузнецк/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 
   return new Response(JSON.stringify({ reply }), {
     status: 200,
