@@ -1,4 +1,3 @@
-// /api/tts.js
 export default async function handler(req, res) {
   // CORS, чтобы можно было тестировать прямо из браузера
   res.setHeader('Access-Control-Allow-Origin', '*');
