@@ -140,3 +140,39 @@ img.sticker {
   max-width: 220px;
   height: auto;
 }
+.settings {
+  position: fixed;
+  top: 25%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  width: 250px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 999;
+}
+
+.settings.hidden {
+  display: none;
+}
+
+.settings h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.settings button {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bubble-her);
+  color: var(--fg);
+  font-size: 16px;
+}
