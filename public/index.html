@@ -64,7 +64,19 @@
     <section id="chat" class="chat" aria-live="polite"></section>
 
     <form id="form" class="composer" autocomplete="off">
-      <input id="input" type="text" placeholder="Напиши Рин…" maxlength="1000" required />
+      <input
+        id="input"
+        type="text"
+        placeholder="Напиши Рин…"
+        maxlength="1000"
+        required
+        autocomplete="off"
+        autocapitalize="sentences"
+        spellcheck="true"
+        inputmode="text"
+        enterkeyhint="send"
+        aria-label="Поле ввода сообщения"
+      />
       <button id="send" type="submit" aria-label="Отправить">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
           <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
