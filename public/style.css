@@ -328,3 +328,66 @@ body {
   padding-top: 10px;
   color: var(--muted);
 }
+/* === Voice button inside bubbles === */
+.bubble .bubble-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px; /* небольшой отступ от текста/времени */
+}
+
+.voice-btn {
+  --btnSize: 24px;
+  width: var(--btnSize);
+  height: var(--btnSize);
+  border: 0;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  outline: none;
+  background: color-mix(in oklab, currentColor 12%, transparent);
+  color: var(--fg-muted, #cfd3dc);
+  transition: transform .15s ease, background .2s ease, color .2s ease;
+}
+.theme-light .voice-btn {
+  color: #667085;
+  background: color-mix(in oklab, currentColor 10%, transparent);
+}
+.voice-btn:hover { transform: scale(1.06); }
+.voice-btn:active { transform: scale(0.97); }
+.voice-btn:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in oklab, currentColor 35%, transparent);
+}
+
+/* иконки (SVG будет инлайн через JS) */
+.voice-btn svg { width: 14px; height: 14px; display:block }
+
+/* «волна» во время проигрывания */
+.voice-wave {
+  width: 14px; height: 14px; display:flex; align-items:flex-end; gap:2px;
+}
+.voice-wave i {
+  width: 2px; height: 6px; border-radius: 1px; background: currentColor;
+  opacity: .85; animation: wave 900ms ease-in-out infinite;
+}
+.voice-wave i:nth-child(2){ animation-delay: .12s }
+.voice-wave i:nth-child(3){ animation-delay: .24s }
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.6) }
+  50%     { transform: scaleY(1.2) }
+}
+
+/* мини‑таймер рядом с кнопкой */
+.voice-time {
+  font-size: 11px; opacity: .65;
+}
+
+/* компактная плашка‑чип (если решите выводить под пузырём) */
+.voice-chip {
+  display:inline-flex; align-items:center; gap:8px;
+  margin-top:6px; padding:6px 10px; border-radius: 999px;
+  background: color-mix(in oklab, currentColor 10%, transparent);
+  color: var(--fg-muted, #cfd3dc);
+}
+.theme-light .voice-chip { color:#667085 }
