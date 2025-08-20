@@ -1,199 +1,311 @@
-/* ===== Базовые переменные темы ===== */
+/* === БАЗА === */
 :root {
-  --bg: #0f1115;
-  --bg-2: #141821;
-  --bg-3: #1b2130;
-  --text: #e9eef7;
-  --muted: #9aa6bf;
-  --bubble-me: #2675ff;
-  --bubble-her: #2a2f3a;
-  --bubble-time: #9aa6bf;
-  --sep: #232a3a;
+  --bg: #ffffff;
+  --bg-alt: #f5f5f5;
+  --text: #111111;
+  --muted: #777777;
+  --accent: #0088ff;
+  --bubble-user: #0088ff;
+  --bubble-user-text: #ffffff;
+  --bubble-rin: #e5e5ea;
+  --bubble-rin-text: #000000;
+  --settings-bg: rgba(0,0,0,0.6);
+}
+.theme-dark {
+  --bg: #0d0d0d;
+  --bg-alt: #1a1a1a;
+  --text: #f0f0f0;
+  --muted: #aaaaaa;
+  --accent: #4da3ff;
+  --bubble-user: #005fff;
+  --bubble-user-text: #ffffff;
+  --bubble-rin: #2a2a2a;
+  --bubble-rin-text: #f0f0f0;
+  --settings-bg: rgba(0,0,0,0.8);
 }
 
-.theme-light {
-  --bg: #f5f6f8;
-  --bg-2: #ffffff;
-  --bg-3: #f1f3f6;
-  --text: #0b1020;
-  --muted: #56617a;
-  --bubble-me: #2a88ff;
-  --bubble-her: #e9ecf3;
-  --bubble-time: #6b7691;
-  --sep: #dde2ee;
-}
-
-/* ===== Сбросы / базис ===== */
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body {
+html, body {
   margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-user-select: none;
+  user-select: none;
 }
-img { display:block; max-width:100%; height:auto; }
 
-/* ===== Шапка под iOS notch ===== */
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* === ШАПКА === */
 .tg-header {
-  position: sticky; top: 0; z-index: 20;
-  display:flex; align-items:center; gap:12px;
-  padding: calc(env(safe-area-inset-top) + 8px) 12px 8px 12px;
-  background: var(--bg-2);
-  border-bottom: 1px solid var(--sep);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-alt);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--muted);
 }
 
+.tg-peer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tg-peer .avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.peer-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.peer-name {
+  font-weight: 600;
+}
+.peer-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tg-actions button,
 .tg-ico {
-  width:36px; height:36px; border-radius:10px;
-  background: transparent; color: var(--text);
-  border: 1px solid var(--sep);
-  display:grid; place-items:center;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+  transition: transform 0.15s, color 0.15s;
 }
-.tg-ico svg { color: currentColor; }
-
-.tg-peer { display:flex; align-items:center; gap:10px; min-width:0; }
-.tg-peer .peer-meta { min-width:0; }
-.peer-name { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.peer-status { color:var(--muted); font-size:12px; }
-
-/* ===== Аватары ===== */
-.avatar {
-  width:40px; height:40px; border-radius:50%;
-  object-fit:cover;
-  border:none; outline:none; box-shadow:none; /* убираем любые «ореолы» */
-  background: transparent;
+.tg-actions button:hover,
+.tg-ico:hover {
+  color: var(--accent);
+  transform: scale(1.1);
 }
-.avatar.small { width:28px; height:28px; }
-.avatar.small.spacer { visibility:hidden; }
 
-/* ===== Основная область ===== */
-.app { height: calc(100dvh - 64px - env(safe-area-inset-bottom)); display:flex; flex-direction:column; }
+/* === ЧАТ === */
+.app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
 .chat {
-  flex:1 1 auto; overflow:auto;
-  padding:12px;
-  background:
-    linear-gradient(var(--bg), var(--bg)) /* базовый фон */,
-    var(--rin-wallpaper, none);
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--bg);
   background-size: cover;
-  background-attachment: fixed;
   background-position: center;
 }
 
-/* ===== Сообщения ===== */
-.row { display:flex; align-items:flex-end; gap:8px; margin:8px 0; }
-.row.her { flex-direction:row; }
-.row.me  { flex-direction:row-reverse; }
-
-.bubble {
-  max-width: 82%;
-  padding: 10px 12px;
-  border-radius: 14px;
-  position: relative;
+/* Сообщения */
+.msg {
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 8px;
+}
+.msg.user {
+  justify-content: flex-end;
+}
+.msg .bubble {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.4;
   word-wrap: break-word;
-  line-height: 1.45;
 }
-.bubble.her { background: var(--bubble-her); color: var(--text); }
-.bubble.me  { background: var(--bubble-me); color: #fff; }
+.msg.user .bubble {
+  background: var(--bubble-user);
+  color: var(--bubble-user-text);
+  border-bottom-right-radius: 4px;
+}
+.msg.rin .bubble {
+  background: var(--bubble-rin);
+  color: var(--bubble-rin-text);
+  border-bottom-left-radius: 4px;
+}
+.msg .meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  text-align: right;
+}
+.msg.rin .meta { text-align: left; }
 
-.bubble-time {
-  display:inline-block;
-  margin-left:10px;
-  font-size:12px;
-  color: var(--bubble-time);
-  opacity:.9;
-}
-
-/* три точки «печатает…» */
-.typing { display:flex; gap:4px; align-items:center; }
-.typing span {
-  width:6px; height:6px; border-radius:50%;
-  background: var(--muted); opacity:.4;
-  animation: dot 1s infinite ease-in-out;
-}
-.typing span:nth-child(2){ animation-delay:.2s; }
-.typing span:nth-child(3){ animation-delay:.4s; }
-@keyframes dot { 0%,80%,100%{transform:scale(.8)} 40%{transform:scale(1)} }
-
-/* ===== Стикеры ===== */
-.bubble.sticker-only {
-  background: transparent; padding: 0; box-shadow: none;
-}
-.bubble.sticker-only .sticker {
-  width: 72vw; max-width: 420px; height: auto;
-  border-radius: 14px;
-  background: transparent; border: none; outline: none; box-shadow: none; /* никаких ореолов */
-  display:block;
-}
-@media (min-width: 600px) {
-  .bubble.sticker-only .sticker { width: 360px; }
+/* Аватары в сообщениях */
+.msg .avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-right: 6px;
 }
 
-/* ===== Компонент ввода ===== */
+/* Кнопка проигрывания (аудио) */
+.play-audio {
+  margin-left: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 16px;
+  transition: transform 0.15s;
+}
+.play-audio:hover {
+  transform: scale(1.2);
+}
+
+/* === КОМПОЗЕР === */
 .composer {
-  display:flex; gap:10px; padding:10px 12px;
-  background: var(--bg-2);
-  border-top:1px solid var(--sep);
-  position: sticky; bottom:0; z-index: 15;
-  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  padding: 8px;
+  background: var(--bg-alt);
+  border-top: 1px solid var(--muted);
 }
 .composer input {
-  flex:1 1 auto; height:44px;
-  padding:0 12px; border-radius:12px;
-  border:1px solid var(--sep);
-  background: var(--bg-3); color: var(--text);
+  flex: 1;
+  border: none;
+  border-radius: 20px;
+  padding: 10px 14px;
+  font-size: 15px;
+  background: var(--bg);
+  color: var(--text);
 }
 .composer button {
-  width:44px; height:44px; border-radius:12px;
-  background: var(--bubble-me); color:#fff; border:none;
+  margin-left: 8px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, background 0.15s;
+}
+.composer button:hover {
+  background: #0066cc;
+  transform: scale(1.1);
 }
 
-/* ===== Панель настроек (нижний лист) ===== */
-.settings.hidden { display:none; }
+/* === НАСТРОЙКИ === */
+.settings {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  z-index: 100;
+}
+.settings.hidden { display: none; }
 .settings__backdrop {
-  position:fixed; inset:0; background: rgba(0,0,0,.45);
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--settings-bg);
 }
 .settings__sheet {
-  position:fixed; left:0; right:0; bottom:0;
-  background: var(--bg-2);
-  border-top-left-radius: 16px; border-top-right-radius:16px;
-  border-top: 1px solid var(--sep);
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  max-height: 80vh; overflow:auto;
+  background: var(--bg-alt);
+  width: 100%;
+  max-height: 90%;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  overflow-y: auto;
+  padding: 16px;
+  z-index: 101;
 }
 .settings__head {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:12px 16px; border-bottom:1px solid var(--sep);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
-.settings__title { font-weight:700; }
-.settings__close { background:transparent; border:none; color:var(--text); font-size:18px; }
-
+.settings__title { font-weight: 600; }
 .settings__row {
-  display:grid; grid-template-columns: 1fr 2fr; gap:12px;
-  padding:12px 16px; border-bottom:1px solid var(--sep);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
-.settings__label { color: var(--muted); }
-.settings__actions .btn,
+.settings__label { font-size: 14px; }
+.settings__actions { text-align: right; }
+.settings__foot {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
 .btn {
-  height:36px; padding:0 10px;
-  border:1px solid var(--sep); border-radius:10px;
-  background: var(--bg-3); color: var(--text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+.btn:hover {
+  background: #0066cc;
+  transform: scale(1.05);
+}
+.btn-danger {
+  background: #d33;
+}
+.btn-danger:hover {
+  background: #b22;
+}
+/* === Анимации появления сообщений и стикеров === */
+
+/* базовая анимация для сообщений Рин (слева) */
+@keyframes bubble-in-left {
+  from { opacity: 0; transform: translateY(6px) translateX(-6px); }
+  to   { opacity: 1; transform: translateY(0) translateX(0); }
+}
+/* базовая анимация для твоих сообщений (справа) */
+@keyframes bubble-in-right {
+  from { opacity: 0; transform: translateY(6px) translateX(6px); }
+  to   { opacity: 1; transform: translateY(0) translateX(0); }
 }
 
-.btn-danger { background:#db3d3d; border-color:#db3d3d; color:#fff; }
-
-/* ===== Аудио‑кнопка в пузыре ===== */
-.audio-ctl {
-  margin-top:6px;
-  display:inline-flex; align-items:center; gap:8px;
-  padding:6px 10px; border-radius:10px;
-  background: var(--bg-3); color: var(--text);
-  border:1px solid var(--sep);
-  font-size:14px;
+/* мягкий zoom для стикеров */
+@keyframes sticker-pop {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
-.audio-ctl button {
-  width:30px; height:30px; border-radius:8px;
-  display:grid; place-items:center;
-  background: var(--bubble-me); color:#fff; border:none;
+
+/* применяем ко всем новым .msg — достаточно того, что chat.js добавляет .msg.rin / .msg.user */
+.msg {
+  will-change: transform, opacity;
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(.2,.7,.3,1);
+  animation-fill-mode: both;
+}
+.msg.rin  { animation-name: bubble-in-left;  }
+.msg.user { animation-name: bubble-in-right; }
+
+/* если в сообщении только стикер — чуть иной эффект */
+.msg .bubble img.sticker,
+.msg .bubble.sticker-only img {
+  animation: sticker-pop 200ms cubic-bezier(.2,.7,.3,1) both;
+}
+
+/* уважение системной настройки "уменьшить движение" */
+@media (prefers-reduced-motion: reduce) {
+  .msg,
+  .msg .bubble img.sticker,
+  .msg .bubble.sticker-only img {
+    animation: none !important;
+  }
 }
