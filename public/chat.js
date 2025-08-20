@@ -567,3 +567,39 @@ if (settingsToggle && settingsPanel) {
     });
   });
 }
+// === SETTINGS PANEL (robust open/close) ===
+(function () {
+  const settings    = document.getElementById('settingsPanel');
+  const sheet       = settings ? settings.querySelector('.settings__sheet') : null;
+  const btnOpen     = document.getElementById('settingsToggle');
+  const btnClose    = document.getElementById('closeSettingsBtn');
+  const backdrop    = document.getElementById('closeSettings');
+
+  if (!settings || !sheet || !btnOpen) return;
+
+  const open = () => {
+    settings.classList.remove('hidden');
+    // заставляем браузер применить display, а затем анимируем
+    requestAnimationFrame(() => settings.classList.add('open'));
+  };
+
+  const close = () => {
+    // плавно уезжаем вправо, и только после завершения — прячем
+    settings.classList.remove('open');
+    const onTr = (e) => {
+      if (e.target !== sheet) return;
+      settings.classList.add('hidden');
+      sheet.removeEventListener('transitionend', onTr);
+    };
+    sheet.addEventListener('transitionend', onTr);
+  };
+
+  btnOpen.addEventListener('click', open);
+  btnClose && btnClose.addEventListener('click', close);
+  backdrop && backdrop.addEventListener('click', close);
+
+  // ESC для закрытия
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settings && !settings.classList.contains('hidden')) close();
+  });
+})();
