@@ -1,10 +1,12 @@
 {
   "headers": [
-    {
-      "source": "/data/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-store" }
-      ]
-    }
+    { "source": "/data/(.*)", "headers": [ { "key": "Cache-Control", "value": "no-store" } ] }
+  ],
+  "rewrites": [
+    { "source": "/", "destination": "/public/index.html" },
+    { "source": "/login", "destination": "/public/login.html" },
+    { "source": "/(.*)\\.(css|js|json|png|jpg|jpeg|webp|ico)", "destination": "/public/$1.$2" },
+    { "source": "/stickers/(.*)", "destination": "/public/stickers/$1" },
+    { "source": "/data/(.*)", "destination": "/public/data/$1" }
   ]
 }
