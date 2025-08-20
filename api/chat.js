@@ -1,5 +1,6 @@
 // /api/chat.js — основной чат-эндпоинт Рин (переключение mini/4o + персональность + длинный режим)
 import fs from 'fs/promises';
+import path from 'path';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ACCESS_PIN     = process.env.ACCESS_PIN || '';           // лёгкая защита
@@ -11,9 +12,9 @@ const SHORT_PARAMS = { temperature: 0.8,  max_tokens: 350 };
 const LONG_PARAMS  = { temperature: 0.9,  max_tokens: 1200 };
 
 // ——— утилиты ———
-async function readJsonSafe(path, fallback = null) {
+async function readJsonSafe(filePath, fallback = null) {
   try {
-    const txt = await fs.readFile(path, 'utf8');
+    const txt = await fs.readFile(filePath, 'utf8');
     return JSON.parse(txt);
   } catch {
     return fallback;
@@ -30,7 +31,7 @@ function pruneHistory(history, maxItems = 30, maxChars = 8000) {
   return slice;
 }
 
-// Мягкий анти‑«вопрос в каждом предложении»: подсказка стилю
+// Мягкий анти-«вопрос в каждом предложении»: подсказка стилю
 const STYLE_HINT = `Пиши естественно, не ставь вопрос в конце каждого абзаца.
 Используй тёплый, дружелюбный тон, без сюсюканья. Разрешены эмодзи умеренно.`;
 
@@ -59,7 +60,7 @@ function detectLongMode(userText, history) {
   return false;
 }
 
-// Формируем system‑промпт из персоны и памяти
+// Формируем system-промпт из персоны и памяти
 function buildSystemPrompt(persona, memories) {
   const name = (persona?.name || 'Рин Акихара');
   const shortBio = (persona?.short_bio ||
@@ -137,9 +138,10 @@ export default async function handler(req, res) {
     const history = Array.isArray(body?.history) ? body.history : [];
     const userTurn = history[history.length - 1]?.content || '';
 
-    // Загружаем персону и память (если есть)
-    const persona = await readJsonSafe('./data/rin_persona.json', null);
-    const memories = await readJsonSafe('./data/rin_memories.json', null);
+    // Загружаем персону и память (если есть) из public/data
+    const root = process.cwd();
+    const persona  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_persona.json'), null);
+    const memories = await readJsonSafe(path.join(root, 'public', 'data', 'rin_memories.json'), null);
 
     // Собираем system
     const sys = buildSystemPrompt(persona, memories);
@@ -176,7 +178,7 @@ export default async function handler(req, res) {
       max_tokens: params.max_tokens
     });
 
-    // Лёгкий пост‑процесс: убираем избыточные «???» и лишние пробелы
+    // Лёгкий пост-процесс: убираем избыточные «???» и лишние пробелы
     const clean = (reply || '')
       .replace(/\?{2,}/g, '?')
       .replace(/ +\n/g, '\n')
