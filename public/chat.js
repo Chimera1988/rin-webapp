@@ -325,7 +325,7 @@ function greet(){
   addBubble(greeting,'assistant');
   const st=pickStickerSmart(greeting,'morning','');
   if (st && shouldShowSticker('',greeting)) addStickerBubble(st.src,'assistant');
-  history.push({role:'assistant',content=greeting,ts:Date.now()});
+  history.push({role:'assistant',content:greeting,ts:Date.now()});
   saveHistory(history);
 }
 
