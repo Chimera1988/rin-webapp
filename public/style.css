@@ -1,0 +1,330 @@
+/* ============================
+   RIN — public/style.css
+   ============================ */
+
+/* Тема и переменные */
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f6f7f9;
+  --text: #14171a;
+  --muted: #6b7280;
+
+  --bubble-me: #1f2937;
+  --bubble-her: #f1f5f9;
+  --bubble-border: rgba(0,0,0,0.06);
+
+  --accent: #e11d48;
+  --panel: #ffffff;
+  --shadow: 0 10px 25px rgba(0,0,0,0.08);
+
+  /* Обои: JS будет писать сюда url(...) */
+  --wallpaper-url: none;
+  --wallpaper-opacity: 1; /* 0..1 */
+  --ring: rgba(0,0,0,0.08); /* тонкая окантовка-тень (не белая линия) */
+}
+.theme-dark {
+  --bg: #0e1113;
+  --bg-soft: #151a1e;
+  --text: #e5e7eb;
+  --muted: #98a2b3;
+
+  --bubble-me: #1f2937;
+  --bubble-her: #12161a;
+  --bubble-border: rgba(255,255,255,0.07);
+
+  --panel: #0f1317;
+  --shadow: 0 10px 25px rgba(0,0,0,0.35);
+
+  --ring: rgba(255,255,255,0.08);
+}
+
+/* Сброс и типографика */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", Roboto, "Segoe UI", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Шапка с учётом Dynamic Island / safe-area */
+.tg-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--bubble-border);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.tg-ico {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  padding: 8px;
+  border-radius: 10px;
+}
+.tg-ico:active { opacity: .7; }
+
+.tg-peer {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+/* АВАТАР — без белой окантовки */
+.avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  border: 0;                                           /* рамка убрана */
+  box-shadow: 0 0 0 1px var(--ring), 0 2px 6px rgba(0,0,0,0.10);
+}
+.avatar.small { width: 28px; height: 28px; }
+.avatar.small.spacer { visibility: hidden; }
+
+.peer-meta { display: flex; flex-direction: column; line-height: 1.1; }
+.peer-name { font-weight: 700; }
+.peer-status { color: var(--muted); font-size: 12px; }
+
+/* Контейнер приложения */
+.app {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: calc(100dvh - env(safe-area-inset-bottom, 0px));
+}
+
+/* Лента чата + обои */
+.chat {
+  position: relative;
+  padding: 12px 12px 6px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+  /* если есть обои — рисуем фоном через переменную */
+  background-image: var(--wallpaper-url);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  /* Лёгкая вуаль, чтобы текст читался на ярких обоях */
+  isolation: isolate;
+}
+.chat::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in oklab, var(--bg), transparent calc(100% - (var(--wallpaper-opacity) * 100%)));
+  pointer-events: none;
+}
+
+/* Ряд сообщения */
+.row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 8px;
+  align-items: flex-end;
+  margin: 6px 0;
+}
+.row.me { grid-template-columns: 1fr 32px; }
+.row.me .avatar { order: 2; }
+.row.me .bubble { order: 1; }
+
+/* Бабблы */
+.bubble {
+  max-width: min(76%, 580px);
+  padding: 10px 12px;
+  border-radius: 16px;
+  position: relative;
+  word-wrap: break-word;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--bubble-border);
+}
+
+.bubble.her {
+  background: var(--bubble-her);
+}
+.bubble.me {
+  background: var(--bubble-me);
+  color: #fff;
+  border-color: transparent;
+}
+
+/* Время */
+.bubble-time {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.bubble.me .bubble-time { color: rgba(255,255,255,0.7); }
+
+/* Индикатор печати */
+.bubble.typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.bubble.typing span {
+  width: 6px; height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+  opacity: .4;
+  animation: blink 1.4s infinite ease-in-out;
+}
+.bubble.typing span:nth-child(2){ animation-delay: .15s; }
+.bubble.typing span:nth-child(3){ animation-delay: .3s; }
+
+@keyframes blink {
+  0%, 100% { transform: translateY(0); opacity: .3; }
+  50%      { transform: translateY(-2px); opacity: .9; }
+}
+
+/* Стикер-бабблы (кружки, без белой окантовки) */
+.bubble.sticker-only {
+  padding: 6px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.bubble.sticker-only .bubble-time {
+  display: block;
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* СТИКЕР — без белой линии */
+.sticker {
+  display: block;
+  width: 140px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 50%;
+  background: transparent;
+  image-rendering: auto;
+  -webkit-mask-image: radial-gradient(#000 98%, transparent 100%);
+          mask-image: radial-gradient(#000 98%, transparent 100%);
+  outline: 0;                                   /* белый контур убран */
+  box-shadow: 0 0 0 1px var(--ring), 0 4px 14px rgba(0,0,0,0.12);
+}
+
+/* Компонент ввода */
+.composer {
+  display: grid;
+  grid-template-columns: 1fr 44px;
+  gap: 8px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--bg), color-mix(in oklab, var(--bg), transparent 35%));
+  border-top: 1px solid var(--bubble-border);
+}
+
+.composer input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--bubble-border);
+  background: var(--bg-soft);
+  color: var(--text);
+  outline: none;
+  font-size: 16px;
+}
+
+.composer button {
+  height: 42px;
+  border-radius: 12px;
+  border: 0;
+  color: #fff;
+  background: var(--accent);
+  display: inline-grid;
+  place-items: center;
+}
+
+/* ===== Панель настроек ===== */
+.settings.hidden { display: none; }
+
+.settings {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+.settings__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.settings__sheet {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: var(--panel);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+.settings__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px 12px;
+}
+.settings__title { font-weight: 700; }
+.settings__close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 20px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.settings__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px dashed var(--bubble-border);
+}
+.settings__label { color: var(--muted); }
+
+.settings__actions .btn {
+  appearance: none;
+  border: 1px solid var(--bubble-border);
+  background: var(--bg-soft);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.settings__actions .btn-danger {
+  border-color: transparent;
+  background: #ef4444;
+  color: #fff;
+}
+
+.settings__foot {
+  padding-top: 10px;
+  color: var(--muted);
+}
