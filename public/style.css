@@ -125,9 +125,12 @@ body {
 }
 .chat::after {
   content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
+-  position: fixed;
+-  inset: 0;
+-  z-index: -1;
++  position: absolute;                 /* FIX: ограничиваем внутри .chat */
++  inset: 0;
++  z-index: 0;                         /* FIX: фон ниже остального контента */
   background: color-mix(in oklab, var(--bg), transparent calc(100% - (var(--wallpaper-opacity) * 100%)));
   pointer-events: none;
 }
@@ -230,6 +233,7 @@ body {
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(to top, var(--bg), color-mix(in oklab, var(--bg), transparent 35%));
   border-top: 1px solid var(--bubble-border);
++  z-index: 5;                         /* FIX: всегда поверх фона */
 }
 
 .composer input {
@@ -328,6 +332,7 @@ body {
   padding-top: 10px;
   color: var(--muted);
 }
+
 /* === Voice button inside bubbles === */
 .bubble .bubble-meta {
   display: inline-flex;
