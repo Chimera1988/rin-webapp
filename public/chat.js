@@ -422,7 +422,11 @@ async function maybeSpeak(text){
   if (!t || t.length>180) return;
 
   try{
-    const r = await fetch('/api/tts',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text:t }) });
+   const r = await fetch('/api/tts', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ text: t })
+  });
     if (!r.ok) return;
     const blob=await r.blob();
     const url=URL.createObjectURL(blob);
