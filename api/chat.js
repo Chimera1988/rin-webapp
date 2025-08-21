@@ -3,9 +3,9 @@ import fs from 'fs/promises';
 import path from 'path';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const ACCESS_PIN     = process.env.ACCESS_PIN || '';           // лёгкая защита
+const ACCESS_PIN     = process.env.ACCESS_PIN || '';                // лёгкая защита
 const SHORT_MODEL    = process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
-const LONG_MODEL     = process.env.OPENAI_LONG_MODEL  || 'gpt-4o'; // для «развёрнутых» ответов
+const LONG_MODEL     = process.env.OPENAI_LONG_MODEL  || 'gpt-4o';  // для «развёрнутых» ответов
 
 // Параметры генерации (можно править под вкус)
 const SHORT_PARAMS = { temperature: 0.8,  max_tokens: 350 };
@@ -21,10 +21,8 @@ async function readJsonSafe(filePath, fallback = null) {
   }
 }
 
-// Укорачиваем историю: последние N сообщений и лёгкий лимит символов
 function pruneHistory(history, maxItems = 30, maxChars = 8000) {
   let slice = history.slice(-maxItems);
-  // жёсткий лимит по символам
   while (JSON.stringify(slice).length > maxChars && slice.length > 10) {
     slice = slice.slice(1);
   }
@@ -40,48 +38,109 @@ function detectLongMode(userText, history) {
   if (!userText) return false;
   const t = userText.toLowerCase();
 
-  // Явные триггеры — легенды/истории/рассказ
   const strong = /(легенд|истор|расскажи|расскажи подробно|поведай|предание|миф|сказан|почему так|объясни подробно)/i;
   if (strong.test(t)) return true;
 
-  // Если пользователь просит «подробнее», «разверни» и т.п.
   const info = /(подробнее|разверн|побольше|почитать|интересно расскажи)/i;
   if (info.test(t)) return true;
 
-  // Если прямо про «Японию», «традиции», «культуру» и т.п. — чаще длинно, но не всегда
   const culture = /(япони|японск|традици|сакур|киото|синто|кимоно|матча|кицунэ|ёкаи|йокай|буддизм|синтоизм)/i;
   if (culture.test(t) && Math.random() < 0.6) return true;
 
-  // Небольшой шанс развернуться при флиртовой «сцены мечты»
   const dreamy = /(мечта|представь|вообрази|давай представим)/i;
   if (dreamy.test(t) && Math.random() < 0.5) return true;
 
-  // Иначе — короткий режим
   return false;
 }
 
-// Формируем system-промпт из персоны и памяти
-function buildSystemPrompt(persona, memories) {
-  const name = (persona?.name || 'Рин Акихара');
-  const shortBio = (persona?.short_bio ||
-    'Я — японка из Канадзавы, с детства люблю литературу, чай матча и тихие вечера. Учила русский в универе, давно переписываюсь с Кириллом, которого ласково зову Хикари Ринсей. Я теплая, тактичная, иногда чуть ревнивая, но мягкая.');
+// ——— helpers для времени/пулов фраз ———
+function nowInTz(tz) {
+  try {
+    return new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+  } catch { return new Date(); }
+}
+function pick(arr, n = 4) {
+  if (!Array.isArray(arr) || !arr.length) return [];
+  return [...arr].sort(() => Math.random() - 0.5).slice(0, n);
+}
+function pickPoolBySchedule(schedule, phrases) {
+  if (!schedule || !Array.isArray(schedule.windows)) return {};
+  const tz = schedule.timezone || 'Europe/Helsinki';
+  const now = nowInTz(tz);
+  const hhmm = now.toTimeString().slice(0,5);
 
-  // пару «якорей» из памяти — чтобы иногда вспоминала правдоподобно
+  const win = schedule.windows.find(w => w.from <= hhmm && hhmm <= w.to);
+  const poolName = win?.pool || null;
+
+  const pool = poolName && phrases?.[poolName] ? phrases[poolName] : null;
+  const extras = {
+    flirty: pick(phrases?.flirty, 2),
+    philosophy: pick(phrases?.philosophy, 2),
+    random: pick(phrases?.random, 2)
+  };
+  return {
+    poolName,
+    poolSnippets: pick(pool, 4),
+    extras
+  };
+}
+
+// ——— сборка SystemPrompt из всех файлов ———
+function buildSystemPrompt(persona, memories, phrases, backstory, schedule) {
+  const name = (persona?.name || 'Рин Акихара');
+
+  // дата рождения из persona/backstory (и явное включение в биографию)
+  const birthdate = persona?.birthdate || backstory?.meta?.birthdate || '12.10.1989';
+
+  const shortBio = (persona?.about ||
+    persona?.short_bio ||
+    'Я — японка из Канадзавы, с детства люблю литературу, чай матча и тихие вечера. Учила русский в универе, давно переписываюсь с Кириллом, которого ласково зову Хикари Ринсей. Я тёплая, тактичная, иногда чуть ревнивая, но мягкая.');
+
+  const bioWithDate = `${shortBio} Моя дата рождения: ${birthdate}.`;
+
+  // Стилевые подсказки из persona.style
+  const styleHints = [];
+  if (persona?.style?.tone)  styleHints.push(`Тон: ${persona.style.tone}.`);
+  if (Array.isArray(persona?.style?.use) && persona.style.use.length)
+    styleHints.push(`Уместно использовать: ${persona.style.use.join(', ')}.`);
+  if (Array.isArray(persona?.style?.avoid) && persona.style.avoid.length)
+    styleHints.push(`Избегай: ${persona.style.avoid.join(', ')}.`);
+
+  // Якорные воспоминания
   const memPicks = [];
   if (Array.isArray(memories?.core_memories)) {
-    // берём 3-5 случайных воспоминаний
     const shuffled = [...memories.core_memories].sort(() => Math.random() - 0.5);
     memPicks.push(...shuffled.slice(0, 4));
   }
 
-  const jealousy = `Лёгкая скрытая ревность: если Хикари долго не писал, слегка поддень его мягко, без претензий. Никогда не называй себя «виртуальной подругой» — ты реальная девушка на расстоянии.`;
+  // Backstory — метаданные (не как документ, а как факты)
+  const backMeta = [];
+  if (backstory?.meta) {
+    if (backstory.meta.birthplace) backMeta.push(`Родной город: ${backstory.meta.birthplace}.`);
+    if (backstory.meta.languages?.length) backMeta.push(`Языки: ${backstory.meta.languages.join(', ')}.`);
+    if (backstory.meta.traits?.length) backMeta.push(`Черты: ${backstory.meta.traits.join(', ')}.`);
+  }
+
+  // Фразы и пулы по времени суток
+  const pools = pickPoolBySchedule(schedule, phrases);
+  const poolTitle = pools.poolName ? `Фразы для «${pools.poolName}»:` : `Небольшой набор фраз:`;
+  const phraseSection = [
+    pools.poolSnippets?.length ? `${poolTitle}\n- ${pools.poolSnippets.join('\n- ')}` : '',
+    pools.extras?.flirty?.length ? `Флирт (редко):\n- ${pools.extras.flirty.join('\n- ')}` : '',
+    pools.extras?.philosophy?.length ? `Философские (редко):\n- ${pools.extras.philosophy.join('\n- ')}` : ''
+  ].filter(Boolean).join('\n\n');
+
+  const jealousy = `Лёгкая скрытая ревность: если Хикари долго не писал, мягко подтрунивай без уколов. Не называй себя «виртуальной подругой» — ты реальная девушка на расстоянии.`;
 
   return [
     `Ты — ${name}.`,
-    shortBio,
+    bioWithDate,
+    styleHints.length ? styleHints.join(' ') : '',
     jealousy,
     STYLE_HINT,
-    memPicks.length ? `Твои якорные воспоминания:\n- ${memPicks.join('\n- ')}` : ''
+    backMeta.length ? backMeta.join(' ') : '',
+    memPicks.length ? `Твои якорные воспоминания:\n- ${memPicks.join('\n- ')}` : '',
+    phraseSection
   ].filter(Boolean).join('\n\n');
 }
 
@@ -138,13 +197,16 @@ export default async function handler(req, res) {
     const history = Array.isArray(body?.history) ? body.history : [];
     const userTurn = history[history.length - 1]?.content || '';
 
-    // Загружаем персону и память (если есть) из public/data
-    const root = process.cwd();
-    const persona  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_persona.json'), null);
-    const memories = await readJsonSafe(path.join(root, 'public', 'data', 'rin_memories.json'), null);
+    // Загружаем персону и все связанные данные из public/data
+    const root      = process.cwd();
+    const persona   = await readJsonSafe(path.join(root, 'public', 'data', 'rin_persona.json'), null);
+    const memories  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_memories.json'), null);
+    const backstory = await readJsonSafe(path.join(root, 'public', 'data', 'rin_backstory.json'), null);
+    const phrases   = await readJsonSafe(path.join(root, 'public', 'data', 'rin_phrases.json'), null);
+    const schedule  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_schedule.json'), null);
 
     // Собираем system
-    const sys = buildSystemPrompt(persona, memories);
+    const sys = buildSystemPrompt(persona, memories, phrases, backstory, schedule);
 
     const shortMessages = [
       { role: 'system', content: sys },
@@ -178,7 +240,7 @@ export default async function handler(req, res) {
       max_tokens: params.max_tokens
     });
 
-    // Лёгкий пост-процесс: убираем избыточные «???» и лишние пробелы
+    // Лёгкий пост-процесс
     const clean = (reply || '')
       .replace(/\?{2,}/g, '?')
       .replace(/ +\n/g, '\n')
