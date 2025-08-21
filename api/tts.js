@@ -1,7 +1,7 @@
-// /api/tts.js — озвучка коротких реплик Рин (OpenAI TTS, голос Lumen)
+// /api/tts.js — озвучка коротких реплик Рин (OpenAI TTS, голос Coral)
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// Важно: Vercel/Node серверлес
+// Важно: Vercel/Node serverless
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
@@ -19,14 +19,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Text is required' });
     }
 
-    // TTS — только короткие фразы (экономия и авто-плей в браузере)
+    // TTS — только короткие фразы (экономия и авто‑плей в браузере)
     const MAX_CHARS = 180;
     const ttsInput = cleanText.length > MAX_CHARS
       ? cleanText.slice(0, MAX_CHARS) + '…'
       : cleanText;
 
-    // Выбранный голос (по умолчанию — Lumen)
-    const voiceId = (typeof voice === 'string' && voice.trim()) || process.env.OPENAI_TTS_VOICE || 'lumen';
+    // Выбранный голос (по умолчанию — CORAL)
+    const voiceId =
+      (typeof voice === 'string' && voice.trim()) ||
+      process.env.OPENAI_TTS_VOICE ||
+      'coral';
 
     // Формат аудио (mp3 — универсально для iOS/Safari)
     const audioFormat = 'mp3';
