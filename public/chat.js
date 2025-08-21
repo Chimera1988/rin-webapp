@@ -172,96 +172,6 @@ if (resetApp){
   };
 }
 
-/* === Voice: helpers для ручного прослушивания ▶︎ === */
-let __tts = { audio:null, url:null, btn:null, timeEl:null };
-
-function voicePlayIcon(){
-  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
-    <path d="M8 5v14l11-7-11-7z"></path>
-  </svg>`;
-}
-function voiceWaveMarkup(){
-  return `<span class="voice-wave" aria-hidden="true"><i></i><i></i><i></i></span>`;
-}
-function stopTTS(){
-  if (__tts.audio){
-    try { __tts.audio.pause(); } catch {}
-    __tts.audio = null;
-  }
-  if (__tts.url){
-    URL.revokeObjectURL(__tts.url);
-    __tts.url = null;
-  }
-  if (__tts.btn){
-    __tts.btn.innerHTML = voicePlayIcon();
-    __tts.btn = null;
-  }
-  if (__tts.timeEl){
-    // __tts.timeEl.textContent = '';
-    __tts.timeEl = null;
-  }
-}
-/** навешивает кнопку «прослушать» на баббл ассистента */
-function attachVoiceButton(bubbleEl, textToSpeak){
-  const meta = document.createElement('span');
-  meta.className = 'bubble-meta';
-
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'voice-btn';
-  btn.setAttribute('aria-label','Прослушать сообщение');
-  btn.innerHTML = voicePlayIcon();
-
-  const timeEl = document.createElement('span');
-  timeEl.className = 'voice-time';
-  timeEl.textContent = '';
-
-  btn.onclick = async () => {
-    if (__tts.btn === btn){ stopTTS(); return; } // повторное нажатие — стоп
-    stopTTS(); // останавливаем предыдущее воспроизведение
-
-    btn.innerHTML = voiceWaveMarkup();
-    __tts.btn = btn;
-    __tts.timeEl = timeEl;
-
-    try{
-      const text = String(textToSpeak||'').replace(/\s+/g,' ').trim().slice(0,180);
-      if (!text) { stopTTS(); return; }
-
-      const r = await fetch('/api/tts', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ text }) // сервер по умолчанию: voice=coral
-      });
-      if (!r.ok) throw new Error('TTS HTTP '+r.status);
-
-      const blob = await r.blob();
-      const url  = URL.createObjectURL(blob);
-      __tts.url = url;
-
-      const audio = new Audio(url);
-      __tts.audio = audio;
-
-      audio.ontimeupdate = () => {
-        const s = Math.floor(audio.currentTime);
-        const m = Math.floor(s/60);
-        const ss = String(s%60).padStart(2,'0');
-        timeEl.textContent = `${m}:${ss}`;
-      };
-      audio.onended = stopTTS;
-      audio.onpause = stopTTS;
-
-      await audio.play();
-    }catch{
-      stopTTS();
-    }
-  };
-
-  meta.appendChild(btn);
-  meta.appendChild(timeEl);
-  bubbleEl.appendChild(meta);
-}
-
 /* === Рендер сообщений === */
 function addBubble(text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
@@ -289,14 +199,7 @@ function addBubble(text, who='assistant', ts=Date.now()){
   time.className='bubble-time';
   time.textContent=fmtTime(d);
 
-  wrap.appendChild(msg); 
-  wrap.appendChild(time);
-
-  // === Voice: кнопку добавляем только на ответы Рин
-  if (who !== 'user') {
-    attachVoiceButton(wrap, text);
-  }
-
+  wrap.appendChild(msg); wrap.appendChild(time);
   row.appendChild(wrap);
   chatEl.appendChild(row);
   chatEl.scrollTop=chatEl.scrollHeight;
@@ -422,7 +325,7 @@ function greet(){
   addBubble(greeting,'assistant');
   const st=pickStickerSmart(greeting,'morning','');
   if (st && shouldShowSticker('',greeting)) addStickerBubble(st.src,'assistant');
-  history.push({role:'assistant',content=greeting,ts:Date.now()});
+  history.push({role:'assistant',content:greeting,ts:Date.now()});
   saveHistory(history);
 }
 
