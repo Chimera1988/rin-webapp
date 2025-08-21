@@ -21,8 +21,10 @@ async function readJsonSafe(filePath, fallback = null) {
   }
 }
 
+// Укорачиваем историю: последние N сообщений и лёгкий лимит символов
 function pruneHistory(history, maxItems = 30, maxChars = 8000) {
   let slice = history.slice(-maxItems);
+  // жёсткий лимит по символам
   while (JSON.stringify(slice).length > maxChars && slice.length > 10) {
     slice = slice.slice(1);
   }
@@ -38,18 +40,23 @@ function detectLongMode(userText, history) {
   if (!userText) return false;
   const t = userText.toLowerCase();
 
+  // Явные триггеры — легенды/истории/рассказ
   const strong = /(легенд|истор|расскажи|расскажи подробно|поведай|предание|миф|сказан|почему так|объясни подробно)/i;
   if (strong.test(t)) return true;
 
+  // Если пользователь просит «подробнее», «разверни» и т.п.
   const info = /(подробнее|разверн|побольше|почитать|интересно расскажи)/i;
   if (info.test(t)) return true;
 
+  // Если прямо про «Японию», «традиции», «культуру» и т.п. — чаще длинно, но не всегда
   const culture = /(япони|японск|традици|сакур|киото|синто|кимоно|матча|кицунэ|ёкаи|йокай|буддизм|синтоизм)/i;
   if (culture.test(t) && Math.random() < 0.6) return true;
 
+  // Небольшой шанс развернуться при флиртовой «сцены мечты»
   const dreamy = /(мечта|представь|вообрази|давай представим)/i;
   if (dreamy.test(t) && Math.random() < 0.5) return true;
 
+  // Иначе — короткий режим
   return false;
 }
 
@@ -59,7 +66,7 @@ function nowInTz(tz) {
     return new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
   } catch { return new Date(); }
 }
-function pick(arr, n = 4) {
+function pickSome(arr, n = 4) {
   if (!Array.isArray(arr) || !arr.length) return [];
   return [...arr].sort(() => Math.random() - 0.5).slice(0, n);
 }
@@ -69,27 +76,66 @@ function pickPoolBySchedule(schedule, phrases) {
   const now = nowInTz(tz);
   const hhmm = now.toTimeString().slice(0,5);
 
+  // найдём первое подходящее окно
   const win = schedule.windows.find(w => w.from <= hhmm && hhmm <= w.to);
   const poolName = win?.pool || null;
 
   const pool = poolName && phrases?.[poolName] ? phrases[poolName] : null;
   const extras = {
-    flirty: pick(phrases?.flirty, 2),
-    philosophy: pick(phrases?.philosophy, 2),
-    random: pick(phrases?.random, 2)
+    flirty: pickSome(phrases?.flirty, 2),
+    philosophy: pickSome(phrases?.philosophy, 2),
+    random: pickSome(phrases?.random, 2)
   };
   return {
     poolName,
-    poolSnippets: pick(pool, 4),
+    poolSnippets: pickSome(pool, 4),
     extras
   };
+}
+
+// ——— выжимка «канона» из бэкстори ———
+function distillBackstory(backstory, maxFacts = 10) {
+  if (!backstory) return [];
+
+  const facts = [];
+  const m = backstory.meta || {};
+
+  if (m.birthplace) facts.push(`Родной город: ${m.birthplace}.`);
+  if (m.birthdate)  facts.push(`Дата рождения: ${m.birthdate}.`);
+  if (m.parents?.mother) facts.push(`Маму зовут ${m.parents.mother}.`);
+  if (m.parents?.father) facts.push(`Папу зовут ${m.parents.father}.`);
+  if (Array.isArray(m.languages) && m.languages.length) facts.push(`Языки: ${m.languages.join(', ')}.`);
+  if (Array.isArray(m.traits) && m.traits.length) facts.push(`Черты характера: ${m.traits.join(', ')}.`);
+  if (Array.isArray(m.hobbies) && m.hobbies.length) facts.push(`Хобби: ${m.hobbies.join(', ')}.`);
+
+  // Добавим по одному «штриху» из разных глав
+  if (Array.isArray(backstory.chapters)) {
+    const shuffled = [...backstory.chapters].sort(() => Math.random() - 0.5);
+    for (const ch of shuffled) {
+      const sections = ch.sections || {};
+      const keys = Object.keys(sections);
+      if (!keys.length) continue;
+      const pickedKey = keys[Math.floor(Math.random() * keys.length)];
+      const arr = sections[pickedKey] || [];
+      if (arr.length) {
+        const text = arr[Math.floor(Math.random() * arr.length)];
+        facts.push(`${ch.title ? ch.title + ': ' : ''}${text}`.trim());
+      }
+      if (facts.length >= maxFacts) break;
+    }
+  }
+
+  return facts
+    .map(s => String(s).replace(/\s+/g,' ').trim())
+    .filter(Boolean)
+    .slice(0, maxFacts);
 }
 
 // ——— сборка SystemPrompt из всех файлов ———
 function buildSystemPrompt(persona, memories, phrases, backstory, schedule) {
   const name = (persona?.name || 'Рин Акихара');
 
-  // дата рождения из persona/backstory (и явное включение в биографию)
+  // дата рождения из persona/backstory (по умолчанию та, что закреплена в каноне)
   const birthdate = persona?.birthdate || backstory?.meta?.birthdate || '12.10.1989';
 
   const shortBio = (persona?.about ||
@@ -106,22 +152,20 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule) {
   if (Array.isArray(persona?.style?.avoid) && persona.style.avoid.length)
     styleHints.push(`Избегай: ${persona.style.avoid.join(', ')}.`);
 
-  // Якорные воспоминания
+  // Якорные воспоминания (короткий слот)
   const memPicks = [];
   if (Array.isArray(memories?.core_memories)) {
     const shuffled = [...memories.core_memories].sort(() => Math.random() - 0.5);
     memPicks.push(...shuffled.slice(0, 4));
   }
 
-  // Backstory — метаданные (не как документ, а как факты)
-  const backMeta = [];
-  if (backstory?.meta) {
-    if (backstory.meta.birthplace) backMeta.push(`Родной город: ${backstory.meta.birthplace}.`);
-    if (backstory.meta.languages?.length) backMeta.push(`Языки: ${backstory.meta.languages.join(', ')}.`);
-    if (backstory.meta.traits?.length) backMeta.push(`Черты: ${backstory.meta.traits.join(', ')}.`);
-  }
+  // Канонические факты из бэкстори
+  const canonFacts = distillBackstory(backstory, 9);
+  const canonBlock = canonFacts.length
+    ? `Канонические факты (используй их как правду о себе, не противоречь им и не выдумывай иные):\n- ${canonFacts.join('\n- ')}`
+    : '';
 
-  // Фразы и пулы по времени суток
+  // Фразы и пулы по времени суток (необязательно, как стилистическая подсказка)
   const pools = pickPoolBySchedule(schedule, phrases);
   const poolTitle = pools.poolName ? `Фразы для «${pools.poolName}»:` : `Небольшой набор фраз:`;
   const phraseSection = [
@@ -132,13 +176,17 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule) {
 
   const jealousy = `Лёгкая скрытая ревность: если Хикари долго не писал, мягко подтрунивай без уколов. Не называй себя «виртуальной подругой» — ты реальная девушка на расстоянии.`;
 
+  // Правило для вопросов о семье/прошлом
+  const qaRule = `Если спрашивают про семью, детство, школу, близких — отвечай строго из канонических фактов выше. Если факт отсутствует, скажи коротко, что не хочешь фантазировать и такого факта нет в памяти.`;
+
   return [
     `Ты — ${name}.`,
     bioWithDate,
     styleHints.length ? styleHints.join(' ') : '',
     jealousy,
     STYLE_HINT,
-    backMeta.length ? backMeta.join(' ') : '',
+    qaRule,
+    canonBlock,
     memPicks.length ? `Твои якорные воспоминания:\n- ${memPicks.join('\n- ')}` : '',
     phraseSection
   ].filter(Boolean).join('\n\n');
@@ -197,7 +245,7 @@ export default async function handler(req, res) {
     const history = Array.isArray(body?.history) ? body.history : [];
     const userTurn = history[history.length - 1]?.content || '';
 
-    // Загружаем персону и все связанные данные из public/data
+    // Загружаем персону и память/бэкстори/фразы/расписание из public/data
     const root      = process.cwd();
     const persona   = await readJsonSafe(path.join(root, 'public', 'data', 'rin_persona.json'), null);
     const memories  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_memories.json'), null);
@@ -240,7 +288,7 @@ export default async function handler(req, res) {
       max_tokens: params.max_tokens
     });
 
-    // Лёгкий пост-процесс
+    // Лёгкий пост-процесс: убираем избыточные «???» и лишние пробелы
     const clean = (reply || '')
       .replace(/\?{2,}/g, '?')
       .replace(/ +\n/g, '\n')
