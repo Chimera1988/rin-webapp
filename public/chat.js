@@ -47,6 +47,9 @@ const resetApp      = document.getElementById('resetApp');
 
 /* state */
 let persona=null, phrases=null, schedule=null, stickers=null;
+/* === Новое: биография и воспоминания === */
+let backstory=null, memories=null;
+
 let history=[];
 let chainStickerCount=0;
 
@@ -293,16 +296,103 @@ function addStickerBubble(src, who='assistant'){
   return row;
 }
 
+/* === BIO/MEMORIES helpers === */
+const BIO_SHOWN_KEY = 'rin-bio-shown-v1';
+function loadShown(){ try{return new Set(JSON.parse(localStorage.getItem(BIO_SHOWN_KEY)||'[]'));}catch{return new Set();} }
+function saveShown(set){ try{ localStorage.setItem(BIO_SHOWN_KEY, JSON.stringify([...set].slice(-100))); }catch{} }
+const shownSet = loadShown();
+
+function rnd(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function clampLen(t, max=220){ t=(t||'').replace(/\s+/g,' ').trim(); return t.length>max ? t.slice(0,max-1)+'…' : t; }
+
+/* Выбрать короткий фрагмент из rin_memories.json */
+function pickMemory(){
+  if (!memories || !Array.isArray(memories.core_memories) || !memories.core_memories.length) return null;
+  // избегаем повторов
+  const pool = memories.core_memories.filter(m => !shownSet.has('M:'+m));
+  const pick = (pool.length ? rnd(pool) : rnd(memories.core_memories));
+  shownSet.add('M:'+pick); saveShown(shownSet);
+  return clampLen(pick, 220);
+}
+
+/* Выбрать фрагмент из rin_backstory.json по главе/секции (если заданы) */
+function pickBackstory(opts={}){
+  if (!backstory || !Array.isArray(backstory.chapters)) return null;
+  const { chapter, section } = opts;
+
+  // 1) отфильтровать главу
+  let chapters = backstory.chapters;
+  if (chapter){
+    const q = chapter.toLowerCase();
+    chapters = chapters.filter(ch =>
+      (ch.title && ch.title.toLowerCase().includes(q)) ||
+      (ch.years && String(ch.years).toLowerCase().includes(q))
+    );
+    if (!chapters.length) chapters = backstory.chapters;
+  }
+
+  // 2) взять секцию или любую доступную
+  const ch = rnd(chapters);
+  const sections = ch.sections || {};
+  let keys = Object.keys(sections);
+  if (!keys.length) return null;
+
+  let key = section && keys.find(k => k.toLowerCase().includes(section.toLowerCase()));
+  if (!key) key = rnd(keys);
+
+  const arr = sections[key] || [];
+  if (!arr.length) return null;
+
+  // избегаем повторов
+  const pool = arr.filter(s => !shownSet.has(`B:${ch.title}:${key}:${s}`));
+  const text = (pool.length ? rnd(pool) : rnd(arr));
+
+  shownSet.add(`B:${ch.title}:${key}:${text}`); saveShown(shownSet);
+
+  // мягкий префикс, чтобы не звучало отстранённо
+  const prefixMap = {
+    'воспоминания':'Знаешь, вспоминаю: ',
+    'страхи':'Если честно, я иногда боялась: ',
+    'мечты':'Иногда мечтала о том, что ',
+    'занятия':'В те годы я часто ',
+    'друзья':'Про друзей: ',
+    'первые чувства':'Про первые чувства: ',
+    'любовь':'Про любовь: '
+  };
+  const pre = prefixMap[key] || '';
+  return clampLen(pre + text, 230);
+}
+
+/* эвристика по ключевым словам пользователя → выбор главы/секции */
+function inferBackstoryRequest(userText){
+  const t = (userText||'').toLowerCase();
+  const wantStory = /(расскажи|истори|из прошлого|воспоминан|помнишь)/.test(t);
+  if (!wantStory) return null;
+
+  if (/детств/.test(t))      return { chapter:'детство' };
+  if (/школ/.test(t))        return { chapter:'школь' };
+  if (/университет|юност/.test(t)) return { chapter:'университет' };
+  if (/взросл/.test(t))      return { chapter:'взросл' };
+  if (/настояще|сейчас/.test(t)) return { chapter:'настоящ' };
+  if (/мечт/.test(t))        return { section:'мечты' };
+  if (/страх/.test(t))       return { section:'страхи' };
+  if (/любов|чувств/.test(t))return { section:'любов' };
+  return {}; // просто любая история
+}
+
 /* === INIT === */
 (async function init(){
   try{
-    const [p1,p2,p3,p4]=await Promise.all([
+    const [p1,p2,p3,p4,p5,p6]=await Promise.all([
       fetch('/data/rin_persona.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_phrases.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_schedule.json').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_stickers.json?v=5').then(r=>r.json()).catch(()=>null)
+      fetch('/data/rin_stickers.json?v=5').then(r=>r.json()).catch(()=>null),
+      /* Новое: воспоминания и бэкстори */
+      fetch('/data/rin_memories.json').then(r=>r.json()).catch(()=>null),
+      fetch('/data/rin_backstory.json').then(r=>r.json()).catch(()=>null)
     ]);
-    persona=p1; phrases=p2; schedule=p3; stickers=p4;
+    persona=p1; phrases=p2; schedule=p3; stickers=p4; memories=p5; backstory=p6;
   }catch(e){ console.warn('JSON load error',e); }
 
   history=loadHistory();
@@ -352,8 +442,16 @@ async function tryInitiateBySchedule(){
   const last=history[history.length-1];
   if (last && last.role==='assistant' && d - new Date(last.ts||Date.now()) < 15*60*1000) return;
 
-  const pool = phrases[win.pool] ? win.pool : 'morning';
-  const text = pick(phrases[pool] || phrases.morning);
+  // === Новое: с небольшой вероятностью подмешиваем личную историю
+  let text;
+  const useBio = Math.random() < 0.25; // 25% шанс вместо фразы из пула
+  if (useBio){
+    text = pickBackstory({}) || pickMemory();
+  }
+  if (!text){
+    const pool = phrases[win.pool] ? win.pool : 'morning';
+    text = pick(phrases[pool] || phrases.morning);
+  }
 
   peerStatus.textContent='печатает…';
   const trow=addTyping();
@@ -378,6 +476,19 @@ formEl.addEventListener('submit', async (e)=>{
   history.push({role:'user',content:text,ts:Date.now()});
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
+
+  // === Новое: «расскажи историю» и т.п. — перехват на клиенте
+  const ask = inferBackstoryRequest(text);
+  if (ask){
+    const story = pickBackstory(ask) || pickMemory();
+    if (story){
+      addBubble(story,'assistant');
+      history.push({role:'assistant',content:story,ts:Date.now()});
+      saveHistory(history);
+      maybeSpeak(story);
+      return; // не идём на /api/chat
+    }
+  }
 
   peerStatus.textContent='печатает…';
   const typingRow=addTyping();
