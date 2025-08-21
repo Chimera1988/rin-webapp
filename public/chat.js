@@ -83,7 +83,7 @@ if (themeToggle){
   };
 }
 
-/* — Обои — применяем CSS‑переменные (см. style.css) — */
+/* — Обои — применяем CSS-переменные (см. style.css) — */
 function applyWallpaper(){
   const data = localStorage.getItem(LS_WP_DATA) || '';
   const op   = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100;
@@ -380,6 +380,91 @@ function inferBackstoryRequest(userText){
   return {}; // просто любая история
 }
 
+/* === Голосовой пузырь (как в Telegram) === */
+function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
+  const d = new Date(ts);
+  const row = document.createElement('div');
+  row.className = 'row ' + (who==='user' ? 'me' : 'her');
+
+  if (who !== 'user'){
+    const ava=document.createElement('img');
+    ava.className='avatar small';
+    ava.src='/avatar.jpg'; ava.alt='Рин';
+    row.appendChild(ava);
+  } else {
+    const spacer=document.createElement('div');
+    spacer.className='avatar small spacer';
+    row.appendChild(spacer);
+  }
+
+  const wrap=document.createElement('div');
+  wrap.className='bubble ' + (who==='user'?'me':'her');
+
+  // Кнопка ▶️ / ⏸
+  const btn=document.createElement('button');
+  btn.className='voice-btn';
+  btn.innerHTML='▶️';
+
+  // Мини-таймер
+  const timeEl=document.createElement('span');
+  timeEl.className='voice-time';
+  timeEl.textContent='0:00';
+
+  // Время сообщения (как и в текстовых)
+  const timeStamp=document.createElement('span');
+  timeStamp.className='bubble-time';
+  timeStamp.textContent=fmtTime(d);
+
+  // Кнопка «Показать текст»
+  const showText=document.createElement('div');
+  showText.className='voice-chip';
+  showText.textContent='Показать текст';
+
+  wrap.appendChild(btn);
+  wrap.appendChild(timeEl);
+  wrap.appendChild(timeStamp);
+  wrap.appendChild(document.createElement('br'));
+  wrap.appendChild(showText);
+
+  row.appendChild(wrap);
+  chatEl.appendChild(row);
+  chatEl.scrollTop=chatEl.scrollHeight;
+
+  // Аудио-логика
+  const audio=new Audio(audioUrl);
+  let timer=null;
+
+  btn.onclick=()=>{
+    if (audio.paused){
+      audio.play().catch(()=>{});
+      btn.innerHTML='⏸';
+      if (timer) clearInterval(timer);
+      timer=setInterval(()=>{
+        const s=Math.floor(audio.currentTime);
+        timeEl.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+      }, 300);
+    } else {
+      audio.pause();
+      btn.innerHTML='▶️';
+      if (timer) clearInterval(timer);
+    }
+  };
+  audio.onended=()=>{
+    btn.innerHTML='▶️';
+    if (timer) clearInterval(timer);
+    URL.revokeObjectURL(audioUrl);
+  };
+
+  // Показ текста
+  showText.onclick=()=>{
+    showText.remove();
+    const tr=document.createElement('div');
+    tr.className='voice-transcript';
+    tr.textContent=text;
+    wrap.appendChild(tr);
+  };
+}
+
 /* === INIT === */
 (async function init(){
   try{
@@ -405,7 +490,7 @@ function inferBackstoryRequest(userText){
   // карусель статуса
   setInterval(()=>{ peerStatus.textContent = Math.random()<0.85?'онлайн':'была недавно'; },15000);
 
-  // планировщик авто‑инициаций
+  // планировщик авто-инициаций
   setInterval(tryInitiateBySchedule, 60_000);
   tryInitiateBySchedule();
 })();
@@ -428,6 +513,25 @@ function inWindow(local,from,to){
 }
 function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
+/* === Выбор и генерация voice-only по шансу === */
+function shouldVoiceFor(text){
+  if (!lsSpeakEnabled()) return false;
+  const rate = lsSpeakRate()/100;     // 0..0.5
+  if (Math.random()>rate) return false;
+  const t=(text||'').replace(/\s+/g,' ').trim();
+  if (!t || t.length>180) return false; // длинные — не озвучиваем
+  return true;
+}
+async function getTTSUrl(text){
+  try{
+    const r = await fetch('/api/tts',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text }) });
+    if (!r.ok) return null;
+    const blob=await r.blob();
+    return URL.createObjectURL(blob);
+  }catch{ return null; }
+}
+
+/* === Автоинициации (с учётом voice-only) === */
 async function tryInitiateBySchedule(){
   if (!schedule || !phrases) return;
   const d=nowLocal(); const dateKey=fmtDateKey(d);
@@ -442,7 +546,7 @@ async function tryInitiateBySchedule(){
   const last=history[history.length-1];
   if (last && last.role==='assistant' && d - new Date(last.ts||Date.now()) < 15*60*1000) return;
 
-  // === Новое: с небольшой вероятностью подмешиваем личную историю
+  // === С небольшой вероятностью подмешиваем личную историю
   let text;
   const useBio = Math.random() < 0.25; // 25% шанс вместо фразы из пула
   if (useBio){
@@ -455,14 +559,26 @@ async function tryInitiateBySchedule(){
 
   peerStatus.textContent='печатает…';
   const trow=addTyping();
-  setTimeout(()=>{
+  setTimeout(async ()=>{
     trow.remove(); peerStatus.textContent='онлайн';
-    addBubble(text,'assistant');
+
+    // Voice-only развилка
+    let voiced=false;
+    if (shouldVoiceFor(text)){
+      const url = await getTTSUrl(text);
+      if (url){
+        addVoiceBubble(url, text, 'assistant');
+        voiced=true;
+      }
+    }
+    if (!voiced){
+      addBubble(text,'assistant');
+    }
+
     const st=pickStickerSmart(text,win.pool,'');
     if (st && shouldShowSticker('',text)) addStickerBubble(st.src,'assistant');
     history.push({role:'assistant',content:text,ts:Date.now()});
     saveHistory(history); bumpInitCount(dateKey);
-    maybeSpeak(text); // короткая озвучка
   }, 1200+Math.random()*1200);
 }
 
@@ -477,15 +593,21 @@ formEl.addEventListener('submit', async (e)=>{
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
 
-  // === Новое: «расскажи историю» и т.п. — перехват на клиенте
+  // === «расскажи историю» — локальный перехват
   const ask = inferBackstoryRequest(text);
   if (ask){
     const story = pickBackstory(ask) || pickMemory();
     if (story){
-      addBubble(story,'assistant');
+      // Voice-only развилка для локальной истории
+      let voiced=false;
+      if (shouldVoiceFor(story)){
+        const url=await getTTSUrl(story);
+        if (url){ addVoiceBubble(url, story, 'assistant'); voiced=true; }
+      }
+      if (!voiced){ addBubble(story,'assistant'); }
+
       history.push({role:'assistant',content:story,ts:Date.now()});
       saveHistory(history);
-      maybeSpeak(story);
       return; // не идём на /api/chat
     }
   }
@@ -508,36 +630,30 @@ formEl.addEventListener('submit', async (e)=>{
       setTimeout(()=>{ peerStatus.textContent=prev||'онлайн'; }, 2500);
     } else peerStatus.textContent='онлайн';
 
-    addBubble(data.reply,'assistant');
+    // === Voice-only развилка для ответа модели
+    let voiced=false;
+    if (shouldVoiceFor(data.reply)){
+      const url=await getTTSUrl(data.reply);
+      if (url){ addVoiceBubble(url, data.reply, 'assistant'); voiced=true; }
+    }
+    if (!voiced){
+      addBubble(data.reply,'assistant');
+    }
 
     const st=pickStickerSmart(data.reply,null,text);
     if (st && shouldShowSticker(text,data.reply)) addStickerBubble(st.src,'assistant');
 
     history.push({role:'assistant',content:data.reply,ts:Date.now()});
     saveHistory(history);
-
-    maybeSpeak(data.reply);
   }catch(err){
     typingRow.remove(); peerStatus.textContent='онлайн';
     addBubble('Ой… связь шалит. '+(err?.message||''),'assistant');
   }
 });
 
-/* === Озвучка: короткие фразы, c шансом из настроек === */
-async function maybeSpeak(text){
-  if (!lsSpeakEnabled()) return;
-  const rate = lsSpeakRate()/100;     // 0..0.5
-  if (Math.random()>rate) return;
-  const t=(text||'').replace(/\s+/g,' ').trim();
-  if (!t || t.length>180) return;
-
-  try{
-    const r = await fetch('/api/tts',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text:t }) });
-    if (!r.ok) return;
-    const blob=await r.blob();
-    const url=URL.createObjectURL(blob);
-    const audio=new Audio(url);
-    audio.play().catch(()=>{});
-    audio.onended=()=>URL.revokeObjectURL(url);
-  }catch{}
+/* === (БЫЛО) Озвучка: больше не автоплеим. 
+   Логику перенесли в shouldVoiceFor/getTTSUrl + addVoiceBubble. 
+   Функцию оставляем на случай будущих вызовов, возвращает всегда false. === */
+async function maybeSpeak(_text){
+  return false;
 }
