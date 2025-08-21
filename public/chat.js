@@ -8,7 +8,7 @@ const THEME_KEY      = 'rin-theme';
 const LS_STICKER_PROB   = 'rin-sticker-prob';    // 0..50 (%)
 const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off
 const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'
-const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0' (только авто-озвучка)
+const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0'
 const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
 const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
@@ -140,7 +140,7 @@ if (stickerSafe){
   stickerSafe.onchange = ()=>localStorage.setItem(LS_STICKER_SAFE, stickerSafe.checked?'1':'0');
 }
 
-/* — Голос (только авто‑озвучка) — */
+/* — Голос — */
 function lsSpeakEnabled(){ return localStorage.getItem(LS_SPEAK_ENABLED) === '1'; }
 function lsSpeakRate(){ return +(localStorage.getItem(LS_SPEAK_RATE) || '20'); } // %
 if (voiceEnabled){
@@ -172,7 +172,7 @@ if (resetApp){
   };
 }
 
-/* === Voice helpers: play/stop per bubble (ручное прослушивание) === */
+/* === Voice: helpers для ручного прослушивания ▶︎ === */
 let __tts = { audio:null, url:null, btn:null, timeEl:null };
 
 function voicePlayIcon(){
@@ -197,13 +197,11 @@ function stopTTS(){
     __tts.btn = null;
   }
   if (__tts.timeEl){
-    // time оставляем; чтобы очищать — раскомментируй:
     // __tts.timeEl.textContent = '';
     __tts.timeEl = null;
   }
 }
-
-/** навешивает кнопку прослушивания на пузырь ассистента */
+/** навешивает кнопку «прослушать» на баббл ассистента */
 function attachVoiceButton(bubbleEl, textToSpeak){
   const meta = document.createElement('span');
   meta.className = 'bubble-meta';
@@ -219,10 +217,8 @@ function attachVoiceButton(bubbleEl, textToSpeak){
   timeEl.textContent = '';
 
   btn.onclick = async () => {
-    // если уже играет этот же — остановить
-    if (__tts.btn === btn){ stopTTS(); return; }
-    // останавливаем предыдущее воспроизведение
-    stopTTS();
+    if (__tts.btn === btn){ stopTTS(); return; } // повторное нажатие — стоп
+    stopTTS(); // останавливаем предыдущее воспроизведение
 
     btn.innerHTML = voiceWaveMarkup();
     __tts.btn = btn;
@@ -293,10 +289,10 @@ function addBubble(text, who='assistant', ts=Date.now()){
   time.className='bubble-time';
   time.textContent=fmtTime(d);
 
-  wrap.appendChild(msg);
+  wrap.appendChild(msg); 
   wrap.appendChild(time);
 
-  // ▶︎ Кнопка ручного прослушивания — только для ответов Рин
+  // === Voice: кнопку добавляем только на ответы Рин
   if (who !== 'user') {
     attachVoiceButton(wrap, text);
   }
@@ -465,7 +461,7 @@ async function tryInitiateBySchedule(){
     if (st && shouldShowSticker('',text)) addStickerBubble(st.src,'assistant');
     history.push({role:'assistant',content:text,ts:Date.now()});
     saveHistory(history); bumpInitCount(dateKey);
-    maybeSpeak(text); // короткая авто‑озвучка (управляется чекбоксом)
+    maybeSpeak(text); // короткая озвучка
   }, 1200+Math.random()*1200);
 }
 
@@ -506,14 +502,14 @@ formEl.addEventListener('submit', async (e)=>{
     history.push({role:'assistant',content:data.reply,ts:Date.now()});
     saveHistory(history);
 
-    maybeSpeak(data.reply); // авто‑озвучка по вероятности и чекбоксу
+    maybeSpeak(data.reply);
   }catch(err){
     typingRow.remove(); peerStatus.textContent='онлайн';
     addBubble('Ой… связь шалит. '+(err?.message||''),'assistant');
   }
 });
 
-/* === Озвучка: короткие фразы, c шансом из настроек (автомат) === */
+/* === Озвучка: короткие фразы, c шансом из настроек === */
 async function maybeSpeak(text){
   if (!lsSpeakEnabled()) return;
   const rate = lsSpeakRate()/100;     // 0..0.5
