@@ -1,68 +1,60 @@
-// /api/tts.js — озвучка коротких реплик Рин (OpenAI TTS, голос Coral)
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// /api/tts.js — озвучка коротких реплик Рин (ElevenLabs TTS, голос Rachel)
+const ELEVEN_KEY   = process.env.ELEVENLABS_API_KEY;
+const VOICE_ID_DEF = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // Rachel
+const MODEL_ID_DEF = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
 
-// Важно: Vercel/Node serverless
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
       res.setHeader('Allow', 'POST');
       return res.status(405).json({ error: 'Method Not Allowed' });
     }
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+    if (!ELEVEN_KEY) {
+      return res.status(500).json({ error: 'Missing ELEVENLABS_API_KEY' });
     }
 
-    const { text, voice } = await safeJson(req);
+    const { text, voice, model } = await safeJson(req);
     const cleanText = (typeof text === 'string' ? text : '').trim();
+    if (!cleanText) return res.status(400).json({ error: 'Text is required' });
 
-    if (!cleanText) {
-      return res.status(400).json({ error: 'Text is required' });
-    }
-
-    // TTS — только короткие фразы (экономия и авто‑плей в браузере)
+    // Ограничим длину — авто‑плей в браузере и экономия токенов
     const MAX_CHARS = 180;
     const ttsInput = cleanText.length > MAX_CHARS
       ? cleanText.slice(0, MAX_CHARS) + '…'
       : cleanText;
 
-    // Выбранный голос (по умолчанию — CORAL)
-    const voiceId =
-      (typeof voice === 'string' && voice.trim()) ||
-      process.env.OPENAI_TTS_VOICE ||
-      'coral';
+    const voiceId = (typeof voice === 'string' && voice.trim()) || VOICE_ID_DEF;
+    const modelId = (typeof model === 'string' && model.trim()) || MODEL_ID_DEF;
 
-    // Формат аудио (mp3 — универсально для iOS/Safari)
-    const audioFormat = 'mp3';
-
-    // Запрос к OpenAI TTS (Audio Speech)
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    // ElevenLabs: POST /v1/text-to-speech/{voice_id}
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`;
+    const r = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+        'xi-api-key': ELEVEN_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg'
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
-        voice: voiceId,
-        input: ttsInput,
-        format: audioFormat
+        model_id: modelId,
+        text: ttsInput,
+        // Можно тонко настраивать голос через voice_settings, оставим дефолты
+        // voice_settings: { stability: 0.5, similarity_boost: 0.75 }
       })
     });
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      return res.status(response.status).json({ error: 'OpenAI TTS failed', detail: errText });
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '');
+      return res.status(r.status).json({ error: 'ElevenLabs TTS failed', detail: errText });
     }
 
-    const arrayBuf = await response.arrayBuffer();
-    const buf = Buffer.from(arrayBuf);
-
+    const buf = Buffer.from(await r.arrayBuffer());
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'no-store'); // голос каждый раз уникальный
-    res.status(200).send(buf);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).send(buf);
   } catch (err) {
     console.error('TTS error', err);
-    res.status(500).json({ error: 'TTS internal error' });
+    return res.status(500).json({ error: 'TTS internal error' });
   }
 }
 
