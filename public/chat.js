@@ -88,7 +88,6 @@ function applyWallpaper(){
   const data = localStorage.getItem(LS_WP_DATA) || '';
   const op   = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100;
 
-  // ❗ Используем те же имена, что в style.css
   document.documentElement.style.setProperty('--wallpaper-url', data ? `url("${data}")` : 'none');
   document.documentElement.style.setProperty('--wallpaper-opacity', String(op));
 
@@ -165,7 +164,6 @@ if (resetApp){
     if (!confirm('Сбросить историю чата, настройки и кэш?')) return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(DAILY_INIT_KEY);
-    // не трогаем PIN и тему, но чистим пользовательские настройки
     [LS_STICKER_PROB,LS_STICKER_MODE,LS_STICKER_SAFE,LS_SPEAK_ENABLED,LS_SPEAK_RATE,LS_WP_DATA,LS_WP_OPACITY].forEach(k=>localStorage.removeItem(k));
     chatEl.innerHTML='';
     history=[];
@@ -246,7 +244,6 @@ function pickStickerSmart(replyText, windowPool, userText){
     return hit.length?weightedPick(hit):null;
   }
 
-  // smart
   if (userText && KEY_FLIRT.test(userText)) {
     const hit = list.filter(s=> (s.keywords||[]).some(k=>new RegExp(k,'i').test(userText)));
     if (hit.length) return weightedPick(hit);
@@ -308,7 +305,6 @@ function clampLen(t, max=220){ t=(t||'').replace(/\s+/g,' ').trim(); return t.le
 /* Выбрать короткий фрагмент из rin_memories.json */
 function pickMemory(){
   if (!memories || !Array.isArray(memories.core_memories) || !memories.core_memories.length) return null;
-  // избегаем повторов
   const pool = memories.core_memories.filter(m => !shownSet.has('M:'+m));
   const pick = (pool.length ? rnd(pool) : rnd(memories.core_memories));
   shownSet.add('M:'+pick); saveShown(shownSet);
@@ -320,7 +316,6 @@ function pickBackstory(opts={}){
   if (!backstory || !Array.isArray(backstory.chapters)) return null;
   const { chapter, section } = opts;
 
-  // 1) отфильтровать главу
   let chapters = backstory.chapters;
   if (chapter){
     const q = chapter.toLowerCase();
@@ -331,7 +326,6 @@ function pickBackstory(opts={}){
     if (!chapters.length) chapters = backstory.chapters;
   }
 
-  // 2) взять секцию или любую доступную
   const ch = rnd(chapters);
   const sections = ch.sections || {};
   let keys = Object.keys(sections);
@@ -343,13 +337,11 @@ function pickBackstory(opts={}){
   const arr = sections[key] || [];
   if (!arr.length) return null;
 
-  // избегаем повторов
   const pool = arr.filter(s => !shownSet.has(`B:${ch.title}:${key}:${s}`));
   const text = (pool.length ? rnd(pool) : rnd(arr));
 
   shownSet.add(`B:${ch.title}:${key}:${text}`); saveShown(shownSet);
 
-  // мягкий префикс, чтобы не звучало отстранённо
   const prefixMap = {
     'воспоминания':'Знаешь, вспоминаю: ',
     'страхи':'Если честно, я иногда боялась: ',
@@ -380,7 +372,7 @@ function inferBackstoryRequest(userText){
   return {}; // просто любая история
 }
 
-/* === Голосовой пузырь (как в Telegram) === */
+/* === Голосовой пузырь (Telegram-style) === */
 function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
 
@@ -418,20 +410,20 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const BAR_COUNT = 18;
   for (let i=0;i<BAR_COUNT;i++){
     const bar=document.createElement('i');
-    bar.style.height = (8 + Math.round(Math.random()*18)) + 'px'; // базовая «неровность»
+    bar.style.height = (8 + Math.round(Math.random()*18)) + 'px';
     wave.appendChild(bar);
   }
 
   const act=document.createElement('div');
   act.className='voice-tg__action';
-  act.textContent='→A'; // «показать текст» как в Telegram
+  act.textContent='→A';
   act.title='Показать текст';
 
   top.appendChild(btn);
   top.appendChild(wave);
   top.appendChild(act);
 
-  // низ: длительность слева, время справа
+  // мета: длительность слева, время справа
   const meta=document.createElement('div');
   meta.className='voice-tg__meta';
 
@@ -464,23 +456,16 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 
   function stopAnim(){
     wrap.classList.remove('playing');
-    if (raf) cancelAnimationFrame(raf), raf=null;
+    if (raf){ cancelAnimationFrame(raf); raf=null; }
   }
   function loop(){
     const cur = audio.currentTime || 0;
     const total = audio.duration || 0;
-    // во время проигрывания показываем текущую позицию (как на твоём скрине)
     dur.textContent = secToMMSS(cur);
-    // тёмная маска справа — визуализируем прогресс
     const pct = total ? Math.min(100, (cur/total)*100) : 0;
     wave.style.setProperty('--progress', pct + '%');
     raf = requestAnimationFrame(loop);
   }
-
-  audio.addEventListener('loadedmetadata', ()=>{
-    // до старта можно показать общую длительность (если это важнее — раскомментируй)
-    // dur.textContent = isFinite(audio.duration) ? secToMMSS(audio.duration) : '0:00';
-  });
 
   btn.onclick=()=>{
     if (audio.paused){
@@ -493,54 +478,18 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
       audio.pause();
       btn.textContent='▶';
       stopAnim();
-      // по паузе можно оставить текущее время — как Телеграм
     }
   };
 
   audio.onended=()=>{
     btn.textContent='▶';
     stopAnim();
-    URL.revokeObjectURL(audioUrl);
+    try{ URL.revokeObjectURL(audioUrl); }catch(e){}
   };
 
   // правая кнопка → показать текст
   act.onclick=()=>{
     act.remove();
-    const tr=document.createElement('div');
-    tr.className='voice-transcript';
-    tr.textContent=text;
-    wrap.appendChild(tr);
-  };
-}
-
-  // Аудио-логика
-  const audio=new Audio(audioUrl);
-  let timer=null;
-
-  btn.onclick=()=>{
-    if (audio.paused){
-      audio.play().catch(()=>{});
-      btn.innerHTML='⏸';
-      if (timer) clearInterval(timer);
-      timer=setInterval(()=>{
-        const s=Math.floor(audio.currentTime);
-        timeEl.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-      }, 300);
-    } else {
-      audio.pause();
-      btn.innerHTML='▶️';
-      if (timer) clearInterval(timer);
-    }
-  };
-  audio.onended=()=>{
-    btn.innerHTML='▶️';
-    if (timer) clearInterval(timer);
-    URL.revokeObjectURL(audioUrl);
-  };
-
-  // Показ текста
-  showText.onclick=()=>{
-    showText.remove();
     const tr=document.createElement('div');
     tr.className='voice-transcript';
     tr.textContent=text;
@@ -556,7 +505,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
       fetch('/data/rin_phrases.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_schedule.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_stickers.json?v=5').then(r=>r.json()).catch(()=>null),
-      /* Новое: воспоминания и бэкстори */
       fetch('/data/rin_memories.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_backstory.json').then(r=>r.json()).catch(()=>null)
     ]);
@@ -570,10 +518,8 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     greet();
   }
 
-  // карусель статуса
   setInterval(()=>{ peerStatus.textContent = Math.random()<0.85?'онлайн':'была недавно'; },15000);
 
-  // планировщик авто-инициаций
   setInterval(tryInitiateBySchedule, 60_000);
   tryInitiateBySchedule();
 })();
@@ -596,13 +542,13 @@ function inWindow(local,from,to){
 }
 function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
-/* === Выбор и генерация voice-only по шансу === */
+/* === Voice-only шанс === */
 function shouldVoiceFor(text){
   if (!lsSpeakEnabled()) return false;
-  const rate = lsSpeakRate()/100;     // 0..0.5
+  const rate = lsSpeakRate()/100; // 0..0.5
   if (Math.random()>rate) return false;
   const t=(text||'').replace(/\s+/g,' ').trim();
-  if (!t || t.length>180) return false; // длинные — не озвучиваем
+  if (!t || t.length>180) return false;
   return true;
 }
 async function getTTSUrl(text){
@@ -629,9 +575,8 @@ async function tryInitiateBySchedule(){
   const last=history[history.length-1];
   if (last && last.role==='assistant' && d - new Date(last.ts||Date.now()) < 15*60*1000) return;
 
-  // === С небольшой вероятностью подмешиваем личную историю
   let text;
-  const useBio = Math.random() < 0.25; // 25% шанс вместо фразы из пула
+  const useBio = Math.random() < 0.25;
   if (useBio){
     text = pickBackstory({}) || pickMemory();
   }
@@ -645,7 +590,6 @@ async function tryInitiateBySchedule(){
   setTimeout(async ()=>{
     trow.remove(); peerStatus.textContent='онлайн';
 
-    // Voice-only развилка
     let voiced=false;
     if (shouldVoiceFor(text)){
       const url = await getTTSUrl(text);
@@ -676,12 +620,10 @@ formEl.addEventListener('submit', async (e)=>{
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
 
-  // === «расскажи историю» — локальный перехват
   const ask = inferBackstoryRequest(text);
   if (ask){
     const story = pickBackstory(ask) || pickMemory();
     if (story){
-      // Voice-only развилка для локальной истории
       let voiced=false;
       if (shouldVoiceFor(story)){
         const url=await getTTSUrl(story);
@@ -691,7 +633,7 @@ formEl.addEventListener('submit', async (e)=>{
 
       history.push({role:'assistant',content:story,ts:Date.now()});
       saveHistory(history);
-      return; // не идём на /api/chat
+      return;
     }
   }
 
@@ -713,7 +655,6 @@ formEl.addEventListener('submit', async (e)=>{
       setTimeout(()=>{ peerStatus.textContent=prev||'онлайн'; }, 2500);
     } else peerStatus.textContent='онлайн';
 
-    // === Voice-only развилка для ответа модели
     let voiced=false;
     if (shouldVoiceFor(data.reply)){
       const url=await getTTSUrl(data.reply);
@@ -734,9 +675,5 @@ formEl.addEventListener('submit', async (e)=>{
   }
 });
 
-/* === (БЫЛО) Озвучка: больше не автоплеим. 
-   Логику перенесли в shouldVoiceFor/getTTSUrl + addVoiceBubble. 
-   Функцию оставляем на случай будущих вызовов, возвращает всегда false. === */
-async function maybeSpeak(_text){
-  return false;
-}
+/* совместимость: старый maybeSpeak больше не используется */
+async function maybeSpeak(_text){ return false; }
