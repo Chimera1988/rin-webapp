@@ -314,8 +314,54 @@ function pickMemory(){
 /* Выбрать фрагмент из rin_backstory.json по главе/секции (если заданы) */
 function pickBackstory(opts={}){
   if (!backstory || !Array.isArray(backstory.chapters)) return null;
-  const { chapter, section } = opts;
+  const { chapter, section, keyword, hintChapter } = opts;
 
+  // === Поиск по ключевому слову (если задано) ===
+  if (keyword){
+    const re = new RegExp(keyword, 'i');
+    const matches = [];
+    for (const ch of backstory.chapters){
+      const sections = ch.sections || {};
+      const chTitle = (ch.title||'').toLowerCase();
+      const chScore = hintChapter && chTitle.includes(hintChapter) ? 2 : 1; // мягкий приоритет подсказки
+
+      for (const key of Object.keys(sections)){
+        const arr = sections[key] || [];
+        for (const s of arr){
+          if (re.test(s)){
+            // избегаем повторов
+            if (!shownSet.has(`B:${ch.title}:${key}:${s}`)){
+              matches.push({ ch, key, text:s, score:chScore });
+            }
+          }
+        }
+      }
+    }
+    if (matches.length){
+      // лёгкая рандомизация в топ-3 с приоритетом по score
+      matches.sort((a,b)=>b.score-a.score);
+      const take = matches.slice(0, Math.max(1, Math.min(3, matches.length)));
+      const best = take[Math.floor(Math.random()*take.length)];
+
+      shownSet.add(`B:${best.ch.title}:${best.key}:${best.text}`); saveShown(shownSet);
+
+      const prefixMap = {
+        'воспоминания':'Знаешь, вспоминаю: ',
+        'страхи':'Если честно, я иногда боялась: ',
+        'мечты':'Иногда мечтала о том, что ',
+        'занятия':'В те годы я часто ',
+        'друзья':'Про друзей: ',
+        'первые чувства':'Про первые чувства: ',
+        'любовь':'Про любовь: ',
+        'семья':'Про семью: '
+      };
+      const pre = prefixMap[(best.key||'').toLowerCase()] || '';
+      return clampLen(pre + best.text, 230);
+    }
+    // если совпадений нет — падаем к обычной логике ниже
+  }
+
+  // === Обычный выбор по главе/секции ===
   let chapters = backstory.chapters;
   if (chapter){
     const q = chapter.toLowerCase();
@@ -331,7 +377,7 @@ function pickBackstory(opts={}){
   let keys = Object.keys(sections);
   if (!keys.length) return null;
 
-  let key = section && keys.find(k => k.toLowerCase().includes(section.toLowerCase()));
+  let key = section && keys.find(k => k.toLowerCase().includes(String(section).toLowerCase()));
   if (!key) key = rnd(keys);
 
   const arr = sections[key] || [];
@@ -349,7 +395,8 @@ function pickBackstory(opts={}){
     'занятия':'В те годы я часто ',
     'друзья':'Про друзей: ',
     'первые чувства':'Про первые чувства: ',
-    'любовь':'Про любовь: '
+    'любовь':'Про любовь: ',
+    'семья':'Про семью: '
   };
   const pre = prefixMap[key] || '';
   return clampLen(pre + text, 230);
@@ -358,9 +405,25 @@ function pickBackstory(opts={}){
 /* эвристика по ключевым словам пользователя → выбор главы/секции */
 function inferBackstoryRequest(userText){
   const t = (userText||'').toLowerCase();
+  // триггер фразы «расскажи ...»
   const wantStory = /(расскажи|истори|из прошлого|воспоминан|помнишь)/.test(t);
   if (!wantStory) return null;
 
+  // 1) Если есть словарь — ищем первую подходящую тему
+  if (triggers && typeof triggers === 'object'){
+    for (const [topic, cfg] of Object.entries(triggers)){
+      const kws = (cfg.keywords||[]).map(k=>String(k).toLowerCase());
+      if (kws.some(k=> t.includes(k))){
+        return {
+          keyword: kws.find(k=> t.includes(k)) || topic,
+          chapter: cfg.chapterHint || null,
+          section: cfg.sectionHint || null
+        };
+      }
+    }
+  }
+
+  // 2) Фолбэк-эвристики (как было)
   if (/детств/.test(t))      return { chapter:'детство' };
   if (/школ/.test(t))        return { chapter:'школь' };
   if (/университет|юност/.test(t)) return { chapter:'университет' };
@@ -369,6 +432,7 @@ function inferBackstoryRequest(userText){
   if (/мечт/.test(t))        return { section:'мечты' };
   if (/страх/.test(t))       return { section:'страхи' };
   if (/любов|чувств/.test(t))return { section:'любов' };
+
   return {}; // просто любая история
 }
 
@@ -500,15 +564,16 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 /* === INIT === */
 (async function init(){
   try{
-    const [p1,p2,p3,p4,p5,p6]=await Promise.all([
+    const [p1,p2,p3,p4,p5,p6,p7]=await Promise.all([
       fetch('/data/rin_persona.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_phrases.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_schedule.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_stickers.json?v=5').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_memories.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_backstory.json').then(r=>r.json()).catch(()=>null)
+      fetch('/data/rin_triggers.json').then(r=>r.json()).catch(()=>null)
     ]);
-    persona=p1; phrases=p2; schedule=p3; stickers=p4; memories=p5; backstory=p6;
+    persona=p1; phrases=p2; schedule=p3; stickers=p4; memories=p5; backstory=p6; triggers=p7;
   }catch(e){ console.warn('JSON load error',e); }
 
   history=loadHistory();
