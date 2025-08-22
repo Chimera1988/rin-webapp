@@ -325,7 +325,8 @@ function pickBackstory(opts={}){
     for (const ch of backstory.chapters){
       const sections = ch.sections || {};
       const chTitle = (ch.title||'').toLowerCase();
-      const chScore = hintChapter && chTitle.includes(hintChapter) ? 2 : 1; // мягкий приоритет подсказки
+      const hint = (hintChapter || chapter || '').toLowerCase();
+      const chScore = hint && chTitle.includes(hint) ? 2 : 1;
 
       for (const key of Object.keys(sections)){
         const arr = sections[key] || [];
