@@ -383,9 +383,12 @@ function inferBackstoryRequest(userText){
 /* === Голосовой пузырь (как в Telegram) === */
 function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
+
+  // ряд
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
 
+  // аватар / спейсер
   if (who !== 'user'){
     const ava=document.createElement('img');
     ava.className='avatar small';
@@ -397,38 +400,118 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     row.appendChild(spacer);
   }
 
+  // плашка
   const wrap=document.createElement('div');
-  wrap.className='bubble ' + (who==='user'?'me':'her');
+  wrap.className='bubble voice-tg ' + (who==='user'?'me':'her');
 
-  // Кнопка ▶️ / ⏸
+  // верхняя строка
+  const top=document.createElement('div');
+  top.className='voice-tg__row';
+
   const btn=document.createElement('button');
-  btn.className='voice-btn';
-  btn.innerHTML='▶️';
+  btn.className='voice-tg__play';
+  btn.setAttribute('aria-label','Проиграть голосовое');
+  btn.textContent='▶';
 
-  // Мини-таймер
-  const timeEl=document.createElement('span');
-  timeEl.className='voice-time';
-  timeEl.textContent='0:00';
+  const wave=document.createElement('div');
+  wave.className='voice-tg__wave';
+  const BAR_COUNT = 18;
+  for (let i=0;i<BAR_COUNT;i++){
+    const bar=document.createElement('i');
+    bar.style.height = (8 + Math.round(Math.random()*18)) + 'px'; // базовая «неровность»
+    wave.appendChild(bar);
+  }
 
-  // Время сообщения (как и в текстовых)
+  const act=document.createElement('div');
+  act.className='voice-tg__action';
+  act.textContent='→A'; // «показать текст» как в Telegram
+  act.title='Показать текст';
+
+  top.appendChild(btn);
+  top.appendChild(wave);
+  top.appendChild(act);
+
+  // низ: длительность слева, время справа
+  const meta=document.createElement('div');
+  meta.className='voice-tg__meta';
+
+  const dur=document.createElement('span');
+  dur.className='voice-tg__dur';
+  dur.textContent='0:00';
+
   const timeStamp=document.createElement('span');
   timeStamp.className='bubble-time';
   timeStamp.textContent=fmtTime(d);
 
-  // Кнопка «Показать текст»
-  const showText=document.createElement('div');
-  showText.className='voice-chip';
-  showText.textContent='Показать текст';
+  meta.appendChild(dur);
+  meta.appendChild(timeStamp);
 
-  wrap.appendChild(btn);
-  wrap.appendChild(timeEl);
-  wrap.appendChild(timeStamp);
-  wrap.appendChild(document.createElement('br'));
-  wrap.appendChild(showText);
-
+  // сборка
+  wrap.appendChild(top);
+  wrap.appendChild(meta);
   row.appendChild(wrap);
   chatEl.appendChild(row);
   chatEl.scrollTop=chatEl.scrollHeight;
+
+  // аудио
+  const audio=new Audio(audioUrl);
+  let raf=null;
+
+  const secToMMSS = s => {
+    const v=Math.max(0, Math.floor(s||0));
+    return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`;
+  };
+
+  function stopAnim(){
+    wrap.classList.remove('playing');
+    if (raf) cancelAnimationFrame(raf), raf=null;
+  }
+  function loop(){
+    const cur = audio.currentTime || 0;
+    const total = audio.duration || 0;
+    // во время проигрывания показываем текущую позицию (как на твоём скрине)
+    dur.textContent = secToMMSS(cur);
+    // тёмная маска справа — визуализируем прогресс
+    const pct = total ? Math.min(100, (cur/total)*100) : 0;
+    wave.style.setProperty('--progress', pct + '%');
+    raf = requestAnimationFrame(loop);
+  }
+
+  audio.addEventListener('loadedmetadata', ()=>{
+    // до старта можно показать общую длительность (если это важнее — раскомментируй)
+    // dur.textContent = isFinite(audio.duration) ? secToMMSS(audio.duration) : '0:00';
+  });
+
+  btn.onclick=()=>{
+    if (audio.paused){
+      audio.play().then(()=>{
+        btn.textContent='⏸';
+        wrap.classList.add('playing');
+        raf = requestAnimationFrame(loop);
+      }).catch(()=>{});
+    } else {
+      audio.pause();
+      btn.textContent='▶';
+      stopAnim();
+      // по паузе можно оставить текущее время — как Телеграм
+    }
+  };
+
+  audio.onended=()=>{
+    btn.textContent='▶';
+    stopAnim();
+    URL.revokeObjectURL(audioUrl);
+  };
+
+  // правая кнопка → показать текст
+  act.onclick=()=>{
+    act.remove();
+    const tr=document.createElement('div');
+    tr.className='voice-transcript';
+    tr.textContent=text;
+    wrap.appendChild(tr);
+  };
+}
 
   // Аудио-логика
   const audio=new Audio(audioUrl);
