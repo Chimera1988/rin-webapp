@@ -49,6 +49,8 @@ const resetApp      = document.getElementById('resetApp');
 let persona=null, phrases=null, schedule=null, stickers=null;
 /* === Новое: биография и воспоминания === */
 let backstory=null, memories=null;
+/* === Новое: словарь триггеров === */
+let triggers=null; //
 
 let history=[];
 let chainStickerCount=0;
@@ -570,7 +572,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
       fetch('/data/rin_schedule.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_stickers.json?v=5').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_memories.json').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_backstory.json').then(r=>r.json()).catch(()=>null)
+      fetch('/data/rin_backstory.json').then(r=>r.json()).catch(()=>null),
       fetch('/data/rin_triggers.json').then(r=>r.json()).catch(()=>null)
     ]);
     persona=p1; phrases=p2; schedule=p3; stickers=p4; memories=p5; backstory=p6; triggers=p7;
