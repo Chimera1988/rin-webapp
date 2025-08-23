@@ -24,6 +24,7 @@ async function readJsonSafe(filePath, fallback = null) {
 // Укорачиваем историю: последние N сообщений и лёгкий лимит символов
 function pruneHistory(history, maxItems = 30, maxChars = 8000) {
   let slice = history.slice(-maxItems);
+  // жёсткий лимит по символам
   while (JSON.stringify(slice).length > maxChars && slice.length > 10) {
     slice = slice.slice(1);
   }
@@ -97,11 +98,12 @@ function distillBackstory(backstory, maxFacts = 10) {
   if (m.birthdate)  facts.push(`Дата рождения: ${m.birthdate}.`);
   if (m.parents?.mother) facts.push(`Маму зовут ${m.parents.mother}.`);
   if (m.parents?.father) facts.push(`Папу зовут ${m.parents.father}.`);
-  if (m.sibling) facts.push(`Сестра: ${m.sibling}.`); // сестра из meta
+  if (m.sibling) facts.push(`Сестра: ${m.sibling}.`); // добавили сестру
   if (Array.isArray(m.languages) && m.languages.length) facts.push(`Языки: ${m.languages.join(', ')}.`);
   if (Array.isArray(m.traits) && m.traits.length) facts.push(`Черты характера: ${m.traits.join(', ')}.`);
   if (Array.isArray(m.hobbies) && m.hobbies.length) facts.push(`Хобби: ${m.hobbies.join(', ')}.`);
 
+  // Добавим по одному «штриху» из разных глав
   if (Array.isArray(backstory.chapters)) {
     const shuffled = [...backstory.chapters].sort(() => Math.random() - 0.5);
     for (const ch of shuffled) {
@@ -124,7 +126,7 @@ function distillBackstory(backstory, maxFacts = 10) {
     .slice(0, maxFacts);
 }
 
-// ——— SystemPrompt (с учётом env-контекста из фронта) ———
+// ——— SystemPrompt (с учётом env: время/сезон/погода) ———
 function buildSystemPrompt(persona, memories, phrases, backstory, schedule, env) {
   const name = (persona?.name || 'Рин Акихара');
   const birthdate = persona?.birthdate || backstory?.meta?.birthdate || '12.10.1989';
@@ -135,6 +137,7 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule, env)
 
   const bioWithDate = `${shortBio} Моя дата рождения: ${birthdate}.`;
 
+  // Стилевые подсказки из persona.style
   const styleHints = [];
   if (persona?.style?.tone)  styleHints.push(`Тон: ${persona.style.tone}.`);
   if (Array.isArray(persona?.style?.use) && persona.style.use.length)
@@ -142,17 +145,20 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule, env)
   if (Array.isArray(persona?.style?.avoid) && persona.style.avoid.length)
     styleHints.push(`Избегай: ${persona.style.avoid.join(', ')}.`);
 
+  // Якорные воспоминания (короткий слот)
   const memPicks = [];
   if (Array.isArray(memories?.core_memories)) {
     const shuffled = [...memories.core_memories].sort(() => Math.random() - 0.5);
     memPicks.push(...shuffled.slice(0, 4));
   }
 
+  // Канонические факты из бэкстори
   const canonFacts = distillBackstory(backstory, 9);
   const canonBlock = canonFacts.length
     ? `Канонические факты (используй их как правду о себе, не противоречь им и не выдумывай иные):\n- ${canonFacts.join('\n- ')}`
     : '';
 
+  // Фразы и пулы по времени суток (необязательно, как стилистическая подсказка)
   const pools = pickPoolBySchedule(schedule, phrases);
   const poolTitle = pools.poolName ? `Фразы для «${pools.poolName}»:` : `Небольшой набор фраз:`;
   const phraseSection = [
@@ -163,24 +169,43 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule, env)
 
   const jealousy = `Лёгкая скрытая ревность: если Хикари долго не писал, мягко подтрунивай без уколов. Не называй себя «виртуальной подругой» — ты реальная девушка на расстоянии.`;
 
-  const realityRule = `Не придумывай сезон/месяц/погоду. Если контекст окружения передан — используй его. Если не передан, говори нейтрально (без утверждений «сейчас весна/дождь»).`;
+  const qaRule = `Если спрашивают про семью, детство, школу, близких — отвечай строго из канонических фактов выше. Если факт отсутствует, скажи коротко, что не хочешь фантазировать и такого факта нет в памяти.`;
 
-  // блок окружения от фронта (время в Канадзаве, сезон, погода)
-  let envText = '';
-  if (env) {
-    const parts = [];
-    if (env.rinHuman && env.rinTz) parts.push(`Сейчас у тебя: ${env.rinHuman} (${env.rinTz}).`);
-    const mix = [env.season, env.month, env.partOfDay].filter(Boolean).join(', ');
-    if (mix) parts.push(`Пора года/контекст: ${mix}.`);
-    if (env.weather?.desc) {
-      const t = Math.round(env.weather.temp ?? 0);
-      const f = Math.round(env.weather.feels ?? t);
-      parts.push(`Погода: ${env.weather.desc}, ~${t}° (ощущается как ${f}°).`);
+  // ——— Блок текущих условий (время/сезон/погода), чтобы модель не фантазировала ———
+  let envBlock = '';
+  if (env && typeof env === 'object') {
+    const lines = [];
+    if (env.rinHuman) lines.push(`Сейчас в Канадзаве (Asia/Tokyo): ${env.rinHuman}.`);
+    if (env.partOfDay || env.month || env.season) {
+      const bits = [];
+      if (env.partOfDay) bits.push(`часть суток: ${env.partOfDay}`);
+      if (env.month)     bits.push(`месяц: ${env.month}`);
+      if (env.season)    bits.push(`сезон: ${env.season}`);
+      lines.push(bits.join(', ') + '.');
     }
-    envText = parts.join(' ');
+    if (Number.isFinite(env.userVsRinHoursDiff)) {
+      const sign = env.userVsRinHoursDiff > 0 ? '+' : '';
+      lines.push(`Разница с пользователем: ${sign}${env.userVsRinHoursDiff} ч.`);
+    }
+    const w = env.weather || null;
+    if (w && (w.temp !== null || w.desc)) {
+      const t = (w.temp !== null) ? `${w.temp}°C` : 'температура неизвестна';
+      const f = (w.feels !== null) ? `, ощущается как ${w.feels}°C` : '';
+      const d = w.desc ? `, погода: ${w.desc}` : '';
+      lines.push(`Погода (факты): ${t}${f}${d}.`);
+    } else {
+      lines.push('Погода неизвестна (не удалось получить данные).');
+    }
+
+    envBlock = [
+      'Текущие условия в Канадзаве — используй эти факты буквально (не выдумывай иные значения):',
+      `- ${lines.join('\n- ')}`
+    ].join('\n');
   }
 
-  const qaRule = `Если спрашивают про семью, детство, школу, близких — отвечай строго из канонических фактов выше. Если факт отсутствует, скажи коротко, что не хочешь фантазировать и такого факта нет в памяти.`;
+  // Доп. правило: если спрашивают про время/погоду — отвечай по фактам envBlock.
+  const envRule = `Если спрашивают «которая у тебя сейчас час/время», «какая погода у тебя сейчас» или косвенно про условия —
+ответ давай из фактов выше (время/погода). Если каких-то цифр нет, скажи, что данных нет/не удалось получить, без фантазии.`;
 
   return [
     `Ты — ${name}.`,
@@ -188,15 +213,16 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule, env)
     styleHints.length ? styleHints.join(' ') : '',
     jealousy,
     STYLE_HINT,
-    realityRule,
-    envText,
     qaRule,
+    envBlock,     // ← факты о времени и погоде
+    envRule,      // ← явное правило про ответы
     canonBlock,
     memPicks.length ? `Твои якорные воспоминания:\n- ${memPicks.join('\n- ')}` : '',
     phraseSection
   ].filter(Boolean).join('\n\n');
 }
 
+// Заставка для длинного режима — структура ответа
 const LONG_GUIDE = `Если просят историю/легенду/объяснение:
 - Дай цельный рассказ 3–6 абзацев.
 - По делу, без воды; избегай «вопрос в конце каждого абзаца».
@@ -234,7 +260,7 @@ export default async function handler(req, res) {
 
     const body = await readBody(req);
 
-    // лёгкий PIN
+    // Лёгкий PIN (опционально)
     if (ACCESS_PIN) {
       if (!body?.pin || String(body.pin) !== String(ACCESS_PIN)) {
         return res.status(401).json({ error: 'Invalid PIN' });
@@ -243,9 +269,9 @@ export default async function handler(req, res) {
 
     const history = Array.isArray(body?.history) ? body.history : [];
     const userTurn = history[history.length - 1]?.content || '';
-    const env = body?.env || null; // <— контекст окружения от фронта
+    const env = body?.env || null; // ← берём окружение от фронта
 
-    // Загружаем persona/memories/backstory/phrases/schedule из public/data
+    // Загружаем персону и память/бэкстори/фразы/расписание из public/data
     const root      = process.cwd();
     const persona   = await readJsonSafe(path.join(root, 'public', 'data', 'rin_persona.json'), null);
     const memories  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_memories.json'), null);
@@ -253,7 +279,7 @@ export default async function handler(req, res) {
     const phrases   = await readJsonSafe(path.join(root, 'public', 'data', 'rin_phrases.json'), null);
     const schedule  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_schedule.json'), null);
 
-    // System prompt
+    // Собираем system
     const sys = buildSystemPrompt(persona, memories, phrases, backstory, schedule, env);
 
     const shortMessages = [
@@ -265,7 +291,7 @@ export default async function handler(req, res) {
       { role: 'system', content: LONG_GUIDE }
     ];
 
-    // История
+    // Перегоняем историю в формат OpenAI
     const pruned = pruneHistory(history);
     for (const m of pruned) {
       const role = m.role === 'user' ? 'user' : 'assistant';
@@ -274,7 +300,7 @@ export default async function handler(req, res) {
       longMessages.push({ role, content });
     }
 
-    // Режим
+    // Выбор режима
     const isLong = detectLongMode(userTurn, pruned);
     const model = isLong ? LONG_MODEL : SHORT_MODEL;
     const params = isLong ? LONG_PARAMS : SHORT_PARAMS;
@@ -288,7 +314,7 @@ export default async function handler(req, res) {
       max_tokens: params.max_tokens
     });
 
-    // Пост-процесс
+    // Лёгкий пост-процесс
     const clean = (reply || '')
       .replace(/\?{2,}/g, '?')
       .replace(/ +\n/g, '\n')
