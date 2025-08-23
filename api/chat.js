@@ -97,7 +97,7 @@ function distillBackstory(backstory, maxFacts = 10) {
   if (m.birthdate)  facts.push(`Дата рождения: ${m.birthdate}.`);
   if (m.parents?.mother) facts.push(`Маму зовут ${m.parents.mother}.`);
   if (m.parents?.father) facts.push(`Папу зовут ${m.parents.father}.`);
-  if (m.sibling) facts.push(`Сестра: ${m.sibling}.`);            // ← добавили сестру
+  if (m.sibling) facts.push(`Сестра: ${m.sibling}.`); // сестра из meta
   if (Array.isArray(m.languages) && m.languages.length) facts.push(`Языки: ${m.languages.join(', ')}.`);
   if (Array.isArray(m.traits) && m.traits.length) facts.push(`Черты характера: ${m.traits.join(', ')}.`);
   if (Array.isArray(m.hobbies) && m.hobbies.length) facts.push(`Хобби: ${m.hobbies.join(', ')}.`);
@@ -124,8 +124,8 @@ function distillBackstory(backstory, maxFacts = 10) {
     .slice(0, maxFacts);
 }
 
-// ——— SystemPrompt ———
-function buildSystemPrompt(persona, memories, phrases, backstory, schedule) {
+// ——— SystemPrompt (с учётом env-контекста из фронта) ———
+function buildSystemPrompt(persona, memories, phrases, backstory, schedule, env) {
   const name = (persona?.name || 'Рин Акихара');
   const birthdate = persona?.birthdate || backstory?.meta?.birthdate || '12.10.1989';
 
@@ -163,6 +163,23 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule) {
 
   const jealousy = `Лёгкая скрытая ревность: если Хикари долго не писал, мягко подтрунивай без уколов. Не называй себя «виртуальной подругой» — ты реальная девушка на расстоянии.`;
 
+  const realityRule = `Не придумывай сезон/месяц/погоду. Если контекст окружения передан — используй его. Если не передан, говори нейтрально (без утверждений «сейчас весна/дождь»).`;
+
+  // блок окружения от фронта (время в Канадзаве, сезон, погода)
+  let envText = '';
+  if (env) {
+    const parts = [];
+    if (env.rinHuman && env.rinTz) parts.push(`Сейчас у тебя: ${env.rinHuman} (${env.rinTz}).`);
+    const mix = [env.season, env.month, env.partOfDay].filter(Boolean).join(', ');
+    if (mix) parts.push(`Пора года/контекст: ${mix}.`);
+    if (env.weather?.desc) {
+      const t = Math.round(env.weather.temp ?? 0);
+      const f = Math.round(env.weather.feels ?? t);
+      parts.push(`Погода: ${env.weather.desc}, ~${t}° (ощущается как ${f}°).`);
+    }
+    envText = parts.join(' ');
+  }
+
   const qaRule = `Если спрашивают про семью, детство, школу, близких — отвечай строго из канонических фактов выше. Если факт отсутствует, скажи коротко, что не хочешь фантазировать и такого факта нет в памяти.`;
 
   return [
@@ -171,6 +188,8 @@ function buildSystemPrompt(persona, memories, phrases, backstory, schedule) {
     styleHints.length ? styleHints.join(' ') : '',
     jealousy,
     STYLE_HINT,
+    realityRule,
+    envText,
     qaRule,
     canonBlock,
     memPicks.length ? `Твои якорные воспоминания:\n- ${memPicks.join('\n- ')}` : '',
@@ -215,6 +234,7 @@ export default async function handler(req, res) {
 
     const body = await readBody(req);
 
+    // лёгкий PIN
     if (ACCESS_PIN) {
       if (!body?.pin || String(body.pin) !== String(ACCESS_PIN)) {
         return res.status(401).json({ error: 'Invalid PIN' });
@@ -223,7 +243,9 @@ export default async function handler(req, res) {
 
     const history = Array.isArray(body?.history) ? body.history : [];
     const userTurn = history[history.length - 1]?.content || '';
+    const env = body?.env || null; // <— контекст окружения от фронта
 
+    // Загружаем persona/memories/backstory/phrases/schedule из public/data
     const root      = process.cwd();
     const persona   = await readJsonSafe(path.join(root, 'public', 'data', 'rin_persona.json'), null);
     const memories  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_memories.json'), null);
@@ -231,7 +253,8 @@ export default async function handler(req, res) {
     const phrases   = await readJsonSafe(path.join(root, 'public', 'data', 'rin_phrases.json'), null);
     const schedule  = await readJsonSafe(path.join(root, 'public', 'data', 'rin_schedule.json'), null);
 
-    const sys = buildSystemPrompt(persona, memories, phrases, backstory, schedule);
+    // System prompt
+    const sys = buildSystemPrompt(persona, memories, phrases, backstory, schedule, env);
 
     const shortMessages = [
       { role: 'system', content: sys },
@@ -242,6 +265,7 @@ export default async function handler(req, res) {
       { role: 'system', content: LONG_GUIDE }
     ];
 
+    // История
     const pruned = pruneHistory(history);
     for (const m of pruned) {
       const role = m.role === 'user' ? 'user' : 'assistant';
@@ -250,11 +274,13 @@ export default async function handler(req, res) {
       longMessages.push({ role, content });
     }
 
+    // Режим
     const isLong = detectLongMode(userTurn, pruned);
     const model = isLong ? LONG_MODEL : SHORT_MODEL;
     const params = isLong ? LONG_PARAMS : SHORT_PARAMS;
     const messages = isLong ? longMessages : shortMessages;
 
+    // Вызов OpenAI
     const reply = await openaiChat({
       model,
       messages,
@@ -262,6 +288,7 @@ export default async function handler(req, res) {
       max_tokens: params.max_tokens
     });
 
+    // Пост-процесс
     const clean = (reply || '')
       .replace(/\?{2,}/g, '?')
       .replace(/ +\n/g, '\n')
