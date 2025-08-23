@@ -204,7 +204,7 @@ if (wpOpacity){
   };
 }
 
-/* — Стикеры — */
+/* — Стикеры: вероятность/режимы — */
 function lsStickerProb(){ return +(localStorage.getItem(LS_STICKER_PROB) || '30'); } // %
 function lsStickerMode(){ return localStorage.getItem(LS_STICKER_MODE) || 'smart'; }
 function lsStickerSafe(){ return localStorage.getItem(LS_STICKER_SAFE)==='1'; }
@@ -300,36 +300,140 @@ function addTyping(){
   return row;
 }
 
-/* === Стикеры === */
+/* === Стикеры: утилиты === */
 function weightedPick(arr){ const sum=arr.reduce((s,a)=>s+(a.weight||1),0); let r=Math.random()*sum; for(const a of arr){ r-= (a.weight||1); if(r<=0) return a; } return arr[0]; }
 function hourMood(){ const h=new Date().getHours(); if(h>=6&&h<12)return'morning'; if(h>=12&&h<18)return'day'; if(h>=18&&h<23)return'evening'; return'night'; }
 
 function shouldShowSticker(userText, replyText){
   if (lsStickerMode()==='off') return false;
   const base = (lsStickerProb()/100);
-  const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
+  const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж|kiss)/i;
   if (userText && KEY_FLIRT.test(userText)) return true;
   return Math.random()<base;
 }
 
+/* — Подписи к стикерам (анти-повтор, много шаблонов) — */
+let _captionBuf = []; // последние 6 подписей
+function _pickNoRepeat(options, buf = _captionBuf, maxBuf = 6){
+  if (!Array.isArray(options) || !options.length) return '';
+  const pool = options.filter(x => !buf.includes(x));
+  const base = (pool.length ? pool : options);
+  const pick = base[Math.floor(Math.random() * base.length)];
+  buf.push(pick); if (buf.length > maxBuf) buf.shift();
+  return pick;
+}
+function buildStickerCaption(st, { userText='', replyText='' } = {}){
+  const t  = `${userText} ${replyText}`.toLowerCase();
+  const m  = (st.moods || []);
+  const kw = (st.keywords || []);
+  const has = re => re.test(t);
+  const kwHas = re => kw.some(k => re.test(String(k)));
+
+  const tpl = {
+    romantic_kiss: [
+      'Отправляю тебе поцелуй — бережно и по-настоящему. 💋',
+      'Вот мой маленький поцелуй, чтобы ты почувствовал(а) тепло. 💋',
+      'Слова лишние — просто поцелуй. 💋'
+    ],
+    romantic_hug: [
+      'Иди сюда — вот моё тёплое объятие. 🤍',
+      'Обнимаю крепко-нежно — держи. 🤍',
+      'Хочется прижаться и не отпускать. 🤍'
+    ],
+    romantic_soft: [
+      'Немного нежности между строк. ✨',
+      'Хочу показать тебе чуть больше тепла — держи. ✨',
+      'Тихое тёплое чувство — делюсь с тобой. ✨'
+    ],
+    playful: [
+      'Не удержалась — чуточку игривости. 😊',
+      'Пусть будет немного шалости в ленте. 😊',
+      'Немного озорства — для улыбки. 😊'
+    ],
+    cat: [
+      'Пусть этот котик скажет за меня больше. 🐾',
+      'Кототерапия на сегодня. 🐾',
+      'Отправляю усатую поддержку. 🐾'
+    ],
+    comfort: [
+      'Я рядом — тихо, бережно, без лишних слов. 🌙',
+      'Держу тебя за руку мысленно. 🌙',
+      'Пусть станет чуток спокойнее. 🌙'
+    ],
+    congrats: [
+      'Горжусь тобой — это здорово! 🎉',
+      'Маленькая победа заслуживает стикера. 🎉',
+      'Пусть удача задержится подольше. 🎉'
+    ],
+    morning: [
+      'На удачное утро — тёплый знак. ☀️',
+      'Пусть день начнётся мягко. ☀️',
+      'Доброе утро между строк. ☀️'
+    ],
+    night: [
+      'На спокойную ночь — немного нежности. 🌙',
+      'Пусть сны будут добрыми. 🌙',
+      'Тишины и тепла на вечер. 🌙'
+    ],
+    default_: [
+      'Вот маленький знак внимания. ✨',
+      'Немного тепла — просто так. ✨',
+      'Пусть это вызовет улыбку. ✨'
+    ]
+  };
+
+  // явные запросы
+  if (has(/поцел|kiss/i) || kwHas(/поцел|kiss/i)) return _pickNoRepeat(tpl.romantic_kiss);
+  if (has(/обним|обними|обнимаш/i) || kwHas(/обним/i)) return _pickNoRepeat(tpl.romantic_hug);
+
+  // тема «котики»
+  if (has(/кот(ик)?|cat/i) || kwHas(/кот|cat/i)) return _pickNoRepeat(tpl.cat);
+
+  // поздравление
+  if (has(/поздрав|ура|молодец|получилось|сделал|сделала|успех/i)) return _pickNoRepeat(tpl.congrats);
+
+  // поддержка
+  if (has(/груст|тяжел|тяжёл|тревог|беспок|устал|устала|сложно|болит/i)) return _pickNoRepeat(tpl.comfort);
+
+  // игривость
+  if (m.includes('playful') || has(/улыб|шут|игрив|хихи|ха-ха/i)) return _pickNoRepeat(tpl.playful);
+
+  // романтика по настроению
+  if (m.some(x=>['romantic','tender','shy','cosy','playful'].includes(x))) return _pickNoRepeat(tpl.romantic_soft);
+
+  // время суток
+  const h = new Date().getHours();
+  if (h>=6 && h<11) return _pickNoRepeat(tpl.morning);
+  if (h>=22 || h<2) return _pickNoRepeat(tpl.night);
+
+  return _pickNoRepeat(tpl.default_);
+}
+
+/* — умный выбор стикера: блокируем романтику без повода — */
 function pickStickerSmart(replyText, windowPool, userText){
   if (!stickers || stickers._schema!=='v2') return null;
   const list = stickers.stickers||[];
   if (!list.length) return null;
 
   const DISCOURAGE=/(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|совет|план|границ)/i;
-  const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж)/i;
+  const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж|kiss)/i;
 
   if (lsStickerSafe() && (userText && DISCOURAGE.test(userText))) return null;
 
+  const textPool = (userText?userText+' ':'') + (replyText||'');
+  const romanticContext = KEY_FLIRT.test(textPool);
+
   if (lsStickerMode()==='keywords'){
-    const pool = (userText?userText:replyText)||'';
-    const hit = list.filter(s=> (s.keywords||[]).some(k=>new RegExp(k,'i').test(pool)));
-    return hit.length?weightedPick(hit):null;
+    const hit = list.filter(s=> (s.keywords||[]).some(k=>new RegExp(k,'i').test(textPool)));
+    const safeHit = hit.filter(s=>{
+      const isRom = (s.moods||[]).some(m=>['romantic','tender','shy','cosy','playful'].includes(m));
+      return romanticContext || !isRom;
+    });
+    return (safeHit.length?weightedPick(safeHit):null);
   }
 
-  if (userText && KEY_FLIRT.test(userText)) {
-    const hit = list.filter(s=> (s.keywords||[]).some(k=>new RegExp(k,'i').test(userText)));
+  if (romanticContext){
+    const hit = list.filter(s=> (s.keywords||[]).some(k=>new RegExp(k,'i').test(textPool)));
     if (hit.length) return weightedPick(hit);
     const romantic=list.filter(s=> (s.moods||[]).some(m=>['tender','romantic','shy','cosy','playful'].includes(m)));
     if (romantic.length) return weightedPick(romantic);
@@ -337,38 +441,44 @@ function pickStickerSmart(replyText, windowPool, userText){
 
   if (replyText){
     const byKw=list.filter(s=>(s.keywords||[]).some(k=>new RegExp(k,'i').test(replyText)));
-    if (byKw.length) return weightedPick(byKw);
+    const safe = byKw.filter(s=>{
+      const isRom = (s.moods||[]).some(m=>['romantic','tender','shy','cosy','playful'].includes(m));
+      return romanticContext || !isRom;
+    });
+    if (safe.length) return weightedPick(safe);
   }
 
   const tMood = windowPool || hourMood();
   const def = stickers.defaults?.byTime?.[tMood];
   if (def && Math.random() < (def.p ?? 0.1)) {
     const pool = list.filter(s => (s.moods||[]).some(m => def.moods.includes(m)));
-    if (pool.length) return weightedPick(pool);
-  }
-
-  if (replyText && KEY_FLIRT.test(replyText)){
-    const pool=list.filter(s=> (s.moods||[]).some(m=>['romantic','playful','cosy','tender','shy'].includes(m)));
-    if (pool.length && Math.random()<0.35) return weightedPick(pool);
+    const safe = pool.filter(s=>{
+      const isRom = (s.moods||[]).some(m=>['romantic','tender','shy','cosy','playful'].includes(m));
+      return romanticContext || !isRom;
+    });
+    if (safe.length) return weightedPick(safe);
   }
 
   return null;
 }
 
-function addStickerBubble(src, who='assistant'){
+function addStickerBubble(src, who='assistant', caption=''){
   const row=document.createElement('div');
   row.className='row '+(who==='user'?'me':'her');
   const timeStr=fmtTime(new Date());
+  const capHtml = caption ? `<div class="sticker-caption">${caption}</div>` : '';
 
   if (who==='user'){
     row.innerHTML=`<div class="bubble me sticker-only">
       <img class="sticker" src="${src}" alt="стикер"/>
+      ${capHtml}
       <span class="bubble-time">${timeStr}</span>
     </div>`;
   } else {
     row.innerHTML=`<img class="avatar small" src="/avatar.jpg" alt="Рин"/>
       <div class="bubble her sticker-only">
         <img class="sticker" src="${src}" alt="стикер"/>
+        ${capHtml}
         <span class="bubble-time">${timeStr}</span>
       </div>`;
   }
@@ -400,7 +510,6 @@ function pickBackstory(opts={}){
   if (!backstory || !Array.isArray(backstory.chapters)) return null;
   const { chapter, section, keyword, hintChapter } = opts;
 
-  // === Поиск по ключевому слову (если задано) ===
   if (keyword){
     const re = new RegExp(keyword, 'i');
     const matches = [];
@@ -443,7 +552,7 @@ function pickBackstory(opts={}){
     }
   }
 
-  // === Обычный выбор по главе/секции ===
+  // обычный выбор
   let chapters = backstory.chapters;
   if (chapter){
     const q = chapter.toLowerCase();
@@ -655,7 +764,10 @@ function greet(){
   const greeting='Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸';
   addBubble(greeting,'assistant');
   const st=pickStickerSmart(greeting,'morning','');
-  if (st && shouldShowSticker('',greeting)) addStickerBubble(st.src,'assistant');
+  if (st && shouldShowSticker('',greeting)){
+    const cap = buildStickerCaption(st,{ replyText:greeting });
+    addStickerBubble(st.src,'assistant', cap);
+  }
   history.push({role:'assistant',content:greeting,ts:Date.now()});
   saveHistory(history);
 }
@@ -730,7 +842,10 @@ async function tryInitiateBySchedule(){
     }
 
     const st=pickStickerSmart(text,win.pool,'');
-    if (st && shouldShowSticker('',text)) addStickerBubble(st.src,'assistant');
+    if (st && shouldShowSticker('',text)){
+      const cap = buildStickerCaption(st,{ replyText:text });
+      addStickerBubble(st.src,'assistant', cap);
+    }
     history.push({role:'assistant',content:text,ts:Date.now()});
     saveHistory(history); bumpInitCount(dateKey);
   }, 1200+Math.random()*1200);
@@ -773,7 +888,11 @@ formEl.addEventListener('submit', async (e)=>{
       body:JSON.stringify({
         history,
         pin: localStorage.getItem('rin-pin'),
-        env: currentEnv || undefined   // ← передаём окружение (время/сезон/погода)
+        env: currentEnv || undefined,
+        client: {
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+          sentAt: Date.now()
+        }
       })
     });
     const data=await res.json();
@@ -796,7 +915,10 @@ formEl.addEventListener('submit', async (e)=>{
     }
 
     const st=pickStickerSmart(data.reply,null,text);
-    if (st && shouldShowSticker(text,data.reply)) addStickerBubble(st.src,'assistant');
+    if (st && shouldShowSticker(text,data.reply)){
+      const cap = buildStickerCaption(st,{ userText:text, replyText:data.reply });
+      addStickerBubble(st.src,'assistant', cap);
+    }
 
     history.push({role:'assistant',content:data.reply,ts:Date.now()});
     saveHistory(history);
