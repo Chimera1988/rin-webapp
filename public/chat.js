@@ -80,6 +80,8 @@ function hoursDiffWithRin(){
   const rin  = nowInTz(RIN_TZ);
   return Math.round((rin - here) / 3600000);
 }
+
+/* — API погоды (через наш /api/weather) — */
 async function fetchRinWeather(){
   try{
     const u = `/api/weather?q=${encodeURIComponent(RIN_CITY)},${RIN_COUNTRY}&units=metric&lang=ru`;
@@ -88,10 +90,10 @@ async function fetchRinWeather(){
     const w = await r.json();
     if (w && w.weather){
       return {
-        desc:  w.weather.desc || '',
-        temp:  typeof w.weather.temp === 'number' ? Math.round(w.weather.temp) : null,
-        feels: typeof w.weather.feels === 'number' ? Math.round(w.weather.feels) : null,
-        icon:  w.weather.icon || null
+        desc:  w.weather || '',
+        temp:  typeof w.temp === 'number' ? Math.round(w.temp) : (typeof w.main?.temp === 'number' ? Math.round(w.main.temp) : null),
+        feels: typeof w.feels_like === 'number' ? Math.round(w.feels_like) : (typeof w.main?.feels_like === 'number' ? Math.round(w.main.feels_like) : null),
+        icon:  w.icon || null
       };
     }
     const d = w?.weather?.[0]?.description || w?.current?.weather?.[0]?.description || '';
@@ -105,11 +107,58 @@ async function fetchRinWeather(){
     };
   }catch{ return null; }
 }
+
+/* — форматирование и естественная фраза о погоде — */
+function fmtC(n){
+  if (typeof n !== 'number' || !isFinite(n)) return null;
+  const s = Math.round(n);
+  const sign = s > 0 ? '+' : (s < 0 ? '−' : '');
+  return `${sign}${Math.abs(s)}°C`;
+}
+function pickWeatherEmoji(desc=''){
+  const t = (desc||'').toLowerCase();
+  if (/гроза|thunder|storm/.test(t)) return '⛈️';
+  if (/дожд|rain/.test(t))          return '🌧️';
+  if (/снег|snow/.test(t))          return '❄️';
+  if (/туман|mist|fog/.test(t))     return '🌫️';
+  if (/пасмур|облач|cloud/.test(t)) return '☁️';
+  if (/ясн|солнеч|clear|sun/.test(t)) return '☀️';
+  return '🌤️';
+}
+function buildWeatherPhrase(env){
+  const city = 'Канадзаве';
+  const pod  = env?.partOfDay || 'сейчас';
+  const month= env?.month || '';
+  const season = env?.season || '';
+  const w = env?.weather || null;
+
+  if (w){
+    const desc = (w.desc || '').replace(/^\w/u, c=>c.toLowerCase());
+    const t    = fmtC(w.temp);
+    const f    = fmtC(w.feels);
+    const emo  = pickWeatherEmoji(w.desc);
+
+    let main = `Сейчас в ${city} ${desc}${t?`, ${t}`:''}${f && f!==t?` (ощущается как ${f})`:''}.`;
+    let tail = '';
+    if (pod==='утро')  tail = ' Хорошее время начать день спокойно.';
+    if (pod==='день')  tail = ' В такой день приятно немного пройтись.';
+    if (pod==='вечер') tail = ' Вечером город становится уютнее, хочется чая.';
+    if (pod==='ночь')  tail = ' Ночью тихо — люблю слушать город за окном.';
+
+    return `${main} ${emo}${tail}`.trim();
+  }
+  const add = pod==='ночь' ? ' Сейчас поздно и тихо.' :
+              pod==='вечер'? ' Вечера тут обычно мягкие и спокойные.' :
+              pod==='утро' ? ' Утро часто выходит ясным.' : '';
+  return `Сейчас в ${city} ${season || month}.${add ? (' '+add) : ''}`.trim();
+}
+
 let currentEnv = null;
 async function refreshRinEnv(){
   const rin = nowInTz(RIN_TZ);
   const monthIdx = rin.getMonth();
   const env = {
+    _ts: Date.now(),                 // отметка «свежести» окружения
     rinTz: RIN_TZ,
     rinHuman: fmtRinHuman(rin),
     season: seasonFromMonth(monthIdx),
@@ -382,26 +431,14 @@ function buildStickerCaption(st, { userText='', replyText='' } = {}){
     ]
   };
 
-  // явные запросы
   if (has(/поцел|kiss/i) || kwHas(/поцел|kiss/i)) return _pickNoRepeat(tpl.romantic_kiss);
   if (has(/обним|обними|обнимаш/i) || kwHas(/обним/i)) return _pickNoRepeat(tpl.romantic_hug);
-
-  // тема «котики»
   if (has(/кот(ик)?|cat/i) || kwHas(/кот|cat/i)) return _pickNoRepeat(tpl.cat);
-
-  // поздравление
   if (has(/поздрав|ура|молодец|получилось|сделал|сделала|успех/i)) return _pickNoRepeat(tpl.congrats);
-
-  // поддержка
   if (has(/груст|тяжел|тяжёл|тревог|беспок|устал|устала|сложно|болит/i)) return _pickNoRepeat(tpl.comfort);
-
-  // игривость
   if (m.includes('playful') || has(/улыб|шут|игрив|хихи|ха-ха/i)) return _pickNoRepeat(tpl.playful);
-
-  // романтика по настроению
   if (m.some(x=>['romantic','tender','shy','cosy','playful'].includes(x))) return _pickNoRepeat(tpl.romantic_soft);
 
-  // время суток
   const h = new Date().getHours();
   if (h>=6 && h<11) return _pickNoRepeat(tpl.morning);
   if (h>=22 || h<2) return _pickNoRepeat(tpl.night);
@@ -463,14 +500,12 @@ function pickStickerSmart(replyText, windowPool, userText){
 }
 
 function addStickerBubble(src, who='assistant', caption=''){
-  // Если есть подпись — сначала обычный текстовый пузырь
   if (caption && who !== 'user') {
-    addBubble(caption, 'assistant'); // не добавляем в history — это визуальная подпись
+    addBubble(caption, 'assistant');
   } else if (caption && who === 'user') {
     addBubble(caption, 'user');
   }
 
-  // Затем отдельный «стикер-пузырь» без подписи
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
   const timeStr = fmtTime(new Date());
@@ -868,6 +903,22 @@ formEl.addEventListener('submit', async (e)=>{
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
 
+  // — локальный перехват «погодных» вопросов —
+  const askWeatherRe = /(погод|температур|дожд|снег|жарко|холодно|ветер)\b/i;
+  if (askWeatherRe.test(text)) {
+    try{
+      if (!currentEnv || !currentEnv._ts || (Date.now() - currentEnv._ts) > 5*60*1000){
+        await refreshRinEnv();
+      }
+    }catch{}
+    const weatherReply = buildWeatherPhrase(currentEnv);
+    addBubble(weatherReply, 'assistant');
+    history.push({role:'assistant', content: weatherReply, ts: Date.now()});
+    saveHistory(history);
+    return; // не зовём /api/chat
+  }
+
+  // — запрос истории по бэкстори/мемам —
   const ask = inferBackstoryRequest(text);
   if (ask){
     const story = pickBackstory(ask) || pickMemory();
