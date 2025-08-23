@@ -636,10 +636,20 @@ function pickBackstory(opts={}){
 
 /* эвристика по ключевым словам пользователя → выбор главы/секции */
 function inferBackstoryRequest(userText){
-  const t = (userText||'').toLowerCase();
-  const wantStory = /(расскажи|истори|из прошлого|воспоминан|помнишь)/.test(t);
-  if (!wantStory) return null;
+  const t = (userText || '').toLowerCase();
 
+  // 1) "Как дела / как день / что нового / как настроение" → отвечаем кусочком из "Настоящее"
+  if (/(как дела|как ты|как день|что нового|как настроени|как проходит день)/i.test(t)) {
+    // вернём подсказку «настоящ» — твоя pickBackstory ищет по includes, это ок
+    return { chapter: 'настоящ', section: null };
+  }
+
+  // 2) Легенды/мифы/сказания → не перехватываем, пусть идёт в API/длинный режим
+  if (/(легенд|сказан|миф|предан)/i.test(t)) {
+    return null;
+  }
+
+  // 3) Если есть словарь триггеров — пробуем его
   if (triggers && typeof triggers === 'object'){
     for (const [topic, cfg] of Object.entries(triggers)){
       const kws = (cfg.keywords||[]).map(k=>String(k).toLowerCase());
@@ -653,16 +663,18 @@ function inferBackstoryRequest(userText){
     }
   }
 
-  if (/детств/.test(t))      return { chapter:'детство' };
-  if (/школ/.test(t))        return { chapter:'школь' };
-  if (/университет|юност/.test(t)) return { chapter:'университет' };
-  if (/взросл/.test(t))      return { chapter:'взросл' };
-  if (/настояще|сейчас/.test(t)) return { chapter:'настоящ' };
-  if (/мечт/.test(t))        return { section:'мечты' };
-  if (/страх/.test(t))       return { section:'страхи' };
-  if (/любов|чувств/.test(t))return { section:'любов' };
+  // 4) Фолбэки как раньше
+  if (/детств/.test(t))                return { chapter:'детств' };
+  if (/школ/.test(t))                  return { chapter:'школь' };
+  if (/университет|юност/.test(t))     return { chapter:'университет' };
+  if (/взросл/.test(t))                return { chapter:'взросл' };
+  if (/настояще|сейчас/.test(t))       return { chapter:'настоящ' };
+  if (/мечт/.test(t))                  return { section:'мечты' };
+  if (/страх/.test(t))                 return { section:'страхи' };
+  if (/любов|чувств/.test(t))          return { section:'любов' };
 
-  return {}; // просто любая история
+  // Иначе — пустая подсказка (любой фрагмент)
+  return {};
 }
 
 /* === Голосовой пузырь (Telegram-style, статичный заборчик) === */
@@ -947,36 +959,75 @@ async function tryInitiateBySchedule(){
   }, 1200+Math.random()*1200);
 }
 
-/* === Отправка === */
+/* === Отправка (с локальными «маленькими» ответами) === */
 formEl.addEventListener('submit', async (e)=>{
   e.preventDefault();
-  const text=inputEl.value.trim();
+  const text = (inputEl.value || '').trim();
   if (!text) return;
 
+  // 1) отрисовываем пользователя + сохраняем историю
   addBubble(text,'user');
   history.push({role:'user',content:text,ts:Date.now()});
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
 
-  // — локальный перехват «погодных» вопросов —
-  const askWeatherRe = /(погод|температур|дожд|снег|жарко|холодно|ветер)\b/i;
-  if (askWeatherRe.test(text)) {
-    try{
-      if (!currentEnv || !currentEnv._ts || (Date.now() - currentEnv._ts) > 5*60*1000){
-        await refreshRinEnv();
-      }
-    }catch{}
-    const weatherReply = buildWeatherPhrase(currentEnv);
-    addBubble(weatherReply, 'assistant');
-    history.push({role:'assistant', content: weatherReply, ts: Date.now()});
-    saveHistory(history);
-    return; // не зовём /api/chat
+  const t = text.toLowerCase();
+
+  // ——— A) локальный "бытовой" ответ: как дела / как день / чем занята / что делаешь ———
+  const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
+  // ——— B) локальный ответ про погоду ———
+  const RE_WEATHER   = /(какая (у тебя )?погода|что там с погодой|на улице (у тебя )?(холодно|тепло|жарко|дождь|снег)|как (у тебя )?на улице)/i;
+
+  // — утилита: собрать короткую ремарку о времени/месяце/сезоне
+  function composeTimeMood(env){
+    if (!env) return '';
+    const parts = [];
+    // время суток и локальное время Рин
+    if (env.partOfDay && env.rinHuman){
+      parts.push(`${env.partOfDay} у меня (${env.rinHuman} по Канадзаве)`);
+    }
+    // месяц/сезон
+    if (env.month && env.season){
+      parts.push(`${env.month}, ${env.season}`);
+    }
+    return parts.join('; ');
   }
 
-  // — запрос истории по бэкстори/мемам —
-  const ask = inferBackstoryRequest(text);
-  if (ask){
-    const story = pickBackstory(ask) || pickMemory();
+  // — утилита: короткая погодная ремарка
+  function composeWeatherMood(env){
+    const w = env?.weather;
+    if (!w) return '';
+    const bits = [];
+    if (typeof w.temp === 'number') bits.push(`${w.temp}°C`);
+    if (w.desc) bits.push(w.desc);
+    return bits.length ? `Сейчас в Канадзаве ${bits.join(', ')}.` : '';
+  }
+
+  // — утилита: взять подходящую нейтральную фразу из rin_phrases по времени суток / месяцу
+  function pickSmallTalkPhrase(){
+    if (!phrases) return '';
+    const h = new Date().getHours();
+    const dayPool = (h>=5 && h<12) ? phrases.morning
+                  : (h>=12 && h<18) ? phrases.day
+                  : phrases.evening;
+    const monthIdx = (nowInTz(RIN_TZ)).getMonth(); // 0..11
+    const monthKey = String(monthIdx+1).padStart(2,'0'); // "01".."12"
+    const monthPool = phrases.months?.[monthKey];
+
+    const pick = arr => Array.isArray(arr) && arr.length ? arr[Math.floor(Math.random()*arr.length)] : '';
+    // иногда вставим месячную отсылку (30% шанс)
+    if (monthPool && Math.random() < 0.3) {
+      const a = pick(dayPool);
+      const b = pick(monthPool);
+      return [a,b].filter(Boolean).join(' ');
+    }
+    return pick(dayPool) || '';
+  }
+
+  // — 0) быстрый локальный ответ из backstory/memories при явном «расскажи из прошлого»
+  const askBackstory = inferBackstoryRequest(text);
+  if (askBackstory){
+    const story = pickBackstory(askBackstory) || pickMemory();
     if (story){
       let voiced=false;
       if (shouldVoiceFor(story)){
@@ -984,13 +1035,77 @@ formEl.addEventListener('submit', async (e)=>{
         if (url){ addVoiceBubble(url, story, 'assistant'); voiced=true; }
       }
       if (!voiced){ addBubble(story,'assistant'); }
-
       history.push({role:'assistant',content:story,ts:Date.now()});
       saveHistory(history);
       return;
     }
   }
 
+  // — 1) локальный бытовой ответ («как дела/день/что делаешь») —
+  if (RE_SMALLTALK.test(t)) {
+    const env = currentEnv || null;
+    const timeMood = composeTimeMood(env);
+    const weatherMood = (Math.random()<0.7) ? composeWeatherMood(env) : '';
+    const filler = pickSmallTalkPhrase();
+
+    // собираем мягкий, короткий ответ
+    const pieces = [];
+    if (timeMood) pieces.push(timeMood + '.');
+    if (weatherMood) pieces.push(weatherMood);
+    if (filler) pieces.push(filler);
+    // маленькая личная нотка
+    const tail = Math.random()<0.5
+      ? 'Радуюсь, что ты написал — это сразу делает момент теплее.'
+      : 'С тобой как-то спокойнее.';
+
+    const reply = [pieces.join(' '), tail].filter(Boolean).join(' ');
+
+    // TTS/пузырь/стикер
+    let voiced=false;
+    if (shouldVoiceFor(reply)){
+      const url=await getTTSUrl(reply);
+      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
+    }
+    if (!voiced) addBubble(reply,'assistant');
+
+    const st = pickStickerSmart(reply, null, text);
+    if (st && shouldShowSticker(text, reply)){
+      const cap = buildStickerCaption(st,{ userText:text, replyText:reply });
+      addStickerBubble(st.src,'assistant', cap);
+    }
+
+    history.push({role:'assistant',content:reply,ts:Date.now()});
+    saveHistory(history);
+    return;
+  }
+
+  // — 2) локальный ответ про погоду —
+  if (RE_WEATHER.test(t)) {
+    const env = currentEnv || null;
+    const head = 'Смотрю в окно и на термометр…';
+    const w = composeWeatherMood(env) || 'Пока без сюрпризов: спокойно.';
+    const extra = pickSmallTalkPhrase();
+    const reply = [head, w, extra].filter(Boolean).join(' ');
+
+    let voiced=false;
+    if (shouldVoiceFor(reply)){
+      const url=await getTTSUrl(reply);
+      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
+    }
+    if (!voiced) addBubble(reply,'assistant');
+
+    const st = pickStickerSmart(reply, null, text);
+    if (st && shouldShowSticker(text, reply)){
+      const cap = buildStickerCaption(st,{ userText:text, replyText:reply });
+      addStickerBubble(st.src,'assistant', cap);
+    }
+
+    history.push({role:'assistant',content:reply,ts:Date.now()});
+    saveHistory(history);
+    return;
+  }
+
+  // — 3) обычный путь → к модели —
   peerStatus.textContent='печатает…';
   const typingRow=addTyping();
 
