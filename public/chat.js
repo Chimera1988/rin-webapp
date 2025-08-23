@@ -634,22 +634,28 @@ function pickBackstory(opts={}){
   return clampLen(pre + text, 230);
 }
 
-/* эвристика по ключевым словам пользователя → выбор главы/секции */
+/* эвристика по ключевым словам пользователя → выбор главы/секции (обновлённая) */
 function inferBackstoryRequest(userText){
   const t = (userText || '').toLowerCase();
 
-  // 1) "Как дела / как день / что нового / как настроение" → отвечаем кусочком из "Настоящее"
-  if (/(как дела|как ты|как день|что нового|как настроени|как проходит день)/i.test(t)) {
-    // вернём подсказку «настоящ» — твоя pickBackstory ищет по includes, это ок
-    return { chapter: 'настоящ', section: null };
+  // Игнорируем smalltalk и погоду
+  if (/(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i.test(t)) {
+    return null;
   }
-
-  // 2) Легенды/мифы/сказания → не перехватываем, пусть идёт в API/длинный режим
-  if (/(легенд|сказан|миф|предан)/i.test(t)) {
+  if (/(какая (у тебя )?погода|что там с погодой|на улице (у тебя )?(холодно|тепло|жарко|дождь|снег)|как (у тебя )?на улице)/i.test(t)) {
     return null;
   }
 
-  // 3) Если есть словарь триггеров — пробуем его
+  // Легенды/мифы/кицуне — пойдёт в обычный ответ модели
+  if (/(легенд|сказан|миф|предан|кицун[еэы])/i.test(t)) {
+    return null;
+  }
+
+  // Явное намерение «история/воспоминания/из прошлого»
+  const wantStory = /(рассказ(ать|ы)|истори|воспоминан|из прошлого|помнишь)/i.test(t);
+  if (!wantStory) return null;
+
+  // Триггеры
   if (triggers && typeof triggers === 'object'){
     for (const [topic, cfg] of Object.entries(triggers)){
       const kws = (cfg.keywords||[]).map(k=>String(k).toLowerCase());
@@ -663,7 +669,7 @@ function inferBackstoryRequest(userText){
     }
   }
 
-  // 4) Фолбэки как раньше
+  // Фолбэки
   if (/детств/.test(t))                return { chapter:'детств' };
   if (/школ/.test(t))                  return { chapter:'школь' };
   if (/университет|юност/.test(t))     return { chapter:'университет' };
@@ -673,7 +679,7 @@ function inferBackstoryRequest(userText){
   if (/страх/.test(t))                 return { section:'страхи' };
   if (/любов|чувств/.test(t))          return { section:'любов' };
 
-  // Иначе — пустая подсказка (любой фрагмент)
+  // Явное намерение есть — можно любую историю
   return {};
 }
 
@@ -833,7 +839,6 @@ function greet(){
   // 2) Месяц (для month_special)
   const monthIdx = (function(){
     if (currentEnv?.rinHuman){
-      // rinHuman = "YYYY-MM-DD HH:mm"
       const m = Number(currentEnv.rinHuman.slice(5,7));
       if (!Number.isNaN(m)) return m - 1;
     }
@@ -848,12 +853,10 @@ function greet(){
   // 3) Подбираем фразу
   let greeting = null;
 
-  // основной пул по времени суток
   if (phrases && Array.isArray(phrases[pool]) && phrases[pool].length){
     greeting = phrases[pool][Math.floor(Math.random()*phrases[pool].length)];
   }
 
-  // с шансом 30% — заменить на «месячную» фразу, если есть
   if (phrases?.month_special?.[monthKey] &&
       Array.isArray(phrases.month_special[monthKey]) &&
       phrases.month_special[monthKey].length &&
@@ -862,20 +865,16 @@ function greet(){
     greeting = mPool[Math.floor(Math.random()*mPool.length)];
   }
 
-  // фолбэк, если ничего не нашлось
   if (!greeting) greeting = 'Привет! Как твой день? 🌸';
 
-  // 4) Рендерим
   addBubble(greeting,'assistant');
 
-  // 5) «Осознанный» стикер — с подписью
   const st = pickStickerSmart(greeting, pool, '');
   if (st && shouldShowSticker('', greeting)){
     const cap = buildStickerCaption(st, { replyText: greeting });
     addStickerBubble(st.src, 'assistant', cap);
   }
 
-  // 6) Сохраняем в историю
   history.push({ role:'assistant', content:greeting, ts:Date.now() });
   saveHistory(history);
 }
@@ -965,7 +964,6 @@ formEl.addEventListener('submit', async (e)=>{
   const text = (inputEl.value || '').trim();
   if (!text) return;
 
-  // 1) отрисовываем пользователя + сохраняем историю
   addBubble(text,'user');
   history.push({role:'user',content:text,ts:Date.now()});
   saveHistory(history);
@@ -973,27 +971,20 @@ formEl.addEventListener('submit', async (e)=>{
 
   const t = text.toLowerCase();
 
-  // ——— A) локальный "бытовой" ответ: как дела / как день / чем занята / что делаешь ———
   const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
-  // ——— B) локальный ответ про погоду ———
   const RE_WEATHER   = /(какая (у тебя )?погода|что там с погодой|на улице (у тебя )?(холодно|тепло|жарко|дождь|снег)|как (у тебя )?на улице)/i;
 
-  // — утилита: собрать короткую ремарку о времени/месяце/сезоне
   function composeTimeMood(env){
     if (!env) return '';
     const parts = [];
-    // время суток и локальное время Рин
     if (env.partOfDay && env.rinHuman){
       parts.push(`${env.partOfDay} у меня (${env.rinHuman} по Канадзаве)`);
     }
-    // месяц/сезон
     if (env.month && env.season){
       parts.push(`${env.month}, ${env.season}`);
     }
     return parts.join('; ');
   }
-
-  // — утилита: короткая погодная ремарка
   function composeWeatherMood(env){
     const w = env?.weather;
     if (!w) return '';
@@ -1002,8 +993,6 @@ formEl.addEventListener('submit', async (e)=>{
     if (w.desc) bits.push(w.desc);
     return bits.length ? `Сейчас в Канадзаве ${bits.join(', ')}.` : '';
   }
-
-  // — утилита: взять подходящую нейтральную фразу из rin_phrases по времени суток / месяцу
   function pickSmallTalkPhrase(){
     if (!phrases) return '';
     const h = new Date().getHours();
@@ -1015,7 +1004,6 @@ formEl.addEventListener('submit', async (e)=>{
     const monthPool = phrases.months?.[monthKey];
 
     const pick = arr => Array.isArray(arr) && arr.length ? arr[Math.floor(Math.random()*arr.length)] : '';
-    // иногда вставим месячную отсылку (30% шанс)
     if (monthPool && Math.random() < 0.3) {
       const a = pick(dayPool);
       const b = pick(monthPool);
@@ -1024,43 +1012,22 @@ formEl.addEventListener('submit', async (e)=>{
     return pick(dayPool) || '';
   }
 
-  // — 0) быстрый локальный ответ из backstory/memories при явном «расскажи из прошлого»
-  const askBackstory = inferBackstoryRequest(text);
-  if (askBackstory){
-    const story = pickBackstory(askBackstory) || pickMemory();
-    if (story){
-      let voiced=false;
-      if (shouldVoiceFor(story)){
-        const url=await getTTSUrl(story);
-        if (url){ addVoiceBubble(url, story, 'assistant'); voiced=true; }
-      }
-      if (!voiced){ addBubble(story,'assistant'); }
-      history.push({role:'assistant',content:story,ts:Date.now()});
-      saveHistory(history);
-      return;
-    }
-  }
-
-  // — 1) локальный бытовой ответ («как дела/день/что делаешь») —
+  // 1) smalltalk
   if (RE_SMALLTALK.test(t)) {
     const env = currentEnv || null;
     const timeMood = composeTimeMood(env);
     const weatherMood = (Math.random()<0.7) ? composeWeatherMood(env) : '';
     const filler = pickSmallTalkPhrase();
 
-    // собираем мягкий, короткий ответ
     const pieces = [];
     if (timeMood) pieces.push(timeMood + '.');
     if (weatherMood) pieces.push(weatherMood);
     if (filler) pieces.push(filler);
-    // маленькая личная нотка
     const tail = Math.random()<0.5
       ? 'Радуюсь, что ты написал — это сразу делает момент теплее.'
       : 'С тобой как-то спокойнее.';
-
     const reply = [pieces.join(' '), tail].filter(Boolean).join(' ');
 
-    // TTS/пузырь/стикер
     let voiced=false;
     if (shouldVoiceFor(reply)){
       const url=await getTTSUrl(reply);
@@ -1079,7 +1046,7 @@ formEl.addEventListener('submit', async (e)=>{
     return;
   }
 
-  // — 2) локальный ответ про погоду —
+  // 2) погода
   if (RE_WEATHER.test(t)) {
     const env = currentEnv || null;
     const head = 'Смотрю в окно и на термометр…';
@@ -1105,7 +1072,24 @@ formEl.addEventListener('submit', async (e)=>{
     return;
   }
 
-  // — 3) обычный путь → к модели —
+  // 3) явный запрос на «историю/воспоминания» — после smalltalk/погоды!
+  const askBackstory = inferBackstoryRequest(text);
+  if (askBackstory){
+    const story = pickBackstory(askBackstory) || pickMemory();
+    if (story){
+      let voiced=false;
+      if (shouldVoiceFor(story)){
+        const url=await getTTSUrl(story);
+        if (url){ addVoiceBubble(url, story, 'assistant'); voiced=true; }
+      }
+      if (!voiced){ addBubble(story,'assistant'); }
+      history.push({role:'assistant',content:story,ts:Date.now()});
+      saveHistory(history);
+      return;
+    }
+  }
+
+  // 4) обычный путь → к модели
   peerStatus.textContent='печатает…';
   const typingRow=addTyping();
 
