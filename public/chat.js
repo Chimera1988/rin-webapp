@@ -82,7 +82,7 @@ function hoursDiffWithRin(){
 }
 async function fetchRinWeather(){
   try{
-    const u = `/api/weather-proxy?q=${encodeURIComponent(RIN_CITY)},${RIN_COUNTRY}&units=metric&lang=ru`;
+    const u = `/api/weather?q=${encodeURIComponent(RIN_CITY)},${RIN_COUNTRY}&units=metric&lang=ru`;
     const r = await fetch(u);
     if (!r.ok) return null;
     const w = await r.json();
