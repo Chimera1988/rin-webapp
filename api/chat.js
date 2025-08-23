@@ -301,7 +301,8 @@ export default async function handler(req, res) {
     }
 
     // Выбор режима
-    const isLong = detectLongMode(userTurn, pruned);
+    const client = body?.client || {};
+    const isLong = !!client.forceLong || detectLongMode(userTurn, pruned);
     const model = isLong ? LONG_MODEL : SHORT_MODEL;
     const params = isLong ? LONG_PARAMS : SHORT_PARAMS;
     const messages = isLong ? longMessages : shortMessages;
