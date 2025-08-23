@@ -42,6 +42,88 @@ const voiceEnabled  = document.getElementById('voiceEnabled');
 const voiceRate     = document.getElementById('voiceRate');
 const voiceRateVal  = document.getElementById('voiceRateVal');
 
+/* === Окружение Рин (время/сезон/погода) === */
+const RIN_TZ     = 'Asia/Tokyo';
+const RIN_CITY   = 'Kanazawa';
+const RIN_COUNTRY= 'JP';          // для OpenWeatherMap
+const WEATHER_REFRESH_MS = 20 * 60 * 1000; // раз в 20 минут
+
+function nowInTz(tz){
+  try { return new Date(new Date().toLocaleString('en-US', { timeZone: tz })); }
+  catch { return new Date(); }
+}
+function monthNameRu(m){ // 0..11
+  return ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'][m];
+}
+function seasonFromMonth(m){ // северное полушарие
+  if (m===11 || m<=1) return 'зима';
+  if (m>=2 && m<=4)   return 'весна';
+  if (m>=5 && m<=7)   return 'лето';
+  return 'осень';
+}
+function partOfDayFromHour(h){
+  if (h>=5 && h<12) return 'утро';
+  if (h>=12 && h<18) return 'день';
+  if (h>=18 && h<23) return 'вечер';
+  return 'ночь';
+}
+function fmtRinHuman(d){ // "YYYY-MM-DD HH:mm"
+  const Y=d.getFullYear();
+  const M=String(d.getMonth()+1).padStart(2,'0');
+  const D=String(d.getDate()).padStart(2,'0');
+  const h=String(d.getHours()).padStart(2,'0');
+  const m=String(d.getMinutes()).padStart(2,'0');
+  return `${Y}-${M}-${D} ${h}:${m}`;
+}
+function hoursDiffWithRin(){
+  const here = new Date();
+  const rin  = nowInTz(RIN_TZ);
+  return Math.round((rin - here) / 3600000);
+}
+async function fetchRinWeather(){
+  try{
+    const u = `/api/weather-proxy?q=${encodeURIComponent(RIN_CITY)},${RIN_COUNTRY}&units=metric&lang=ru`;
+    const r = await fetch(u);
+    if (!r.ok) return null;
+    const w = await r.json();
+    if (w && w.weather){
+      return {
+        desc:  w.weather.desc || '',
+        temp:  typeof w.weather.temp === 'number' ? Math.round(w.weather.temp) : null,
+        feels: typeof w.weather.feels === 'number' ? Math.round(w.weather.feels) : null,
+        icon:  w.weather.icon || null
+      };
+    }
+    const d = w?.weather?.[0]?.description || w?.current?.weather?.[0]?.description || '';
+    const t = w?.main?.temp ?? w?.current?.temp ?? null;
+    const f = w?.main?.feels_like ?? w?.current?.feels_like ?? null;
+    return {
+      desc: d,
+      temp: typeof t === 'number' ? Math.round(t) : null,
+      feels: typeof f === 'number' ? Math.round(f) : null,
+      icon: w?.weather?.[0]?.icon || w?.current?.weather?.[0]?.icon || null
+    };
+  }catch{ return null; }
+}
+let currentEnv = null;
+async function refreshRinEnv(){
+  const rin = nowInTz(RIN_TZ);
+  const monthIdx = rin.getMonth();
+  const env = {
+    rinTz: RIN_TZ,
+    rinHuman: fmtRinHuman(rin),
+    season: seasonFromMonth(monthIdx),
+    month: monthNameRu(monthIdx),
+    partOfDay: partOfDayFromHour(rin.getHours()),
+    userVsRinHoursDiff: hoursDiffWithRin(),
+    weather: null
+  };
+  const w = await fetchRinWeather();
+  if (w) env.weather = w;
+  currentEnv = env;
+  return env;
+}
+
 /* Данные */
 const resetApp      = document.getElementById('resetApp');
 
@@ -50,7 +132,7 @@ let persona=null, phrases=null, schedule=null, stickers=null;
 /* === Новое: биография и воспоминания === */
 let backstory=null, memories=null;
 /* === Новое: словарь триггеров === */
-let triggers=null; //
+let triggers=null;
 
 let history=[];
 let chainStickerCount=0;
@@ -280,13 +362,13 @@ function addStickerBubble(src, who='assistant'){
 
   if (who==='user'){
     row.innerHTML=`<div class="bubble me sticker-only">
-      <img class="sticker" src="${src}" alt="sticker"/>
+      <img class="sticker" src="${src}" alt="стикер"/>
       <span class="bubble-time">${timeStr}</span>
     </div>`;
   } else {
     row.innerHTML=`<img class="avatar small" src="/avatar.jpg" alt="Рин"/>
       <div class="bubble her sticker-only">
-        <img class="sticker" src="${src}" alt="sticker"/>
+        <img class="sticker" src="${src}" alt="стикер"/>
         <span class="bubble-time">${timeStr}</span>
       </div>`;
   }
@@ -332,7 +414,6 @@ function pickBackstory(opts={}){
         const arr = sections[key] || [];
         for (const s of arr){
           if (re.test(s)){
-            // избегаем повторов
             if (!shownSet.has(`B:${ch.title}:${key}:${s}`)){
               matches.push({ ch, key, text:s, score:chScore });
             }
@@ -341,7 +422,6 @@ function pickBackstory(opts={}){
       }
     }
     if (matches.length){
-      // лёгкая рандомизация в топ-3 с приоритетом по score
       matches.sort((a,b)=>b.score-a.score);
       const take = matches.slice(0, Math.max(1, Math.min(3, matches.length)));
       const best = take[Math.floor(Math.random()*take.length)];
@@ -361,7 +441,6 @@ function pickBackstory(opts={}){
       const pre = prefixMap[(best.key||'').toLowerCase()] || '';
       return clampLen(pre + best.text, 230);
     }
-    // если совпадений нет — падаем к обычной логике ниже
   }
 
   // === Обычный выбор по главе/секции ===
@@ -408,11 +487,9 @@ function pickBackstory(opts={}){
 /* эвристика по ключевым словам пользователя → выбор главы/секции */
 function inferBackstoryRequest(userText){
   const t = (userText||'').toLowerCase();
-  // триггер фразы «расскажи ...»
   const wantStory = /(расскажи|истори|из прошлого|воспоминан|помнишь)/.test(t);
   if (!wantStory) return null;
 
-  // 1) Если есть словарь — ищем первую подходящую тему
   if (triggers && typeof triggers === 'object'){
     for (const [topic, cfg] of Object.entries(triggers)){
       const kws = (cfg.keywords||[]).map(k=>String(k).toLowerCase());
@@ -426,7 +503,6 @@ function inferBackstoryRequest(userText){
     }
   }
 
-  // 2) Фолбэк-эвристики (как было)
   if (/детств/.test(t))      return { chapter:'детство' };
   if (/школ/.test(t))        return { chapter:'школь' };
   if (/университет|юност/.test(t)) return { chapter:'университет' };
@@ -443,11 +519,9 @@ function inferBackstoryRequest(userText){
 function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
 
-  // ряд
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
 
-  // аватар / спейсер
   if (who !== 'user'){
     const ava=document.createElement('img');
     ava.className='avatar small';
@@ -459,21 +533,17 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     row.appendChild(spacer);
   }
 
-  // плашка
   const wrap=document.createElement('div');
   wrap.className='bubble voice-tg ' + (who==='user'?'me':'her');
 
-  // верхняя строка
   const top=document.createElement('div');
   top.className='voice-tg__row';
 
-  // кнопка play/pause
   const btn=document.createElement('button');
   btn.className='voice-tg__play';
   btn.setAttribute('aria-label','Проиграть голосовое');
   btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
 
-  // статичный заборчик
   const wave=document.createElement('div');
   wave.className='voice-tg__wave';
   const BAR_COUNT = 18;
@@ -483,7 +553,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     wave.appendChild(bar);
   }
 
-  // кнопка показать текст
   const act=document.createElement('div');
   act.className='voice-tg__action';
   act.textContent='→A';
@@ -493,7 +562,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   top.appendChild(wave);
   top.appendChild(act);
 
-  // мета: длительность слева, время справа
   const meta=document.createElement('div');
   meta.className='voice-tg__meta';
 
@@ -508,14 +576,12 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   meta.appendChild(dur);
   meta.appendChild(timeStamp);
 
-  // сборка
   wrap.appendChild(top);
   wrap.appendChild(meta);
   row.appendChild(wrap);
   chatEl.appendChild(row);
   chatEl.scrollTop=chatEl.scrollHeight;
 
-  // аудио
   const audio=new Audio(audioUrl);
 
   const secToMMSS = s => {
@@ -523,7 +589,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`;
   };
 
-  // обновляем только время
   audio.ontimeupdate = () => {
     const cur = audio.currentTime || 0;
     dur.textContent = secToMMSS(cur);
@@ -545,7 +610,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     try{ URL.revokeObjectURL(audioUrl); }catch(e){}
   };
 
-  // правая кнопка → показать текст
   act.onclick=()=>{
     act.remove();
     const tr=document.createElement('div');
@@ -568,6 +632,10 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
       fetch('/data/rin_triggers.json').then(r=>r.json()).catch(()=>null)
     ]);
     persona=p1; phrases=p2; schedule=p3; stickers=p4; memories=p5; backstory=p6; triggers=p7;
+
+    // окружение Рин: сразу соберём и переобновляем каждые 20 минут
+    await refreshRinEnv();
+    setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
   }catch(e){ console.warn('JSON load error',e); }
 
   history=loadHistory();
@@ -702,7 +770,11 @@ formEl.addEventListener('submit', async (e)=>{
   try{
     const res=await fetch('/api/chat',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ history, pin: localStorage.getItem('rin-pin') })
+      body:JSON.stringify({
+        history,
+        pin: localStorage.getItem('rin-pin'),
+        env: currentEnv || undefined   // ← передаём окружение (время/сезон/погода)
+      })
     });
     const data=await res.json();
     typingRow.remove();
