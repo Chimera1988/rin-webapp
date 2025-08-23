@@ -802,14 +802,69 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 })();
 
 function greet(){
-  const greeting='Привет, это я — Рин. Хочешь, буду рядом и помогу разобрать мысли? 🌸';
-  addBubble(greeting,'assistant');
-  const st=pickStickerSmart(greeting,'morning','');
-  if (st && shouldShowSticker('',greeting)){
-    const cap = buildStickerCaption(st,{ replyText:greeting });
-    addStickerBubble(st.src,'assistant', cap);
+  // 1) Определяем время суток (берём из currentEnv, если уже есть)
+  let pool = 'day';
+  if (currentEnv && currentEnv.partOfDay){
+    const p = currentEnv.partOfDay; // 'утро' | 'день' | 'вечер' | 'ночь'
+    if (p === 'утро') pool = 'morning';
+    else if (p === 'день') pool = 'day';
+    else if (p === 'вечер') pool = 'evening';
+    else pool = 'night';
+  } else {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) pool = 'morning';
+    else if (h >= 12 && h < 18) pool = 'day';
+    else if (h >= 18 && h < 23) pool = 'evening';
+    else pool = 'night';
   }
-  history.push({role:'assistant',content:greeting,ts:Date.now()});
+
+  // 2) Месяц (для month_special)
+  const monthIdx = (function(){
+    if (currentEnv?.rinHuman){
+      // rinHuman = "YYYY-MM-DD HH:mm"
+      const m = Number(currentEnv.rinHuman.slice(5,7));
+      if (!Number.isNaN(m)) return m - 1;
+    }
+    return new Date().getMonth();
+  })();
+  const monthKeys = [
+    'january','february','march','april','may','june',
+    'july','august','september','october','november','december'
+  ];
+  const monthKey = monthKeys[monthIdx];
+
+  // 3) Подбираем фразу
+  let greeting = null;
+
+  // основной пул по времени суток
+  if (phrases && Array.isArray(phrases[pool]) && phrases[pool].length){
+    greeting = phrases[pool][Math.floor(Math.random()*phrases[pool].length)];
+  }
+
+  // с шансом 30% — заменить на «месячную» фразу, если есть
+  if (phrases?.month_special?.[monthKey] &&
+      Array.isArray(phrases.month_special[monthKey]) &&
+      phrases.month_special[monthKey].length &&
+      Math.random() < 0.30) {
+    const mPool = phrases.month_special[monthKey];
+    greeting = mPool[Math.floor(Math.random()*mPool.length)];
+  }
+
+  // фолбэк, если ничего не нашлось
+  if (!greeting) greeting = 'Привет! Как твой день? 🌸';
+
+  // 4) Рендерим
+  addBubble(greeting,'assistant');
+
+  // 5) «Осознанный» стикер — с подписью
+  const st = pickStickerSmart(greeting, pool, '');
+  if (st && shouldShowSticker('', greeting)){
+    const cap = buildStickerCaption(st, { replyText: greeting });
+    addStickerBubble(st.src, 'assistant', cap);
+  }
+
+  // 6) Сохраняем в историю
+  history.push({ role:'assistant', content:greeting, ts:Date.now() });
   saveHistory(history);
 }
 
