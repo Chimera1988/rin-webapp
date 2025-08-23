@@ -463,27 +463,33 @@ function pickStickerSmart(replyText, windowPool, userText){
 }
 
 function addStickerBubble(src, who='assistant', caption=''){
-  const row=document.createElement('div');
-  row.className='row '+(who==='user'?'me':'her');
-  const timeStr=fmtTime(new Date());
-  const capHtml = caption ? `<div class="sticker-caption">${caption}</div>` : '';
+  // Если есть подпись — сначала обычный текстовый пузырь
+  if (caption && who !== 'user') {
+    addBubble(caption, 'assistant'); // не добавляем в history — это визуальная подпись
+  } else if (caption && who === 'user') {
+    addBubble(caption, 'user');
+  }
 
-  if (who==='user'){
-    row.innerHTML=`<div class="bubble me sticker-only">
-      <img class="sticker" src="${src}" alt="стикер"/>
-      ${capHtml}
-      <span class="bubble-time">${timeStr}</span>
-    </div>`;
+  // Затем отдельный «стикер-пузырь» без подписи
+  const row = document.createElement('div');
+  row.className = 'row ' + (who==='user' ? 'me' : 'her');
+  const timeStr = fmtTime(new Date());
+
+  if (who === 'user') {
+    row.innerHTML = `<div class="bubble me sticker-only">
+        <img class="sticker" src="${src}" alt="стикер"/>
+        <span class="bubble-time">${timeStr}</span>
+      </div>`;
   } else {
-    row.innerHTML=`<img class="avatar small" src="/avatar.jpg" alt="Рин"/>
+    row.innerHTML = `<img class="avatar small" src="/avatar.jpg" alt="Рин"/>
       <div class="bubble her sticker-only">
         <img class="sticker" src="${src}" alt="стикер"/>
-        ${capHtml}
         <span class="bubble-time">${timeStr}</span>
       </div>`;
   }
+
   chatEl.appendChild(row);
-  chatEl.scrollTop=chatEl.scrollHeight;
+  chatEl.scrollTop = chatEl.scrollHeight;
   return row;
 }
 
