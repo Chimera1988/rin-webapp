@@ -439,7 +439,7 @@ function inferBackstoryRequest(userText){
   return {}; // просто любая история
 }
 
-/* === Голосовой пузырь (Telegram-style) === */
+/* === Голосовой пузырь (Telegram-style, статичный заборчик) === */
 function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
 
@@ -467,11 +467,13 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const top=document.createElement('div');
   top.className='voice-tg__row';
 
+  // кнопка play/pause
   const btn=document.createElement('button');
   btn.className='voice-tg__play';
   btn.setAttribute('aria-label','Проиграть голосовое');
-  btn.textContent='▶';
+  btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
 
+  // статичный заборчик
   const wave=document.createElement('div');
   wave.className='voice-tg__wave';
   const BAR_COUNT = 18;
@@ -481,6 +483,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     wave.appendChild(bar);
   }
 
+  // кнопка показать текст
   const act=document.createElement('div');
   act.className='voice-tg__action';
   act.textContent='→A';
@@ -514,43 +517,31 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 
   // аудио
   const audio=new Audio(audioUrl);
-  let raf=null;
 
   const secToMMSS = s => {
     const v=Math.max(0, Math.floor(s||0));
     return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`;
   };
 
-  function stopAnim(){
-    wrap.classList.remove('playing');
-    if (raf){ cancelAnimationFrame(raf); raf=null; }
-  }
-  function loop(){
+  // обновляем только время
+  audio.ontimeupdate = () => {
     const cur = audio.currentTime || 0;
-    const total = audio.duration || 0;
     dur.textContent = secToMMSS(cur);
-    const pct = total ? Math.min(100, (cur/total)*100) : 0;
-    wave.style.setProperty('--progress', pct + '%');
-    raf = requestAnimationFrame(loop);
-  }
+  };
 
   btn.onclick=()=>{
     if (audio.paused){
       audio.play().then(()=>{
-        btn.textContent='⏸';
-        wrap.classList.add('playing');
-        raf = requestAnimationFrame(loop);
+        btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
       }).catch(()=>{});
     } else {
       audio.pause();
-      btn.textContent='▶';
-      stopAnim();
+      btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
     }
   };
 
   audio.onended=()=>{
-    btn.textContent='▶';
-    stopAnim();
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
     try{ URL.revokeObjectURL(audioUrl); }catch(e){}
   };
 
