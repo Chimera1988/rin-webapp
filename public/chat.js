@@ -50,7 +50,6 @@ const WEATHER_REFRESH_MS = 20 * 60 * 1000; // раз в 20 минут
 
 function nowInTz(tz) {
   try {
-    // Берём текущее UTC-время и переводим в указанный часовой пояс
     const here = new Date();
     const fmt = new Intl.DateTimeFormat('en-US', {
       timeZone: tz,
@@ -371,91 +370,6 @@ function shouldShowSticker(userText, replyText){
   return Math.random()<base;
 }
 
-/* — Подписи к стикерам (анти-повтор) — */
-let _captionBuf = [];
-function _pickNoRepeat(options, buf = _captionBuf, maxBuf = 6){
-  if (!Array.isArray(options) || !options.length) return '';
-  const pool = options.filter(x => !buf.includes(x));
-  const base = (pool.length ? pool : options);
-  const pick = base[Math.floor(Math.random() * base.length)];
-  buf.push(pick); if (buf.length > maxBuf) buf.shift();
-  return pick;
-}
-function buildStickerCaption(st, { userText='', replyText='' } = {}){
-  const t  = `${userText} ${replyText}`.toLowerCase();
-  const m  = (st.moods || []);
-  const kw = (st.keywords || []);
-  const has = re => re.test(t);
-  const kwHas = re => kw.some(k => re.test(String(k)));
-
-  const tpl = {
-    romantic_kiss: [
-      'Отправляю тебе поцелуй — бережно и по-настоящему. 💋',
-      'Вот мой маленький поцелуй — грейся. 💋',
-      'Слова лишние — просто поцелуй. 💋'
-    ],
-    romantic_hug: [
-      'Иди сюда — вот моё тёплое объятие. 🤍',
-      'Обнимаю крепко-нежно — держи. 🤍',
-      'Хочется прижаться и не отпускать. 🤍'
-    ],
-    romantic_soft: [
-      'Немного нежности между строк. ✨',
-      'Чуть-чуть тепла — держи. ✨',
-      'Тихое, тёплое чувство — делюсь. ✨'
-    ],
-    playful: [
-      'Чуточку игривости. 😊',
-      'Пусть будет немного шалости. 😊',
-      'Немного озорства — для улыбки. 😊'
-    ],
-    cat: [
-      'Кототерапия на сегодня. 🐾',
-      'Отправляю усатую поддержку. 🐾',
-      'Пусть этот котик скажет за меня больше. 🐾'
-    ],
-    comfort: [
-      'Я рядом — тихо, бережно, без лишних слов. 🌙',
-      'Держу тебя мысленно за руку. 🌙',
-      'Пусть станет чуток спокойнее. 🌙'
-    ],
-    congrats: [
-      'Горжусь тобой — это здорово! 🎉',
-      'Маленькая победа заслуживает стикера. 🎉',
-      'Пусть удача задержится подольше. 🎉'
-    ],
-    morning: [
-      'На удачное утро — тёплый знак. ☀️',
-      'Пусть день начнётся мягко. ☀️',
-      'Доброе утро между строк. ☀️'
-    ],
-    night: [
-      'На спокойную ночь — немного нежности. 🌙',
-      'Пусть сны будут добрыми. 🌙',
-      'Тишины и тепла на вечер. 🌙'
-    ],
-    default_: [
-      'Вот маленький знак внимания. ✨',
-      'Немного тепла — просто так. ✨',
-      'Пусть это вызовет улыбку. ✨'
-    ]
-  };
-
-  if (has(/поцел|kiss/i) || kwHas(/поцел|kiss/i)) return _pickNoRepeat(tpl.romantic_kiss);
-  if (has(/обним|обними|обнимаш/i) || kwHas(/обним/i)) return _pickNoRepeat(tpl.romantic_hug);
-  if (has(/кот(ик)?|cat/i) || kwHas(/кот|cat/i)) return _pickNoRepeat(tpl.cat);
-  if (has(/поздрав|ура|молодец|получилось|сделал|сделала|успех/i)) return _pickNoRepeat(tpl.congrats);
-  if (has(/груст|тяжел|тяжёл|тревог|беспок|устал|устала|сложно|болит/i)) return _pickNoRepeat(tpl.comfort);
-  if (m.includes('playful') || has(/улыб|шут|игрив|хихи|ха-ха/i)) return _pickNoRepeat(tpl.playful);
-  if (m.some(x=>['romantic','tender','shy','cosy','playful'].includes(x))) return _pickNoRepeat(tpl.romantic_soft);
-
-  const h = new Date().getHours();
-  if (h>=6 && h<11) return _pickNoRepeat(tpl.morning);
-  if (h>=22 || h<2) return _pickNoRepeat(tpl.night);
-
-  return _pickNoRepeat(tpl.default_);
-}
-
 /* — умный выбор стикера: блокируем романтику без повода — */
 function pickStickerSmart(replyText, windowPool, userText){
   if (!stickers || stickers._schema!=='v2') return null;
@@ -509,13 +423,8 @@ function pickStickerSmart(replyText, windowPool, userText){
   return null;
 }
 
-function addStickerBubble(src, who='assistant', caption=''){
-  if (caption && who !== 'user') {
-    addBubble(caption, 'assistant');
-  } else if (caption && who === 'user') {
-    addBubble(caption, 'user');
-  }
-
+/* — стикер без подписи — */
+function addStickerBubble(src, who='assistant'){
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
   const timeStr = fmtTime(new Date());
@@ -699,7 +608,6 @@ function greet(){
     greeting = starters[Math.floor(Math.random()*starters.length)];
   }
   if (!greeting){
-    // очень короткий аккуратный фолбэк
     const pod = currentEnv?.partOfDay || 'сейчас';
     greeting = (pod==='утро') ? 'Доброе утро. Как ты?' :
                (pod==='вечер') ? 'Добрый вечер. Как твой день?' :
@@ -711,8 +619,7 @@ function greet(){
 
   const st = pickStickerSmart(greeting, pool, '');
   if (st && shouldShowSticker('', greeting)){
-    const cap = buildStickerCaption(st, { replyText: greeting });
-    addStickerBubble(st.src, 'assistant', cap);
+    addStickerBubble(st.src, 'assistant');
   }
 
   history.push({ role:'assistant', content:greeting, ts:Date.now() });
@@ -746,7 +653,7 @@ async function getTTSUrl(text){
   }catch{ return null; }
 }
 
-/* === Автоинициации (используем profile.initiation) === */
+/* === Автоинициации (используем profile.initiation) — без подписей к стикерам === */
 async function tryInitiateBySchedule(){
   if (!profile) return;
 
@@ -768,12 +675,9 @@ async function tryInitiateBySchedule(){
   const last=history[history.length-1];
   if (last && last.role==='assistant' && d - new Date(last.ts||Date.now()) < 15*60*1000) return;
 
-  // текст для инициативы — берём случайную фразу из starters
   let text = null;
   const starters = Array.isArray(profile?.starters) ? profile.starters : [];
   if (starters.length) text = pick(starters);
-
-  // если в профиле нет стартовых фраз — тихий выход
   if (!text) return;
 
   peerStatus.textContent='печатает…';
@@ -795,15 +699,14 @@ async function tryInitiateBySchedule(){
 
     const st=pickStickerSmart(text, win.pool || null, '');
     if (st && shouldShowSticker('',text)){
-      const cap = buildStickerCaption(st,{ replyText:text });
-      addStickerBubble(st.src,'assistant', cap);
+      addStickerBubble(st.src,'assistant');
     }
     history.push({role:'assistant',content:text,ts:Date.now()});
     saveHistory(history); bumpInitCount(dateKey);
   }, 900+Math.random()*900);
 }
 
-/* === Отправка (локальные «маленькие» ответы + запрос к модели) === */
+/* === Отправка (локальные ответы + запрос к модели) — без подписей к стикерам === */
 formEl.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const text = (inputEl.value || '').trim();
@@ -816,9 +719,8 @@ formEl.addEventListener('submit', async (e)=>{
 
   const t = text.toLowerCase();
 
-  // A) smalltalk (мягкий, без «рассказов из прошлого»)
+  // A) smalltalk
   const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
-
   // B) погода
   const RE_WEATHER   = /(какая (у тебя )?погода|что там с погодой|на улице (у тебя )?(холодно|тепло|жарко|дождь|снег)|как (у тебя )?на улице)/i;
 
@@ -859,7 +761,6 @@ formEl.addEventListener('submit', async (e)=>{
     if (weatherMood) pieces.push(weatherMood);
     if (filler) pieces.push(filler);
 
-    // женский род для Рин, обращение к пользователю — мужской
     const tail = Math.random()<0.5
       ? 'Рада, что ты написал — с тобой момент теплее.'
       : 'Рядом с тобой как-то спокойнее.';
@@ -875,8 +776,7 @@ formEl.addEventListener('submit', async (e)=>{
 
     const st = pickStickerSmart(reply, null, text);
     if (st && shouldShowSticker(text, reply)){
-      const cap = buildStickerCaption(st,{ userText:text, replyText:reply });
-      addStickerBubble(st.src,'assistant', cap);
+      addStickerBubble(st.src,'assistant');
     }
 
     history.push({role:'assistant',content:reply,ts:Date.now()});
@@ -901,8 +801,7 @@ formEl.addEventListener('submit', async (e)=>{
 
     const st = pickStickerSmart(reply, null, text);
     if (st && shouldShowSticker(text, reply)){
-      const cap = buildStickerCaption(st,{ userText:text, replyText:reply });
-      addStickerBubble(st.src,'assistant', cap);
+      addStickerBubble(st.src,'assistant');
     }
 
     history.push({role:'assistant',content:reply,ts:Date.now()});
@@ -921,7 +820,7 @@ formEl.addEventListener('submit', async (e)=>{
         history,
         pin: localStorage.getItem('rin-pin'),
         env: currentEnv || undefined,
-        profile: profile || undefined,   // <— важное добавление
+        profile: profile || undefined,
         client: {
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
           sentAt: Date.now()
@@ -949,8 +848,7 @@ formEl.addEventListener('submit', async (e)=>{
 
     const st=pickStickerSmart(data.reply,null,text);
     if (st && shouldShowSticker(text,data.reply)){
-      const cap = buildStickerCaption(st,{ userText:text, replyText:data.reply });
-      addStickerBubble(st.src,'assistant', cap);
+      addStickerBubble(st.src,'assistant');
     }
 
     history.push({role:'assistant',content:data.reply,ts:Date.now()});
