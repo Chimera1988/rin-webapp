@@ -18,7 +18,7 @@ const btnReset  = document.getElementById('personaReset');
 // поля
 const fName       = document.getElementById('pName');
 const fDesc       = document.getElementById('pDesc');
-const fInstrBase  = document.getElementById('pInstrBase');
+const fInstrBase  = document.getElementById('pInstrBase');   // read-only
 const fInstrExtra = document.getElementById('pInstrExtra');
 const fKnowledge  = document.getElementById('pKnowledge');
 const fStarters   = document.getElementById('pStarters');
@@ -44,12 +44,34 @@ function hidePanel() {
   panel.setAttribute('aria-hidden', 'true');
 }
 
+function clamp(v, min, max){
+  v = Number(v);
+  if (Number.isNaN(v)) return min;
+  return Math.max(min, Math.min(max, v));
+}
+
+// "HH:MM-HH:MM pool"  →  { from, to, pool }  (или null, если пусто/некорректно)
 function parseWindow(line) {
-  // "HH:MM-HH:MM pool"  →  { from, to, pool }
   if (!line) return null;
-  const m = String(line).trim().match(/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})(?:\s+([a-z]+))?$/i);
+  const m = String(line).trim().match(/^(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})(?:\s+([a-z]+))?$/i);
   if (!m) return null;
-  return { from: m[1], to: m[2], pool: (m[3] || 'day').toLowerCase() };
+
+  const h1 = clamp(m[1], 0, 23), min1 = clamp(m[2], 0, 59);
+  const h2 = clamp(m[3], 0, 23), min2 = clamp(m[4], 0, 59);
+
+  const from = `${String(h1).padStart(2,'0')}:${String(min1).padStart(2,'0')}`;
+  const to   = `${String(h2).padStart(2,'0')}:${String(min2).padStart(2,'0')}`;
+
+  const t1 = h1*60 + min1;
+  const t2 = h2*60 + min2;
+  if (t2 <= t1) return null; // окно должно быть возрастанием, без "переворота" через полночь
+
+  // нормализуем пул
+  const rawPool = (m[5] || 'day').toLowerCase();
+  const poolMap = { morning:'morning', day:'day', evening:'evening', night:'night' };
+  const pool = poolMap[rawPool] || 'day';
+
+  return { from, to, pool };
 }
 
 function formatWindow(w) {
@@ -68,6 +90,18 @@ function fromLines(str) {
     .filter(Boolean);
 }
 
+function setInstrBase(el, text){
+  // Поддерживаем и <textarea readonly>, и <pre>/<div>
+  if (!el) return;
+  const val = (text ?? '').toString().trim();
+  if ('value' in el) el.value = val; else el.textContent = val;
+}
+
+function markInvalid(el, on=true){
+  if (!el) return;
+  el.classList.toggle('is-invalid', !!on);
+}
+
 /* ---------- state ---------- */
 let profile = null;
 
@@ -78,10 +112,10 @@ function render(p) {
   fName.value       = p.name || 'Рин Акихара';
   fDesc.value       = p.description || '';
 
-  // базовые правила показываем только для чтения
-  fInstrBase.textContent = (typeof BASE_RULES === 'string' && BASE_RULES.trim())
+  // базовые правила показываем только для чтения (источник — BASE_RULES)
+  setInstrBase(fInstrBase, (typeof BASE_RULES === 'string' && BASE_RULES.trim())
     ? BASE_RULES.trim()
-    : (p.base_rules || '—');
+    : (p.base_rules || '—'));
 
   fInstrExtra.value = p.instructions_extra || '';
   fKnowledge.value  = p.knowledge || '';
@@ -93,6 +127,10 @@ function render(p) {
   const wins = Array.isArray(init.windows) ? init.windows : [];
   fWin1.value = wins[0] ? formatWindow(wins[0]) : '';
   fWin2.value = wins[1] ? formatWindow(wins[1]) : '';
+
+  // снять возможные прошлые подсветки ошибок
+  markInvalid(fWin1, false);
+  markInvalid(fWin2, false);
 }
 
 function readProfileFromForm() {
@@ -111,11 +149,33 @@ function readProfileFromForm() {
   p.starters = fromLines(fStarters.value);
 
   // инициирования
-  const w1 = parseWindow(fWin1.value);
-  const w2 = parseWindow(fWin2.value);
+  markInvalid(fWin1, false);
+  markInvalid(fWin2, false);
+
+  const w1 = fWin1.value.trim() ? parseWindow(fWin1.value) : null;
+  const w2 = fWin2.value.trim() ? parseWindow(fWin2.value) : null;
+
+  // Подсветка ошибок ввода интервалов
+  if (fWin1.value.trim() && !w1) markInvalid(fWin1, true);
+  if (fWin2.value.trim() && !w2) markInvalid(fWin2, true);
+
+  if ((fWin1.value.trim() && !w1) || (fWin2.value.trim() && !w2)) {
+    alert('Проверь время окон: формат HH:MM-HH:MM [pool]. Пример: 08:30-10:00 morning');
+    throw new Error('Invalid windows');
+  }
+
+  const windows = [w1, w2].filter(Boolean);
+
+  // сортируем по времени «from»
+  windows.sort((a,b)=>{
+    const [ah,am] = a.from.split(':').map(Number);
+    const [bh,bm] = b.from.split(':').map(Number);
+    return (ah*60+am) - (bh*60+bm);
+  });
+
   p.initiation = {
-    max_per_day: Math.max(0, Math.min(10, Number(fInitMax.value || 0))),
-    windows: [w1, w2].filter(Boolean)
+    max_per_day: clamp(fInitMax.value || 0, 0, 10),
+    windows
   };
 
   // метка времени изменения — полезно для синхронизации
@@ -133,21 +193,26 @@ btnOpen?.addEventListener('click', async () => {
 btnClose?.addEventListener('click', hidePanel);
 
 btnReset?.addEventListener('click', () => {
-  if (!confirm('Сбросить профиль персонажа к дефолтному?')) return;
+  if (!confirm('Сбросить профиль персонажа к настройкам по умолчанию?')) return;
   const def = getDefaultProfile();
   render(def);
 });
 
 btnSave?.addEventListener('click', async () => {
-  const next = readProfileFromForm();
+  let next;
+  try {
+    next = readProfileFromForm();
+  } catch {
+    // ошибки уже показаны/подсвечены
+    return;
+  }
   try {
     await saveProfile(next);
     // доступно глобально другим частям приложения
     window.RIN_PROFILE = next;
-    // уведомляем слушателей (например, /chat.js) что профиль изменён
+    // уведомляем слушателей (например, /chat.js), что профиль изменён
     window.dispatchEvent(new CustomEvent('rin:profile-updated', { detail: next }));
     hidePanel();
-    // лёгкое визуальное подтверждение
     try { navigator.vibrate && navigator.vibrate(10); } catch {}
   } catch (e) {
     alert('Не удалось сохранить профиль: ' + (e?.message || e));
