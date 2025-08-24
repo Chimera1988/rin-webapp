@@ -48,9 +48,22 @@ const RIN_CITY   = 'Kanazawa';
 const RIN_COUNTRY= 'JP';
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // раз в 20 минут
 
-function nowInTz(tz){
-  try { return new Date(new Date().toLocaleString('en-US', { timeZone: tz })); }
-  catch { return new Date(); }
+function nowInTz(tz) {
+  try {
+    // Берём текущее UTC-время и переводим в указанный часовой пояс
+    const here = new Date();
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    });
+    const parts = fmt.formatToParts(here);
+    const map = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    return new Date(`${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}`);
+  } catch {
+    return new Date();
+  }
 }
 function monthNameRu(m){ // 0..11
   return ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'][m];
