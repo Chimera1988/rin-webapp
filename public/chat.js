@@ -1,4 +1,4 @@
-/* public/chat.js — фронт чата Рин, согласованный с твоим index.html */
+/* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
 const STORAGE_KEY    = 'rin-history-v2';
 const DAILY_INIT_KEY = 'rin-init-count';
@@ -45,7 +45,7 @@ const voiceRateVal  = document.getElementById('voiceRateVal');
 /* === Окружение Рин (время/сезон/погода) === */
 const RIN_TZ     = 'Asia/Tokyo';
 const RIN_CITY   = 'Kanazawa';
-const RIN_COUNTRY= 'JP';          // для OpenWeatherMap
+const RIN_COUNTRY= 'JP';
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // раз в 20 минут
 
 function nowInTz(tz){
@@ -158,7 +158,7 @@ async function refreshRinEnv(){
   const rin = nowInTz(RIN_TZ);
   const monthIdx = rin.getMonth();
   const env = {
-    _ts: Date.now(),                 // отметка «свежести» окружения
+    _ts: Date.now(),
     rinTz: RIN_TZ,
     rinHuman: fmtRinHuman(rin),
     season: seasonFromMonth(monthIdx),
@@ -177,11 +177,8 @@ async function refreshRinEnv(){
 const resetApp      = document.getElementById('resetApp');
 
 /* state */
-let persona=null, phrases=null, schedule=null, stickers=null;
-/* === Новое: биография и воспоминания === */
-let backstory=null, memories=null;
-/* === Новое: словарь триггеров === */
-let triggers=null;
+let profile = null;         // новый профиль из persona_ui / rin_memory
+let stickers = null;
 
 let history=[];
 let chainStickerCount=0;
@@ -216,7 +213,7 @@ if (themeToggle){
   };
 }
 
-/* — Обои — применяем CSS-переменные (см. style.css) — */
+/* — Обои — */
 function applyWallpaper(){
   const data = localStorage.getItem(LS_WP_DATA) || '';
   const op   = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100;
@@ -361,8 +358,8 @@ function shouldShowSticker(userText, replyText){
   return Math.random()<base;
 }
 
-/* — Подписи к стикерам (анти-повтор, много шаблонов) — */
-let _captionBuf = []; // последние 6 подписей
+/* — Подписи к стикерам (анти-повтор) — */
+let _captionBuf = [];
 function _pickNoRepeat(options, buf = _captionBuf, maxBuf = 6){
   if (!Array.isArray(options) || !options.length) return '';
   const pool = options.filter(x => !buf.includes(x));
@@ -381,7 +378,7 @@ function buildStickerCaption(st, { userText='', replyText='' } = {}){
   const tpl = {
     romantic_kiss: [
       'Отправляю тебе поцелуй — бережно и по-настоящему. 💋',
-      'Вот мой маленький поцелуй, чтобы ты почувствовал(а) тепло. 💋',
+      'Вот мой маленький поцелуй — грейся. 💋',
       'Слова лишние — просто поцелуй. 💋'
     ],
     romantic_hug: [
@@ -391,22 +388,22 @@ function buildStickerCaption(st, { userText='', replyText='' } = {}){
     ],
     romantic_soft: [
       'Немного нежности между строк. ✨',
-      'Хочу показать тебе чуть больше тепла — держи. ✨',
-      'Тихое тёплое чувство — делюсь с тобой. ✨'
+      'Чуть-чуть тепла — держи. ✨',
+      'Тихое, тёплое чувство — делюсь. ✨'
     ],
     playful: [
-      'Не удержалась — чуточку игривости. 😊',
-      'Пусть будет немного шалости в ленте. 😊',
+      'Чуточку игривости. 😊',
+      'Пусть будет немного шалости. 😊',
       'Немного озорства — для улыбки. 😊'
     ],
     cat: [
-      'Пусть этот котик скажет за меня больше. 🐾',
       'Кототерапия на сегодня. 🐾',
-      'Отправляю усатую поддержку. 🐾'
+      'Отправляю усатую поддержку. 🐾',
+      'Пусть этот котик скажет за меня больше. 🐾'
     ],
     comfort: [
       'Я рядом — тихо, бережно, без лишних слов. 🌙',
-      'Держу тебя за руку мысленно. 🌙',
+      'Держу тебя мысленно за руку. 🌙',
       'Пусть станет чуток спокойнее. 🌙'
     ],
     congrats: [
@@ -528,162 +525,7 @@ function addStickerBubble(src, who='assistant', caption=''){
   return row;
 }
 
-/* === BIO/MEMORIES helpers === */
-const BIO_SHOWN_KEY = 'rin-bio-shown-v1';
-function loadShown(){ try{return new Set(JSON.parse(localStorage.getItem(BIO_SHOWN_KEY)||'[]'));}catch{return new Set();} }
-function saveShown(set){ try{ localStorage.setItem(BIO_SHOWN_KEY, JSON.stringify([...set].slice(-100))); }catch{} }
-const shownSet = loadShown();
-
-function rnd(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-function clampLen(t, max=220){ t=(t||'').replace(/\s+/g,' ').trim(); return t.length>max ? t.slice(0,max-1)+'…' : t; }
-
-/* Выбрать короткий фрагмент из rin_memories.json */
-function pickMemory(){
-  if (!memories || !Array.isArray(memories.core_memories) || !memories.core_memories.length) return null;
-  const pool = memories.core_memories.filter(m => !shownSet.has('M:'+m));
-  const pick = (pool.length ? rnd(pool) : rnd(memories.core_memories));
-  shownSet.add('M:'+pick); saveShown(shownSet);
-  return clampLen(pick, 220);
-}
-
-/* Выбрать фрагмент из rin_backstory.json по главе/секции (если заданы) */
-function pickBackstory(opts={}){
-  if (!backstory || !Array.isArray(backstory.chapters)) return null;
-  const { chapter, section, keyword, hintChapter } = opts;
-
-  if (keyword){
-    const re = new RegExp(keyword, 'i');
-    const matches = [];
-    for (const ch of backstory.chapters){
-      const sections = ch.sections || {};
-      const chTitle = (ch.title||'').toLowerCase();
-      const hint = (hintChapter || chapter || '').toLowerCase();
-      const chScore = hint && chTitle.includes(hint) ? 2 : 1;
-
-      for (const key of Object.keys(sections)){
-        const arr = sections[key] || [];
-        for (const s of arr){
-          if (re.test(s)){
-            if (!shownSet.has(`B:${ch.title}:${key}:${s}`)){
-              matches.push({ ch, key, text:s, score:chScore });
-            }
-          }
-        }
-      }
-    }
-    if (matches.length){
-      matches.sort((a,b)=>b.score-a.score);
-      const take = matches.slice(0, Math.max(1, Math.min(3, matches.length)));
-      const best = take[Math.floor(Math.random()*take.length)];
-
-      shownSet.add(`B:${best.ch.title}:${best.key}:${best.text}`); saveShown(shownSet);
-
-      const prefixMap = {
-        'воспоминания':'Знаешь, вспоминаю: ',
-        'страхи':'Если честно, я иногда боялась: ',
-        'мечты':'Иногда мечтала о том, что ',
-        'занятия':'В те годы я часто ',
-        'друзья':'Про друзей: ',
-        'первые чувства':'Про первые чувства: ',
-        'любовь':'Про любовь: ',
-        'семья':'Про семью: '
-      };
-      const pre = prefixMap[(best.key||'').toLowerCase()] || '';
-      return clampLen(pre + best.text, 230);
-    }
-  }
-
-  // обычный выбор
-  let chapters = backstory.chapters;
-  if (chapter){
-    const q = chapter.toLowerCase();
-    chapters = chapters.filter(ch =>
-      (ch.title && ch.title.toLowerCase().includes(q)) ||
-      (ch.years && String(ch.years).toLowerCase().includes(q))
-    );
-    if (!chapters.length) chapters = backstory.chapters;
-  }
-
-  const ch = rnd(chapters);
-  const sections = ch.sections || {};
-  let keys = Object.keys(sections);
-  if (!keys.length) return null;
-
-  let key = section && keys.find(k => k.toLowerCase().includes(String(section).toLowerCase()));
-  if (!key) key = rnd(keys);
-
-  const arr = sections[key] || [];
-  if (!arr.length) return null;
-
-  const pool = arr.filter(s => !shownSet.has(`B:${ch.title}:${key}:${s}`));
-  const text = (pool.length ? rnd(pool) : rnd(arr));
-
-  shownSet.add(`B:${ch.title}:${key}:${text}`); saveShown(shownSet);
-
-  const prefixMap = {
-    'воспоминания':'Знаешь, вспоминаю: ',
-    'страхи':'Если честно, я иногда боялась: ',
-    'мечты':'Иногда мечтала о том, что ',
-    'занятия':'В те годы я часто ',
-    'друзья':'Про друзей: ',
-    'первые чувства':'Про первые чувства: ',
-    'любовь':'Про любовь: ',
-    'семья':'Про семью: '
-  };
-  const pre = prefixMap[key] || '';
-  return clampLen(pre + text, 230);
-}
-
-/* эвристика по ключевым словам пользователя → выбор главы/секции (обновлённая) */
-function inferBackstoryRequest(userText){
-  const t = (userText || '').toLowerCase();
-
-  // Игнорируем smalltalk и погоду
-  if (/(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i.test(t)) {
-    return null;
-  }
-  if (/(какая (у тебя )?погода|что там с погодой|на улице (у тебя )?(холодно|тепло|жарко|дождь|снег)|как (у тебя )?на улице)/i.test(t)) {
-    return null;
-  }
-
-  // Легенды/мифы/кицуне — пойдёт в обычный ответ модели
-  if (/(легенд|сказан|миф|предан|кицун[еэы])/i.test(t)) {
-    return null;
-  }
-
-  // Явное намерение «история/воспоминания/из прошлого»
-  const wantStory = /(рассказ(ать|ы)|истори|воспоминан|из прошлого|помнишь)/i.test(t);
-  if (!wantStory) return null;
-
-  // Триггеры
-  if (triggers && typeof triggers === 'object'){
-    for (const [topic, cfg] of Object.entries(triggers)){
-      const kws = (cfg.keywords||[]).map(k=>String(k).toLowerCase());
-      if (kws.some(k=> t.includes(k))){
-        return {
-          keyword: kws.find(k=> t.includes(k)) || topic,
-          chapter: cfg.chapterHint || null,
-          section: cfg.sectionHint || null
-        };
-      }
-    }
-  }
-
-  // Фолбэки
-  if (/детств/.test(t))                return { chapter:'детств' };
-  if (/школ/.test(t))                  return { chapter:'школь' };
-  if (/университет|юност/.test(t))     return { chapter:'университет' };
-  if (/взросл/.test(t))                return { chapter:'взросл' };
-  if (/настояще|сейчас/.test(t))       return { chapter:'настоящ' };
-  if (/мечт/.test(t))                  return { section:'мечты' };
-  if (/страх/.test(t))                 return { section:'страхи' };
-  if (/любов|чувств/.test(t))          return { section:'любов' };
-
-  // Явное намерение есть — можно любую историю
-  return {};
-}
-
-/* === Голосовой пузырь (Telegram-style, статичный заборчик) === */
+/* === Voice bubble === */
 function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
 
@@ -790,21 +632,21 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 /* === INIT === */
 (async function init(){
   try{
-    const [p1,p2,p3,p4,p5,p6,p7]=await Promise.all([
-      fetch('/data/rin_persona.json').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_phrases.json').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_schedule.json').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_stickers.json?v=5').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_memories.json').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_backstory.json').then(r=>r.json()).catch(()=>null),
-      fetch('/data/rin_triggers.json').then(r=>r.json()).catch(()=>null)
-    ]);
-    persona=p1; phrases=p2; schedule=p3; stickers=p4; memories=p5; backstory=p6; triggers=p7;
+    // 1) профиль персонажа доступен из persona_ui bootstrap:
+    profile = window.RIN_PROFILE || null;
 
-    // окружение Рин: сразу соберём и переобновляем каждые 20 минут
+    // 2) стикеры — как и раньше из JSON
+    stickers = await fetch('/data/rin_stickers.json?v=5').then(r=>r.json()).catch(()=>null);
+
+    // 3) окружение
     await refreshRinEnv();
     setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
-  }catch(e){ console.warn('JSON load error',e); }
+  }catch(e){ console.warn('init error',e); }
+
+  // подхватываем обновления профиля из редактора
+  window.addEventListener('rin:profile-updated', (ev)=>{
+    profile = ev.detail || profile;
+  });
 
   history=loadHistory();
   if (history.length){
@@ -819,11 +661,12 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   tryInitiateBySchedule();
 })();
 
+/* — приветствие на основе профиля — */
 function greet(){
-  // 1) Определяем время суток (берём из currentEnv, если уже есть)
+  // пул по времени суток
   let pool = 'day';
   if (currentEnv && currentEnv.partOfDay){
-    const p = currentEnv.partOfDay; // 'утро' | 'день' | 'вечер' | 'ночь'
+    const p = currentEnv.partOfDay;
     if (p === 'утро') pool = 'morning';
     else if (p === 'день') pool = 'day';
     else if (p === 'вечер') pool = 'evening';
@@ -836,36 +679,20 @@ function greet(){
     else pool = 'night';
   }
 
-  // 2) Месяц (для month_special)
-  const monthIdx = (function(){
-    if (currentEnv?.rinHuman){
-      const m = Number(currentEnv.rinHuman.slice(5,7));
-      if (!Number.isNaN(m)) return m - 1;
-    }
-    return new Date().getMonth();
-  })();
-  const monthKeys = [
-    'january','february','march','april','may','june',
-    'july','august','september','october','november','december'
-  ];
-  const monthKey = monthKeys[monthIdx];
-
-  // 3) Подбираем фразу
   let greeting = null;
+  const starters = Array.isArray(profile?.starters) ? profile.starters : [];
 
-  if (phrases && Array.isArray(phrases[pool]) && phrases[pool].length){
-    greeting = phrases[pool][Math.floor(Math.random()*phrases[pool].length)];
+  if (starters.length){
+    greeting = starters[Math.floor(Math.random()*starters.length)];
   }
-
-  if (phrases?.month_special?.[monthKey] &&
-      Array.isArray(phrases.month_special[monthKey]) &&
-      phrases.month_special[monthKey].length &&
-      Math.random() < 0.30) {
-    const mPool = phrases.month_special[monthKey];
-    greeting = mPool[Math.floor(Math.random()*mPool.length)];
+  if (!greeting){
+    // очень короткий аккуратный фолбэк
+    const pod = currentEnv?.partOfDay || 'сейчас';
+    greeting = (pod==='утро') ? 'Доброе утро. Как ты?' :
+               (pod==='вечер') ? 'Добрый вечер. Как твой день?' :
+               (pod==='ночь') ? 'Тихая ночь тут… ты как?' :
+               'Привет. Как ты?';
   }
-
-  if (!greeting) greeting = 'Привет! Как твой день? 🌸';
 
   addBubble(greeting,'assistant');
 
@@ -906,30 +733,35 @@ async function getTTSUrl(text){
   }catch{ return null; }
 }
 
-/* === Автоинициации (с учётом voice-only) === */
+/* === Автоинициации (используем profile.initiation) === */
 async function tryInitiateBySchedule(){
-  if (!schedule || !phrases) return;
-  const d=nowLocal(); const dateKey=fmtDateKey(d);
+  if (!profile) return;
+
+  const d=nowLocal();
+  const dateKey=fmtDateKey(d);
   const lastKey=Object.keys(JSON.parse(localStorage.getItem(DAILY_INIT_KEY)||'{}')).pop();
-  if (lastKey && lastKey!==dateKey){ localStorage.setItem(DAILY_INIT_KEY, JSON.stringify({})); chainStickerCount=0; }
+  if (lastKey && lastKey!==dateKey){
+    localStorage.setItem(DAILY_INIT_KEY, JSON.stringify({}));
+    chainStickerCount=0;
+  }
 
-  if (getInitCountFor(dateKey) >= (schedule.max_daily_initiations||2)) return;
+  const maxDaily = Math.max(0, Number(profile?.initiation?.max_per_day ?? 2));
+  if (getInitCountFor(dateKey) >= maxDaily) return;
 
-  const win=(schedule.windows||[]).find(w=>inWindow(d,w.from,w.to) && Math.random()<(w.probability||0.5));
+  const windows = Array.isArray(profile?.initiation?.windows) ? profile.initiation.windows : [];
+  const win = windows.find(w => inWindow(d, w.from, w.to) && Math.random() < (w.probability ?? 0.5));
   if (!win) return;
 
   const last=history[history.length-1];
   if (last && last.role==='assistant' && d - new Date(last.ts||Date.now()) < 15*60*1000) return;
 
-  let text;
-  const useBio = Math.random() < 0.25;
-  if (useBio){
-    text = pickBackstory({}) || pickMemory();
-  }
-  if (!text){
-    const pool = phrases[win.pool] ? win.pool : 'morning';
-    text = pick(phrases[pool] || phrases.morning);
-  }
+  // текст для инициативы — берём случайную фразу из starters
+  let text = null;
+  const starters = Array.isArray(profile?.starters) ? profile.starters : [];
+  if (starters.length) text = pick(starters);
+
+  // если в профиле нет стартовых фраз — тихий выход
+  if (!text) return;
 
   peerStatus.textContent='печатает…';
   const trow=addTyping();
@@ -948,17 +780,17 @@ async function tryInitiateBySchedule(){
       addBubble(text,'assistant');
     }
 
-    const st=pickStickerSmart(text,win.pool,'');
+    const st=pickStickerSmart(text, win.pool || null, '');
     if (st && shouldShowSticker('',text)){
       const cap = buildStickerCaption(st,{ replyText:text });
       addStickerBubble(st.src,'assistant', cap);
     }
     history.push({role:'assistant',content:text,ts:Date.now()});
     saveHistory(history); bumpInitCount(dateKey);
-  }, 1200+Math.random()*1200);
+  }, 900+Math.random()*900);
 }
 
-/* === Отправка (с локальными «маленькими» ответами) === */
+/* === Отправка (локальные «маленькие» ответы + запрос к модели) === */
 formEl.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const text = (inputEl.value || '').trim();
@@ -971,7 +803,10 @@ formEl.addEventListener('submit', async (e)=>{
 
   const t = text.toLowerCase();
 
+  // A) smalltalk (мягкий, без «рассказов из прошлого»)
   const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
+
+  // B) погода
   const RE_WEATHER   = /(какая (у тебя )?погода|что там с погодой|на улице (у тебя )?(холодно|тепло|жарко|дождь|снег)|как (у тебя )?на улице)/i;
 
   function composeTimeMood(env){
@@ -994,22 +829,9 @@ formEl.addEventListener('submit', async (e)=>{
     return bits.length ? `Сейчас в Канадзаве ${bits.join(', ')}.` : '';
   }
   function pickSmallTalkPhrase(){
-    if (!phrases) return '';
-    const h = new Date().getHours();
-    const dayPool = (h>=5 && h<12) ? phrases.morning
-                  : (h>=12 && h<18) ? phrases.day
-                  : phrases.evening;
-    const monthIdx = (nowInTz(RIN_TZ)).getMonth(); // 0..11
-    const monthKey = String(monthIdx+1).padStart(2,'0'); // "01".."12"
-    const monthPool = phrases.months?.[monthKey];
-
-    const pick = arr => Array.isArray(arr) && arr.length ? arr[Math.floor(Math.random()*arr.length)] : '';
-    if (monthPool && Math.random() < 0.3) {
-      const a = pick(dayPool);
-      const b = pick(monthPool);
-      return [a,b].filter(Boolean).join(' ');
-    }
-    return pick(dayPool) || '';
+    const starters = Array.isArray(profile?.starters) ? profile.starters : [];
+    if (!starters.length) return '';
+    return starters[Math.floor(Math.random()*starters.length)];
   }
 
   // 1) smalltalk
@@ -1023,9 +845,12 @@ formEl.addEventListener('submit', async (e)=>{
     if (timeMood) pieces.push(timeMood + '.');
     if (weatherMood) pieces.push(weatherMood);
     if (filler) pieces.push(filler);
+
+    // женский род для Рин, обращение к пользователю — мужской
     const tail = Math.random()<0.5
-      ? 'Радуюсь, что ты написал — это сразу делает момент теплее.'
-      : 'С тобой как-то спокойнее.';
+      ? 'Рада, что ты написал — с тобой момент теплее.'
+      : 'Рядом с тобой как-то спокойнее.';
+
     const reply = [pieces.join(' '), tail].filter(Boolean).join(' ');
 
     let voiced=false;
@@ -1072,24 +897,7 @@ formEl.addEventListener('submit', async (e)=>{
     return;
   }
 
-  // 3) явный запрос на «историю/воспоминания» — после smalltalk/погоды!
-  const askBackstory = inferBackstoryRequest(text);
-  if (askBackstory){
-    const story = pickBackstory(askBackstory) || pickMemory();
-    if (story){
-      let voiced=false;
-      if (shouldVoiceFor(story)){
-        const url=await getTTSUrl(story);
-        if (url){ addVoiceBubble(url, story, 'assistant'); voiced=true; }
-      }
-      if (!voiced){ addBubble(story,'assistant'); }
-      history.push({role:'assistant',content:story,ts:Date.now()});
-      saveHistory(history);
-      return;
-    }
-  }
-
-  // 4) обычный путь → к модели
+  // 3) обычный путь → к модели (env+профиль передаются на сервер)
   peerStatus.textContent='печатает…';
   const typingRow=addTyping();
 
@@ -1100,6 +908,7 @@ formEl.addEventListener('submit', async (e)=>{
         history,
         pin: localStorage.getItem('rin-pin'),
         env: currentEnv || undefined,
+        profile: profile || undefined,   // <— важное добавление
         client: {
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
           sentAt: Date.now()
