@@ -125,12 +125,9 @@ body {
 }
 .chat::after {
   content: "";
--  position: fixed;
--  inset: 0;
--  z-index: -1;
-+  position: absolute;                 /* FIX: ограничиваем внутри .chat */
-+  inset: 0;
-+  z-index: 0;                         /* FIX: фон ниже остального контента */
+  position: absolute;                 /* фон ограничен областью .chat */
+  inset: 0;
+  z-index: 0;                         /* фон ниже остального контента */
   background: color-mix(in oklab, var(--bg), transparent calc(100% - (var(--wallpaper-opacity) * 100%)));
   pointer-events: none;
 }
@@ -233,7 +230,7 @@ body {
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(to top, var(--bg), color-mix(in oklab, var(--bg), transparent 35%));
   border-top: 1px solid var(--bubble-border);
-+  z-index: 5;                         /* FIX: всегда поверх фона */
+  z-index: 5;                         /* поверх фоновой вуали */
 }
 
 .composer input {
@@ -327,6 +324,11 @@ body {
   background: #ef4444;
   color: #fff;
 }
+.settings__actions .btn-accent {
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+}
 
 .settings__foot {
   padding-top: 10px;
@@ -383,12 +385,12 @@ body {
   50%     { transform: scaleY(1.2) }
 }
 
-/* мини‑таймер рядом с кнопкой */
+/* мини-таймер рядом с кнопкой */
 .voice-time {
   font-size: 11px; opacity: .65;
 }
 
-/* компактная плашка‑чип (если решите выводить под пузырём) */
+/* компактная плашка-чип (если решите выводить под пузырём) */
 .voice-chip {
   display:inline-flex; align-items:center; gap:8px;
   margin-top:6px; padding:6px 10px; border-radius: 999px;
@@ -396,6 +398,7 @@ body {
   color: var(--fg-muted, #cfd3dc);
 }
 .theme-light .voice-chip { color:#667085 }
+
 /* === Telegram-like Voice Bubble (palette-aware) === */
 .bubble.voice-tg {
   background: var(--bubble-her);
@@ -492,4 +495,102 @@ body {
   margin-top: 6px;
   font-size: 14px;
   line-height: 1.45;
+}
+
+/* ===============================
+   ПЕРСОНАЛЬНЫЕ НАСТРОЙКИ / КАНОН
+   =============================== */
+
+/* заголовок секции в общей панели настроек */
+.settings__section-title {
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: .5px;
+  margin: 12px 0 4px;
+  padding-left: 2px;
+}
+
+.persona-settings {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.persona-settings textarea {
+  width: 100%;
+  min-height: 80px;
+  border-radius: 10px;
+  border: 1px solid var(--bubble-border);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.persona-settings small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Отдельная панель «Персонаж» (если открываем в полноэкранном режиме) */
+.persona-panel {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 40;
+  display: none;
+  flex-direction: column;
+}
+.persona-panel.active { display: flex; }
+
+.persona-panel__head {
+  padding: 12px;
+  border-bottom: 1px solid var(--bubble-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel);
+}
+.persona-panel__head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.persona-panel__close {
+  background: transparent;
+  border: 0;
+  font-size: 20px;
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.persona-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+/* Просмотр «дневника памяти» */
+.diary-log {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--bubble-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--bg-soft);
+  font-size: 13px;
+  line-height: 1.4;
+  display: grid;
+  gap: 4px;
+}
+.diary-log time {
+  color: var(--muted);
+  font-size: 11px;
 }
