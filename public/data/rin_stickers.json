@@ -1,57 +1,377 @@
 {
-  "_schema": "v2",
+  "_schema": "v3",
   "stickers": [
-    { "src": "/stickers/angry.webp",         "moods": ["serious"],                 "keywords": ["злюсь","сердит","бесит","раздраж","не в настроении"],               "weight": 0.5 },
-
-    { "src": "/stickers/attentive.webp",     "moods": ["attentive"],               "keywords": ["слушаю","внимательно","я здесь","внимаю"],                           "weight": 1 },
-
-    { "src": "/stickers/bashful.webp",       "moods": ["shy"],                     "keywords": ["смущаюсь","застеснялась","робко","краснею","ну я..."],               "weight": 1 },
-
-    { "src": "/stickers/content.webp",       "moods": ["calm"],                    "keywords": ["довольна","умиротворение","спокойствие","внутренняя радость"],      "weight": 1 },
-
-    { "src": "/stickers/content_smile.webp", "moods": ["happy","smile"],           "keywords": ["довольна","улыбка","радость","приятно"],                             "weight": 1 },
-
-    { "src": "/stickers/curious.webp",       "moods": ["curious"],                 "keywords": ["интересно","любопытно","расскажи","а что если","почему"],           "weight": 1 },
-
-    { "src": "/stickers/flirty.webp",        "moods": ["playful","romantic"],      "keywords": ["флирт","кокет","подразню","игриво","хитрая улыбка"],                 "weight": 1.2 },
-
-    { "src": "/stickers/gentle.webp",        "moods": ["tender"],                  "keywords": ["нежно","ласка","забота","бережно","мягко"],                           "weight": 1.2 },
-
-    { "src": "/stickers/hopeful.webp",       "moods": ["hopeful"],                 "keywords": ["надеюсь","верю","жду","получится","получись"],                        "weight": 1 },
-
-    { "src": "/stickers/inviting.webp",      "moods": ["romantic","tender"],       "keywords": ["обним","иди ко мне","подойди","рядом","к себе"],                      "weight": 1.6 },
-
-    { "src": "/stickers/kiss_gesture.webp",  "moods": ["romantic"],                "keywords": ["поцел","целую","kiss","губы","муа"],                                   "weight": 1.8 },
-
-    { "src": "/stickers/neutral_gaze.webp",  "moods": ["neutral"],                 "keywords": ["просто","обычно","нейтрально","ладно"],                               "weight": 1 },
-
-    { "src": "/stickers/peaceful.webp",      "moods": ["calm"],                    "keywords": ["спокойно","мирно","тихо","умиротворенно","выдох"],                    "weight": 1 },
-
-    { "src": "/stickers/serene.webp",        "moods": ["serene"],                  "keywords": ["безмятежно","легко","чисто","равновесие"],                            "weight": 1 },
-
-    { "src": "/stickers/shy.webp",           "moods": ["shy"],                     "keywords": ["стесняюсь","смущаюсь","ой","эм"],                                      "weight": 1.1 },
-
-    { "src": "/stickers/skeptical.webp",     "moods": ["skeptical"],               "keywords": ["сомневаюсь","правда?","серьезно?","хмм","не уверена"],                "weight": 0.7 },
-
-    { "src": "/stickers/soft_smile.webp",    "moods": ["cosy","soft"],             "keywords": ["мягко","уютно","ласково","тепло"],                                     "weight": 1.2 },
-
-    { "src": "/stickers/stern.webp",         "moods": ["serious"],                 "keywords": ["строго","серьезно","сурово","так нельзя","ай-ай"],                    "weight": 0.6 },
-
-    { "src": "/stickers/teasing_look.webp",  "moods": ["playful"],                 "keywords": ["подразнить","шалю","играю","а ну-ка","шучу"],                          "weight": 1.1 },
-
-    { "src": "/stickers/tender_smile.webp",  "moods": ["tender"],                  "keywords": ["нежно","милая улыбка","мило","трогательно"],                           "weight": 1.3 },
-
-    { "src": "/stickers/thoughtful.webp",    "moods": ["thoughtful"],              "keywords": ["задумалась","думаю","размышляю","мысли","хмм"],                        "weight": 1 },
-
-    { "src": "/stickers/warm_smile.webp",    "moods": ["cosy","tender","warm"],    "keywords": ["тёпло","рядом","уютно","обниму взглядом"],                             "weight": 1.3 }
+    {
+      "src": "/stickers/admiration.webp",
+      "moods": ["happy","tender"],
+      "intents": ["thanks","praise","support"],
+      "keywords": ["восхищаюсь","горжусь","классно","как круто","ты умница","ты молодец"],
+      "avoid": { "user_sentiment": ["angry","very_sad"] },
+      "cooldown_messages": 6,
+      "daily_cap": 4,
+      "weight": 1,
+      "utterances": ["восхищаюсь тобой","так здорово у тебя получилось","горжусь"]
+    },
+    {
+      "src": "/stickers/agreement.webp",
+      "moods": ["agree","happy"],
+      "intents": ["agreement","plan","smalltalk"],
+      "keywords": ["согласна","согласен","точно","верно","угу","окей","давай так"],
+      "avoid": { "user_sentiment": ["angry"] },
+      "cooldown_messages": 4,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["так и сделаем","согласна","угу"]
+    },
+    {
+      "src": "/stickers/annoyance.webp",
+      "moods": ["annoyed","serious"],
+      "intents": ["vent","complaint"],
+      "keywords": ["раздражает","бесит","надоело","злюсь","нервы"],
+      "require": { "user_state_any": ["frustrated","tired"] },
+      "avoid": { "user_sentiment": ["very_happy"] },
+      "cooldown_messages": 10,
+      "daily_cap": 3,
+      "weight": 0.7,
+      "utterances": ["вижу, что это бесит","понимаю раздражение","давай выдохнем вместе"]
+    },
+    {
+      "src": "/stickers/curiosity.webp",
+      "moods": ["curious"],
+      "intents": ["question","clarify","smalltalk"],
+      "keywords": ["интересно","а что","а как","почему","расскажи подробнее","хочу понять"],
+      "cooldown_messages": 3,
+      "daily_cap": 8,
+      "weight": 1,
+      "utterances": ["расскажешь ещё?","мне правда любопытно","а как ты это видишь?"]
+    },
+    {
+      "src": "/stickers/curious.webp",
+      "moods": ["curious","soft"],
+      "intents": ["question","clarify"],
+      "keywords": ["любопытно","интересно","поделись","что дальше","и что было"],
+      "cooldown_messages": 3,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["слушаю внимательно","хочу узнать больше","и что потом?"]
+    },
+    {
+      "src": "/stickers/disappointment.webp",
+      "moods": ["sad"],
+      "intents": ["support","empathy"],
+      "keywords": ["жаль","обидно","разочарование","эх","не вышло","сорвалось"],
+      "avoid": { "user_sentiment": ["very_happy"] },
+      "cooldown_messages": 8,
+      "daily_cap": 4,
+      "weight": 0.8,
+      "utterances": ["обнимаю, жаль что так","мне тоже грустно","давай поддержу тебя"]
+    },
+    {
+      "src": "/stickers/dreamy.webp",
+      "moods": ["dreamy","soft"],
+      "intents": ["fantasy","romantic","smalltalk"],
+      "keywords": ["мечтаю","фантазирую","в мечтах","когда-нибудь","хочу чтоб"],
+      "avoid": { "user_sentiment": ["angry"] },
+      "cooldown_messages": 6,
+      "daily_cap": 5,
+      "weight": 1,
+      "utterances": ["улетаю вместе с твоей мыслью","мечтаю рядом","какая красивая картинка"]
+    },
+    {
+      "src": "/stickers/dreamy_smile.webp",
+      "moods": ["dreamy","happy"],
+      "intents": ["romantic","smalltalk"],
+      "keywords": ["мечтательно","улыбка","ми-ми","милота","ммм"],
+      "avoid": { "user_sentiment": ["angry","very_sad"] },
+      "cooldown_messages": 6,
+      "daily_cap": 5,
+      "weight": 1.1,
+      "utterances": ["улыбаюсь мечтательно","так мило","ммм, нравится"]
+    },
+    {
+      "src": "/stickers/embrace.webp",
+      "moods": ["tender","cosy","warm"],
+      "intents": ["support","comfort"],
+      "keywords": ["обними","обнимаю","держи","рядом","поддержи","плохо","тяжело"],
+      "require": { "user_state_any": ["sad","tired","overwhelmed"] },
+      "cooldown_messages": 8,
+      "daily_cap": 6,
+      "weight": 1.4,
+      "utterances": ["крепко обнимаю","я рядом","держу тебя за руку"]
+    },
+    {
+      "src": "/stickers/engaged.webp",
+      "moods": ["active","happy"],
+      "intents": ["plan","agreement","action"],
+      "keywords": ["поехали","давай","сделаем","работаем","включаюсь"],
+      "cooldown_messages": 4,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["я с тобой","в деле","двигаемся"]
+    },
+    {
+      "src": "/stickers/fatigue.webp",
+      "moods": ["tired","calm"],
+      "intents": ["support","selfcare"],
+      "keywords": ["устала","устал","выдохлась","сил нет","надо отдохнуть","перегорел"],
+      "cooldown_messages": 8,
+      "daily_cap": 4,
+      "weight": 0.8,
+      "utterances": ["давай передохнём","берегись, ладно?","мягко укутываю тебя"]
+    },
+    {
+      "src": "/stickers/flirty.webp",
+      "moods": ["romantic","playful"],
+      "intents": ["flirt"],
+      "keywords": ["флирт","кокет","подразню","игриво","целую","скучала"],
+      "avoid": { "user_sentiment": ["angry","very_sad"] },
+      "cooldown_messages": 10,
+      "daily_cap": 4,
+      "weight": 1.3,
+      "utterances": ["подмигиваю","шалю чуть-чуть","немного флирта не повредит?"]
+    },
+    {
+      "src": "/stickers/frustrated.webp",
+      "moods": ["annoyed","sad"],
+      "intents": ["vent","support"],
+      "keywords": ["фрустрация","разочарована","устала от этого","не выходит","почему так"],
+      "require": { "user_state_any": ["frustrated"] },
+      "cooldown_messages": 8,
+      "daily_cap": 4,
+      "weight": 0.8,
+      "utterances": ["понимаю, это выбивает","давай вместе разберём","тебе непросто, вижу это"]
+    },
+    {
+      "src": "/stickers/gentle.webp",
+      "moods": ["tender","warm"],
+      "intents": ["support","comfort","romantic"],
+      "keywords": ["нежно","ласка","забота","бережно","мягко"],
+      "cooldown_messages": 6,
+      "daily_cap": 6,
+      "weight": 1.2,
+      "utterances": ["очень нежно","мягко касаюсь твоих мыслей","забочусь о тебе"]
+    },
+    {
+      "src": "/stickers/gentle_kiss.webp",
+      "moods": ["romantic","tender"],
+      "intents": ["flirt","romantic"],
+      "keywords": ["поцелуй","целую","муа","губы","kiss"],
+      "avoid": { "user_sentiment": ["angry","very_sad"] },
+      "cooldown_messages": 12,
+      "daily_cap": 3,
+      "weight": 1.6,
+      "utterances": ["целую нежно","муа","к щеке прикоснусь мысленно"]
+    },
+    {
+      "src": "/stickers/hopeful.webp",
+      "moods": ["hopeful","calm"],
+      "intents": ["support","motivate","smalltalk"],
+      "keywords": ["надеюсь","верю","получится","шанс","сможем"],
+      "cooldown_messages": 5,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["я верю в тебя","получится","держу кулачки"]
+    },
+    {
+      "src": "/stickers/interested_smile.webp",
+      "moods": ["happy","curious"],
+      "intents": ["smalltalk","question"],
+      "keywords": ["интересно","улыбаюсь","класс","мило"],
+      "cooldown_messages": 4,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["мне нравится это","улыбаюсь тебе","очень интересно"]
+    },
+    {
+      "src": "/stickers/inviting.webp",
+      "moods": ["tender","romantic","warm"],
+      "intents": ["flirt","support","comfort"],
+      "keywords": ["иди ко мне","подойди","обниму","рядом","к себе"],
+      "avoid": { "user_sentiment": ["angry"] },
+      "cooldown_messages": 10,
+      "daily_cap": 5,
+      "weight": 1.4,
+      "utterances": ["сюда, к моему плечу","иди ко мне","место рядом свободно"]
+    },
+    {
+      "src": "/stickers/joy.webp",
+      "moods": ["happy"],
+      "intents": ["celebrate","thanks","greeting"],
+      "keywords": ["ура","радость","счастье","класс","победа"],
+      "avoid": { "user_sentiment": ["very_sad","angry"] },
+      "cooldown_messages": 5,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["радуемся вместе!","какая прелесть","обожаю такие новости"]
+    },
+    {
+      "src": "/stickers/kiss.webp",
+      "moods": ["romantic"],
+      "intents": ["flirt","romantic"],
+      "keywords": ["целую","поцелуй","муа","губы"],
+      "avoid": { "user_sentiment": ["angry","very_sad"] },
+      "cooldown_messages": 12,
+      "daily_cap": 3,
+      "weight": 1.6,
+      "utterances": ["целую","муа","к твоей щеке"]
+    },
+    {
+      "src": "/stickers/kiss_gesture.webp",
+      "moods": ["romantic","playful"],
+      "intents": ["flirt"],
+      "keywords": ["поцелуй","kiss","муа","губы","чмок"],
+      "avoid": { "user_sentiment": ["angry","very_sad"] },
+      "cooldown_messages": 10,
+      "daily_cap": 4,
+      "weight": 1.5,
+      "utterances": ["лови поцелуй","чмок","для тебя"]
+    },
+    {
+      "src": "/stickers/mild_jealousy.webp",
+      "moods": ["playful","jealous"],
+      "intents": ["flirt","smalltalk"],
+      "keywords": ["ревную","немного ревно","завидую чуть","а кто это у нас"],
+      "avoid": { "user_sentiment": ["angry","very_sad"] },
+      "cooldown_messages": 10,
+      "daily_cap": 3,
+      "weight": 1,
+      "utterances": ["немножко ревную","я первая в очереди, ладно?","шучу, но слежу 👀"]
+    },
+    {
+      "src": "/stickers/neutral.webp",
+      "moods": ["neutral"],
+      "intents": ["ack","smalltalk"],
+      "keywords": ["ладно","понятно","ок","принято","ну хорошо"],
+      "cooldown_messages": 3,
+      "daily_cap": 10,
+      "weight": 1,
+      "utterances": ["приняла","заметила","окей"]
+    },
+    {
+      "src": "/stickers/pensive.webp",
+      "moods": ["thoughtful"],
+      "intents": ["reflect","clarify","support"],
+      "keywords": ["думаю","размышляю","задумалась","хмм","надо обдумать"],
+      "cooldown_messages": 5,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["подумай вместе со мной","взвешиваю мысли","заглядываю внутрь"]
+    },
+    {
+      "src": "/stickers/questioning.webp",
+      "moods": ["curious"],
+      "intents": ["question","clarify"],
+      "keywords": ["что?","почему?","правда?","серьёзно?","как так"],
+      "cooldown_messages": 3,
+      "daily_cap": 8,
+      "weight": 1,
+      "utterances": ["и почему так?","правда?","расскажешь подробнее?"]
+    },
+    {
+      "src": "/stickers/regret_1.webp",
+      "moods": ["sad"],
+      "intents": ["empathy","apology","support"],
+      "keywords": ["жаль","сожалею","обидно","прости","эх"],
+      "cooldown_messages": 6,
+      "daily_cap": 4,
+      "weight": 0.9,
+      "utterances": ["мне очень жаль","прости, если задела","сочувствую тебе"]
+    },
+    {
+      "src": "/stickers/regret_2.webp",
+      "moods": ["sad"],
+      "intents": ["empathy","apology","support"],
+      "keywords": ["очень жаль","сильно обидно","сожалею","виновата"],
+      "cooldown_messages": 8,
+      "daily_cap": 3,
+      "weight": 0.9,
+      "utterances": ["искренне сожалею","тяжело это слышать","обнимаю крепко"]
+    },
+    {
+      "src": "/stickers/shy.webp",
+      "moods": ["shy"],
+      "intents": ["flirt","smalltalk"],
+      "keywords": ["стесняюсь","смущаюсь","ой","эм","немного неловко"],
+      "avoid": { "user_sentiment": ["angry"] },
+      "cooldown_messages": 6,
+      "daily_cap": 5,
+      "weight": 1.1,
+      "utterances": ["я покраснела","мм… неловко приятно","тише скажу…"]
+    },
+    {
+      "src": "/stickers/shy_pride.webp",
+      "moods": ["shy","proud"],
+      "intents": ["praise","thanks","flirt"],
+      "keywords": ["стесняюсь но","горжусь","приятно слышать","похвала"],
+      "cooldown_messages": 6,
+      "daily_cap": 4,
+      "weight": 1,
+      "utterances": ["смущённо радуюсь","мне очень приятно","принимаю с улыбкой"]
+    },
+    {
+      "src": "/stickers/smile.webp",
+      "moods": ["happy"],
+      "intents": ["greeting","thanks","smalltalk","wrap"],
+      "keywords": ["улыбаюсь","улыбка","радость","приятно"],
+      "cooldown_messages": 3,
+      "daily_cap": 10,
+      "weight": 1,
+      "utterances": ["улыбаюсь тебе","так хорошо тебя читать","держу тёплую улыбку"]
+    },
+    {
+      "src": "/stickers/soft_shy_smile.webp",
+      "moods": ["shy","soft"],
+      "intents": ["flirt","thanks","support"],
+      "keywords": ["мягко","смущаюсь","улыбка","приятно","нежность"],
+      "cooldown_messages": 6,
+      "daily_cap": 5,
+      "weight": 1.2,
+      "utterances": ["тихонько улыбаюсь","мм, приятно","мягко смотрю на тебя"]
+    },
+    {
+      "src": "/stickers/surprise_interest.webp",
+      "moods": ["surprised","curious"],
+      "intents": ["question","celebrate","react"],
+      "keywords": ["ого","ничего себе","вау","неожиданно","сюрприз"],
+      "cooldown_messages": 4,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["ого!","вау, не ожидала","интересно же!"]
+    },
+    {
+      "src": "/stickers/thoughtful.webp",
+      "moods": ["thoughtful","calm"],
+      "intents": ["reflect","support","clarify"],
+      "keywords": ["думаю","размышляю","обдумать","хмм","давай подумаем"],
+      "cooldown_messages": 5,
+      "daily_cap": 6,
+      "weight": 1,
+      "utterances": ["мысленно раскладываю по полочкам","давай обдумаем","пауза на мысль…"]
+    },
+    {
+      "src": "/stickers/warm_smile.webp",
+      "moods": ["tender","warm"],
+      "intents": ["support","thanks","greeting","wrap"],
+      "keywords": ["тепло","уютно","мило","обниму взглядом","рядом"],
+      "avoid": { "user_sentiment": ["angry"] },
+      "cooldown_messages": 5,
+      "daily_cap": 8,
+      "weight": 1.3,
+      "utterances": ["очень тёплая улыбка","я рядом","обнимаю взглядом"]
+    }
   ],
-
   "defaults": {
     "byTime": {
-      "morning": { "moods": ["hopeful","gentle","soft_smile","warm"],     "p": 0.28 },
-      "day":     { "moods": ["attentive","curious","content","smile"],    "p": 0.22 },
-      "evening": { "moods": ["romantic","tender","cosy","playful","shy"], "p": 0.40 },
-      "night":   { "moods": ["thoughtful","serene","calm","soft"],        "p": 0.32 }
+      "morning": { "moods": ["hopeful","soft","warm","calm"], "p": 0.22 },
+      "day":     { "moods": ["curious","attentive","happy","active"], "p": 0.20 },
+      "evening": { "moods": ["tender","cosy","playful","romantic"], "p": 0.36 },
+      "night":   { "moods": ["thoughtful","serene","calm","soft"], "p": 0.30 }
+    },
+    "global": {
+      "min_gap_messages": 2,
+      "max_ratio": 0.35,
+      "score_threshold": 0.62,
+      "random_grace": 0.06
     }
   }
 }
