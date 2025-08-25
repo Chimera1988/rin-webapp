@@ -17,10 +17,9 @@
   --panel: #ffffff;
   --shadow: 0 10px 25px rgba(0,0,0,0.08);
 
-  /* Обои: JS будет писать сюда url(...) */
   --wallpaper-url: none;
-  --wallpaper-opacity: 1; /* 0..1 */
-  --ring: rgba(0,0,0,0.08); /* тонкая окантовка-тень (не белая линия) */
+  --wallpaper-opacity: 1;
+  --ring: rgba(0,0,0,0.08);
 }
 .theme-dark {
   --bg: #0e1113;
@@ -50,7 +49,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Шапка с учётом Dynamic Island / safe-area */
+/* Шапка */
 .tg-header {
   position: sticky;
   top: 0;
@@ -85,13 +84,13 @@ body {
   align-items: center;
 }
 
-/* АВАТАР — без белой окантовки */
+/* Аватар */
 .avatar {
   width: 36px; height: 36px;
   border-radius: 50%;
   object-fit: cover;
   display: block;
-  border: 0;                                           /* рамка убрана */
+  border: 0;
   box-shadow: 0 0 0 1px var(--ring), 0 2px 6px rgba(0,0,0,0.10);
 }
 .avatar.small { width: 28px; height: 28px; }
@@ -101,33 +100,30 @@ body {
 .peer-name { font-weight: 700; }
 .peer-status { color: var(--muted); font-size: 12px; }
 
-/* Контейнер приложения */
+/* Контейнер */
 .app {
   display: grid;
   grid-template-rows: 1fr auto;
   height: calc(100dvh - env(safe-area-inset-bottom, 0px));
 }
 
-/* Лента чата + обои */
+/* Лента чата */
 .chat {
   position: relative;
   padding: 12px 12px 6px;
   overflow: auto;
-  -webkit-overflow-scrolling: touch;
   background: var(--bg);
-  /* если есть обои — рисуем фоном через переменную */
   background-image: var(--wallpaper-url);
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
-  /* Лёгкая вуаль, чтобы текст читался на ярких обоях */
   isolation: isolate;
 }
 .chat::after {
   content: "";
-  position: absolute;                 /* фон ограничен областью .chat */
+  position: absolute;
   inset: 0;
-  z-index: 0;                         /* фон ниже остального контента */
+  z-index: 0;
   background: color-mix(in oklab, var(--bg), transparent calc(100% - (var(--wallpaper-opacity) * 100%)));
   pointer-events: none;
 }
@@ -154,15 +150,8 @@ body {
   box-shadow: var(--shadow);
   border: 1px solid var(--bubble-border);
 }
-
-.bubble.her {
-  background: var(--bubble-her);
-}
-.bubble.me {
-  background: var(--bubble-me);
-  color: #fff;
-  border-color: transparent;
-}
+.bubble.her { background: var(--bubble-her); }
+.bubble.me  { background: var(--bubble-me); color: #fff; border-color: transparent; }
 
 /* Время */
 .bubble-time {
@@ -173,7 +162,7 @@ body {
 }
 .bubble.me .bubble-time { color: rgba(255,255,255,0.7); }
 
-/* Индикатор печати */
+/* Печать */
 .bubble.typing {
   display: inline-flex;
   align-items: center;
@@ -194,7 +183,7 @@ body {
   50%      { transform: translateY(-2px); opacity: .9; }
 }
 
-/* Стикер-бабблы (кружки, без белой окантовки) */
+/* Стикеры */
 .bubble.sticker-only {
   padding: 6px;
   background: transparent;
@@ -207,7 +196,6 @@ body {
   margin-top: 4px;
 }
 
-/* СТИКЕР — без белой линии */
 .sticker {
   display: block;
   width: 140px;
@@ -215,11 +203,27 @@ body {
   object-fit: cover;
   border-radius: 50%;
   background: transparent;
-  image-rendering: auto;
   -webkit-mask-image: radial-gradient(#000 98%, transparent 100%);
-          mask-image: radial-gradient(#000 98%, transparent 100%);
-  outline: 0;                                   /* белый контур убран */
+  mask-image: radial-gradient(#000 98%, transparent 100%);
+  outline: 0;
   box-shadow: 0 0 0 1px var(--ring), 0 4px 14px rgba(0,0,0,0.12);
+}
+
+/* Подпись к стикеру */
+.sticker-utter {
+  display: block;
+  margin-top: 6px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--muted);
+  max-width: 140px;
+  margin-left: auto;
+  margin-right: auto;
+  word-wrap: break-word;
+}
+.theme-dark .sticker-utter {
+  color: color-mix(in oklab, #ffffff 70%, transparent);
 }
 
 /* Компонент ввода */
@@ -230,9 +234,8 @@ body {
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(to top, var(--bg), color-mix(in oklab, var(--bg), transparent 35%));
   border-top: 1px solid var(--bubble-border);
-  z-index: 5;                         /* поверх фоновой вуали */
+  z-index: 5;
 }
-
 .composer input {
   width: 100%;
   height: 42px;
@@ -244,7 +247,6 @@ body {
   outline: none;
   font-size: 16px;
 }
-
 .composer button {
   height: 42px;
   border-radius: 12px;
@@ -255,15 +257,13 @@ body {
   place-items: center;
 }
 
-/* ===== Панель настроек ===== */
+/* Панель настроек */
 .settings.hidden { display: none; }
-
 .settings {
   position: fixed;
   inset: 0;
   z-index: 30;
 }
-
 .settings__backdrop {
   position: absolute;
   inset: 0;
@@ -271,7 +271,6 @@ body {
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-
 .settings__sheet {
   position: absolute;
   left: 0; right: 0; bottom: 0;
@@ -281,7 +280,6 @@ body {
   box-shadow: var(--shadow);
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
 }
-
 .settings__head {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -299,7 +297,6 @@ body {
   padding: 6px 8px;
   border-radius: 8px;
 }
-
 .settings__row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -310,6 +307,7 @@ body {
 }
 .settings__label { color: var(--muted); }
 
+/* Кнопки */
 .settings__actions .btn {
   appearance: none;
   border: 1px solid var(--bubble-border);
@@ -330,10 +328,12 @@ body {
   color: #fff;
 }
 
+/* Footer */
 .settings__foot {
   padding-top: 10px;
   color: var(--muted);
 }
+
 
 /* === Voice button inside bubbles === */
 .bubble .bubble-meta {
