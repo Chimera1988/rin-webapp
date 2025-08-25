@@ -140,8 +140,6 @@ function pickWeatherEmoji(desc=''){
 function buildWeatherPhrase(env){
   const city = 'Канадзаве';
   const pod  = env?.partOfDay || 'сейчас';
-  const month= env?.month || '';
-  const season = env?.season || '';
   const w = env?.weather || null;
 
   if (w){
@@ -159,10 +157,7 @@ function buildWeatherPhrase(env){
 
     return `${main} ${emo}${tail}`.trim();
   }
-  const add = pod==='ночь' ? ' Сейчас поздно и тихо.' :
-              pod==='вечер'? ' Вечера тут обычно мягкие и спокойные.' :
-              pod==='утро' ? ' Утро часто выходит ясным.' : '';
-  return `Сейчас в ${city} ${season || month}.${add ? (' '+add) : ''}`.trim();
+  return ''; // если нет данных — пусть решит composeWeatherMood или fallback в ветке
 }
 
 let currentEnv = null;
@@ -475,21 +470,27 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   audio.ontimeupdate = () => {
     const cur = audio.currentTime || 0;
     dur.textContent = secToMMSS(cur);
+    // простая маска прогресса для волны
+    const p = (cur / Math.max(1, audio.duration || 1)) * 100;
+    wave.style.setProperty('--progress', `${p}%`);
   };
 
   btn.onclick=()=>{
     if (audio.paused){
       audio.play().then(()=>{
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+        wrap.classList.add('playing');
       }).catch(()=>{});
     } else {
       audio.pause();
       btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
+      wrap.classList.remove('playing');
     }
   };
 
   audio.onended=()=>{
     btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
+    wrap.classList.remove('playing');
     try{ URL.revokeObjectURL(audioUrl); }catch(e){}
   };
 
@@ -606,23 +607,18 @@ async function getTTSUrl(text){
 
 /* === Вспомогательные функции для истории стикеров === */
 function computeStickerHistoryStats(){
-  // total / withStickers / messagesSinceSticker / recentStickerSrcs — получаем из локальной истории + rin-stats
   const total = history.length;
-  const withStickers = 0; // сами bubble-стикеры не храним в history; ratio контролирует библиотека по своим счётчикам
+  const withStickers = 0;
   let messagesSinceSticker = 999;
 
-  // попробуем взять "давность" последнего стикера из rin-stats.recent (если есть)
   let recentStickerSrcs = [];
   try{
     const stats = JSON.parse(localStorage.getItem('rin-stats') || '{"recent":[]}');
     recentStickerSrcs = Array.isArray(stats.recent) ? stats.recent : [];
   }catch{}
 
-  // приблизительно: стикеры идут после ответов ассистента — считаем, что если последний ответ был недавно, то messagesSinceSticker сбросим
-  // но надёжнее — вести отдельный счётчик:
   messagesSinceSticker = chainStickerCount > 0 ? chainStickerCount : 999;
 
-  // todayCountBySrc — отдаст библиотека из rin-stats, но поле требуется интерфейсно
   const todayCountBySrc = {};
   try{
     const stats = JSON.parse(localStorage.getItem('rin-stats') || '{"bySrc":{}}');
@@ -639,11 +635,9 @@ function externalStickerGate(userText, replyText){
   const mode = lsStickerMode();       // 'smart' | 'keywords' | 'off'
   if (mode === 'off') return false;
 
-  // шанс по ползунку (0..50%)
   const baseProb = Math.max(0, Math.min(50, lsStickerProb())) / 100;
   if (Math.random() > baseProb) return false;
 
-  // «безопасный» режим — если пользователь в тяжёлом состоянии, не ставим
   if (lsStickerSafe()) {
     const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
     if (userText && NEG.test(userText)) return false;
@@ -657,15 +651,12 @@ async function maybeSticker(userText, replyText, poolOverride=null){
   try{
     await ensureStickersReady();
 
-    // внешний гейт (твои настройки UI)
     if (!externalStickerGate(userText, replyText)) return;
 
-    // собираем сигналы для движка
     const historyInfo = computeStickerHistoryStats();
 
     let tod = null;
     if (poolOverride) {
-      // map: morning/day/evening/night
       tod = poolOverride;
     } else if (currentEnv?.partOfDay) {
       tod = (currentEnv.partOfDay === 'утро') ? 'morning'
@@ -678,27 +669,20 @@ async function maybeSticker(userText, replyText, poolOverride=null){
       userText: (userText || '') + ' ' + (replyText || ''),
       timeOfDay: tod || undefined,
       history: historyInfo,
-      user_state: [] // можно дополнить детектором усталости/ревности и т.п.
+      user_state: []
     });
 
     const decision = stickersLib.decideSticker(STICKERS_CFG, signals, { attachUtterance: true, addDelay: true });
     if (!decision?.sticker) return;
 
-    // задержка для «человечности»
     if (decision.delayMs > 0) {
       await new Promise(r => setTimeout(r, decision.delayMs));
     }
 
-    // отрисовка
     addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
-
-    // сообщаем библиотеке — стикер отправлен (учтёт кулдауны/повтор)
     stickersLib.markStickerSent(decision.sticker);
-
-    // локально пометим, что после стикера есть «разрыв» до следующего
     chainStickerCount = 0;
   } catch(e){
-    // тихо игнорируем ошибки подбора стикера
     console.warn('sticker decision error', e);
   }
 }
@@ -754,7 +738,7 @@ async function tryInitiateBySchedule(){
   }, 900+Math.random()*900);
 }
 
-/* === Отправка (локальные ответы + запрос к модели) — stickers v3 уже работает === */
+/* === Отправка (локальные ответы + запрос к модели) — stickers v3, время и погода === */
 formEl.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const text = (inputEl.value || '').trim();
@@ -772,8 +756,10 @@ formEl.addEventListener('submit', async (e)=>{
 
   // A) smalltalk
   const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
-  // B) погода
-  const RE_WEATHER   = /(какая (у тебя )?погода|что там с погодой|на улице (у тебя )?(холодно|тепло|жарко|дождь|снег)|как (у тебя )?на улице)/i;
+  // B) время (Канадзава / Asia/Tokyo)
+  const RE_TIME = /(сколько\s+у\s+тебя\s+сейчас\s+времен(и|я)|сколько\s+у\s+тебя\s+времен(и|я)|который\s+час|время\s+у\s+тебя|что\s+у\s+тебя\s+по\s+времени)/i;
+  // C) погода (допускаем «сейчас» и любые слова между «какая» и «погода»)
+  const RE_WEATHER = /(какая[^?]*погода|что там с погодой|на улице[^?]*(холодно|тепло|жарко|дождь|снег)|как[^?]*на улице)/i;
 
   function composeTimeMood(env){
     if (!env) return '';
@@ -798,6 +784,13 @@ formEl.addEventListener('submit', async (e)=>{
     const starters = Array.isArray(profile?.starters) ? profile.starters : [];
     if (!starters.length) return '';
     return starters[Math.floor(Math.random()*starters.length)];
+  }
+  function formatRinTime(env){
+    // вернём «HH:MM по Канадзаве» даже если env ещё не подгрузился
+    const d = env?.rinHuman ? new Date(env.rinHuman.replace(' ', 'T')+':00') : nowInTz(RIN_TZ);
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    return `${hh}:${mm} по Канадзаве`;
   }
 
   // 1) smalltalk
@@ -829,18 +822,21 @@ formEl.addEventListener('submit', async (e)=>{
 
     history.push({role:'assistant',content:reply,ts:Date.now()});
     saveHistory(history);
-    // после ответа сбрасываем счётчик расстояния до стикера (стикер мог быть)
     chainStickerCount++;
     return;
   }
 
-  // 2) погода
-  if (RE_WEATHER.test(t)) {
+  // 2) время в Канадзаве
+  if (RE_TIME.test(t)) {
+    if (!currentEnv) { try { await refreshRinEnv(); } catch {} }
     const env = currentEnv || null;
-    const head = 'Смотрю в окно и на термометр…';
-    const w = composeWeatherMood(env) || 'Пока без сюрпризов: спокойно.';
-    const extra = pickSmallTalkPhrase();
-    const reply = [head, w, extra].filter(Boolean).join(' ');
+    const timeStr = formatRinTime(env);
+    const pod = env?.partOfDay ? env.partOfDay : partOfDayFromHour(nowInTz(RIN_TZ).getHours());
+    const tail = pod==='утро' ? 'У меня ещё утро — люблю это спокойствие.' :
+                 pod==='день' ? 'У меня день — в хорошем темпе, но без спешки.' :
+                 pod==='вечер' ? 'У меня вечер — тянет к чаю и тишине.' :
+                 'У меня глубокая ночь — город почти не дышит.';
+    const reply = `У меня сейчас ${timeStr}. ${tail}`;
 
     let voiced=false;
     if (shouldVoiceFor(reply)){
@@ -857,7 +853,30 @@ formEl.addEventListener('submit', async (e)=>{
     return;
   }
 
-  // 3) обычный путь → к модели (env+профиль передаются на сервер)
+  // 3) погода
+  if (RE_WEATHER.test(t)) {
+    if (!currentEnv) { try { await refreshRinEnv(); } catch {} }
+    const env = currentEnv || null;
+    const head = 'Смотрю в окно и на термометр…';
+    const weatherPhrase = buildWeatherPhrase(env) || composeWeatherMood(env) || 'Пока без сюрпризов: спокойно.';
+    const reply = [head, weatherPhrase].filter(Boolean).join(' ');
+
+    let voiced=false;
+    if (shouldVoiceFor(reply)){
+      const url=await getTTSUrl(reply);
+      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
+    }
+    if (!voiced) addBubble(reply,'assistant');
+
+    await maybeSticker(text, reply, null);
+
+    history.push({role:'assistant',content:reply,ts:Date.now()});
+    saveHistory(history);
+    chainStickerCount++;
+    return;
+  }
+
+  // 4) обычный путь → к модели (env+профиль передаются на сервер)
   peerStatus.textContent='печатает…';
   const typingRow=addTyping();
 
@@ -878,7 +897,6 @@ formEl.addEventListener('submit', async (e)=>{
     const data=await res.json();
     typingRow.remove();
 
-    // если 401 — вернём на логин
     if (res.status === 401) {
       try { localStorage.removeItem('rin-pin'); } catch {}
       window.location.href = '/login';
