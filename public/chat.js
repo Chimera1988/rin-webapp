@@ -366,6 +366,9 @@ function addTyping(){
 
 /* === Стикеры: рендер === */
 function addStickerBubble(src, who='assistant', utterance=null){
+  // поддержка вызова как addStickerBubble(stickerObj, ...) или addStickerBubble('/stickers/x.webp', ...)
+  if (src && typeof src === 'object' && src.src) src = src.src;
+
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
   const timeStr = fmtTime(new Date());
@@ -924,10 +927,14 @@ formEl.addEventListener('submit', async (e)=>{
     history.push({role:'assistant',content:data.reply,ts:Date.now()});
     saveHistory(history);
     chainStickerCount++;
-  }catch(err){
-    typingRow.remove(); peerStatus.textContent='онлайн';
-    addBubble('Ой… связь шалит. '+(err?.message||''),'assistant');
-  }
+  } catch (err) {
+  typingRow.remove(); 
+  peerStatus.textContent = 'онлайн';
+  const msg = (err && typeof err.message === 'string') 
+    ? err.message 
+    : (typeof err === 'string' ? err : JSON.stringify(err));
+  addBubble('Ой… связь шалит. ' + (msg || 'Попробуем ещё раз?'), 'assistant');
+}
 });
 
 /* совместимость: старый maybeSpeak больше не используется */
