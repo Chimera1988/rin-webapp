@@ -180,6 +180,23 @@ async function refreshRinEnv(){
   return env;
 }
 
+/* ===== mini debug (видно на iPhone) ===== */
+let _rinDbgEl = null;
+function rinDebug(line){
+  try{
+    if (!_rinDbgEl){
+      _rinDbgEl = document.createElement('div');
+      _rinDbgEl.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;font:12px/1.35 -apple-system,system-ui,Segoe UI,Roboto,Arial;padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.6);color:#fff;backdrop-filter:blur(4px);max-height:40vh;overflow:auto';
+      _rinDbgEl.setAttribute('aria-live','polite');
+      document.body.appendChild(_rinDbgEl);
+    }
+    const row=document.createElement('div');
+    row.textContent='[stickers] '+line;
+    _rinDbgEl.appendChild(row);
+    _rinDbgEl.scrollTop=_rinDbgEl.scrollHeight;
+  }catch{}
+}
+
 /* Данные */
 const resetApp      = document.getElementById('resetApp');
 
@@ -188,17 +205,43 @@ let profile = null;         // новый профиль из persona_ui / rin_m
 let history=[];
 let chainStickerCount=0;
 
-/* === stickers v3: загрузка конфига и вспомогательные обёртки === */
+/* === stickers v3: загрузка конфига и фолбэк === */
 let STICKERS_CFG = null;
 let stickersLib = null; // { loadStickerConfig, buildSignals, decideSticker, markStickerSent, markFeedback }
 
 async function ensureStickersReady(){
-  if (!stickersLib) {
-    stickersLib = await import('/lib/stickers.js');
-  }
-  if (!STICKERS_CFG) {
+  if (STICKERS_CFG) return true;
+  try{
+    if (!stickersLib) {
+      stickersLib = await import('/lib/stickers.js');
+    }
     STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers.json'); // v3
+    rinDebug('v3 loaded');
+    return true;
+  }catch(e){
+    rinDebug('v3 failed, fallback to v2: '+(e?.message||e));
+    STICKERS_CFG = null;
+    stickersLib = null;
+    return false;
   }
+}
+
+/* --- fallback v2: очень простой keyword-подбор --- */
+async function fallbackPickSticker(userText, replyText){
+  try{
+    const txt = ((userText||'')+' '+(replyText||'')).toLowerCase();
+    const map = [
+      { re: /(обним|рядом|иди ко мне|обниму)/, src: '/stickers/inviting.webp' },
+      { re: /(поцел|kiss|муа|губ)/,            src: '/stickers/kiss_gesture.webp' },
+      { re: /(нежн|лампов|уют|тепл)/,          src: '/stickers/warm_smile.webp' },
+      { re: /(смуща|стесня|ой|эм)/,            src: '/stickers/shy.webp' },
+      { re: /(интересно|почему|расскажи)/,     src: '/stickers/curious.webp' },
+      { re: /(думаю|задумал|хмм)/,             src: '/stickers/thoughtful.webp' },
+      { re: /(правда|серьёзно|сомнева)/,       src: '/stickers/skeptical.webp' }
+    ];
+    const hit = map.find(m=>m.re.test(txt));
+    return hit ? { src: hit.src, utterance: null } : null;
+  }catch{ return null; }
 }
 
 /* utils */
@@ -368,6 +411,7 @@ function addTyping(){
 function addStickerBubble(src, who='assistant', utterance=null){
   // поддержка вызова как addStickerBubble(stickerObj, ...) или addStickerBubble('/stickers/x.webp', ...)
   if (src && typeof src === 'object' && src.src) src = src.src;
+  if (!src || typeof src !== 'string') { rinDebug('skip render: bad src'); return; }
 
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
@@ -392,7 +436,6 @@ function addStickerBubble(src, who='assistant', utterance=null){
 
   chatEl.appendChild(row);
   chatEl.scrollTop = chatEl.scrollHeight;
-  return row;
 }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -512,7 +555,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     // 1) профиль персонажа доступен из persona_ui bootstrap:
     profile = window.RIN_PROFILE || null;
 
-    // 2) stickers v3
+    // 2) stickers v3 (может упасть — будет фолбэк)
     await ensureStickersReady();
 
     // 3) окружение
@@ -572,7 +615,7 @@ function greet(){
 
   addBubble(greeting,'assistant');
 
-  // stickers v3 — аккуратный вызов
+  // stickers v3 / fallback — аккуратный вызов
   maybeSticker('', greeting, pool);
 
   history.push({ role:'assistant', content:greeting, ts:Date.now() });
@@ -649,48 +692,65 @@ function externalStickerGate(userText, replyText){
   return true;
 }
 
-/* === stickers v3: единый хелпер — решает и рисует === */
+/* === stickers v3 → fallback: единый хелпер — решает и рисует === */
 async function maybeSticker(userText, replyText, poolOverride=null){
   try{
-    await ensureStickersReady();
+    if (!externalStickerGate(userText, replyText)) { rinDebug('gate: blocked'); return; }
 
-    if (!externalStickerGate(userText, replyText)) return;
+    // сначала пробуем v3
+    const okV3 = await ensureStickersReady();
+    if (okV3 && stickersLib && STICKERS_CFG){
+      try{
+        const historyInfo = computeStickerHistoryStats();
 
-    const historyInfo = computeStickerHistoryStats();
+        let tod = null;
+        if (poolOverride) {
+          tod = poolOverride;
+        } else if (currentEnv?.partOfDay) {
+          tod = (currentEnv.partOfDay === 'утро') ? 'morning'
+            : (currentEnv.partOfDay === 'день') ? 'day'
+            : (currentEnv.partOfDay === 'вечер') ? 'evening'
+            : 'night';
+        }
 
-    let tod = null;
-    if (poolOverride) {
-      tod = poolOverride;
-    } else if (currentEnv?.partOfDay) {
-      tod = (currentEnv.partOfDay === 'утро') ? 'morning'
-        : (currentEnv.partOfDay === 'день') ? 'day'
-        : (currentEnv.partOfDay === 'вечер') ? 'evening'
-        : 'night';
+        const signals = stickersLib.buildSignals({
+          userText: (userText || '') + ' ' + (replyText || ''),
+          timeOfDay: tod || undefined,
+          history: historyInfo,
+          user_state: []
+        });
+
+        const decision = stickersLib.decideSticker(STICKERS_CFG, signals, { attachUtterance: true, addDelay: true });
+        if (decision?.sticker?.src){
+          rinDebug('v3 pick: '+decision.sticker.src+(decision.utterance? ' | '+decision.utterance : ''));
+          if (decision.delayMs > 0) await new Promise(r => setTimeout(r, decision.delayMs));
+          addStickerBubble(decision.sticker, 'assistant', decision.utterance || null);
+          stickersLib.markStickerSent(decision.sticker);
+          chainStickerCount = 0;
+          return;
+        } else {
+          rinDebug('v3 no-decision');
+        }
+      }catch(e){
+        rinDebug('v3 error: '+(e?.message||e));
+      }
     }
 
-    const signals = stickersLib.buildSignals({
-      userText: (userText || '') + ' ' + (replyText || ''),
-      timeOfDay: tod || undefined,
-      history: historyInfo,
-      user_state: []
-    });
-
-    const decision = stickersLib.decideSticker(STICKERS_CFG, signals, { attachUtterance: true, addDelay: true });
-    if (!decision?.sticker) return;
-
-    if (decision.delayMs > 0) {
-      await new Promise(r => setTimeout(r, decision.delayMs));
+    // если v3 не сработал — минимальный keyword-фолбэк
+    const fb = await fallbackPickSticker(userText, replyText);
+    if (fb?.src){
+      rinDebug('fallback pick: '+fb.src);
+      addStickerBubble(fb.src, 'assistant', fb.utterance || null);
+      chainStickerCount = 0;
+    } else {
+      rinDebug('fallback: nothing');
     }
-
-    addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
-    stickersLib.markStickerSent(decision.sticker);
-    chainStickerCount = 0;
   } catch(e){
     console.warn('sticker decision error', e);
   }
 }
 
-/* === Автоинициации (используем profile.initiation) — stickers v3 уже работает === */
+/* === Автоинициации (используем profile.initiation) — stickers v3/фолбэк уже работают === */
 async function tryInitiateBySchedule(){
   if (!profile) return;
 
@@ -741,11 +801,27 @@ async function tryInitiateBySchedule(){
   }, 900+Math.random()*900);
 }
 
-/* === Отправка (локальные ответы + запрос к модели) — stickers v3, время и погода === */
+/* === Отправка (локальные ответы + запрос к модели) — stickers v3/fallback, время и погода === */
 formEl.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const text = (inputEl.value || '').trim();
   if (!text) return;
+
+  // служебные команды для iPhone (без консоли)
+  if (text === '/reset stickers'){
+    localStorage.removeItem('rin-stats');
+    localStorage.setItem('rin-sticker-mode','smart');
+    localStorage.setItem('rin-sticker-prob','50');
+    localStorage.setItem('rin-sticker-safe','0');
+    addBubble('Статистика и настройки стикеров сброшены. Вероятность 50%, режим smart.','assistant');
+    rinDebug('reset done');
+    return;
+  }
+  if (text === '/test sticker'){
+    addBubble('Окей, проверяю подбор стикера…','assistant');
+    await maybeSticker('обними меня', 'Я рядом.');
+    return;
+  }
 
   addBubble(text,'user');
   history.push({role:'user',content:text,ts:Date.now()});
@@ -869,7 +945,7 @@ formEl.addEventListener('submit', async (e)=>{
       const url=await getTTSUrl(reply);
       if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
     }
-    if (!voiced) addBubble(reply,'assistant');
+    if (!воiced) addBubble(reply,'assistant');
 
     await maybeSticker(text, reply, null);
 
@@ -928,13 +1004,13 @@ formEl.addEventListener('submit', async (e)=>{
     saveHistory(history);
     chainStickerCount++;
   } catch (err) {
-  typingRow.remove(); 
-  peerStatus.textContent = 'онлайн';
-  const msg = (err && typeof err.message === 'string') 
-    ? err.message 
-    : (typeof err === 'string' ? err : JSON.stringify(err));
-  addBubble('Ой… связь шалит. ' + (msg || 'Попробуем ещё раз?'), 'assistant');
-}
+    typingRow.remove(); 
+    peerStatus.textContent = 'онлайн';
+    const msg = (err && typeof err.message === 'string') 
+      ? err.message 
+      : (typeof err === 'string' ? err : JSON.stringify(err));
+    addBubble('Ой… связь шалит. ' + (msg || 'Попробуем ещё раз?'), 'assistant');
+  }
 });
 
 /* совместимость: старый maybeSpeak больше не используется */
