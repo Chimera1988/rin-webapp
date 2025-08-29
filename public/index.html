@@ -156,6 +156,19 @@
         </div>
       </div>
 
+      <!-- Отладка (перенесено сюда, больше нет плавающей плашки) -->
+      <div class="settings__row">
+        <div class="settings__label">Отладка</div>
+        <div class="settings__actions" style="display:grid;gap:8px;">
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="debugToggle" type="checkbox" />
+            <span style="font-size:12px;color:var(--muted);">Показывать лог стикеров внизу</span>
+          </label>
+          <!-- область для лога; вид/скролл оформлен в style.css как .diary-log -->
+          <div id="debugLog" class="diary-log" style="max-height:120px;"></div>
+        </div>
+      </div>
+
       <!-- Персонаж и канон -->
       <div class="settings__row">
         <div class="settings__label">Персонаж</div>
