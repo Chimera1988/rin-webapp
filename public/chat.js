@@ -6,12 +6,13 @@ const THEME_KEY      = 'rin-theme';
 
 /* настройки, что храним в LS */
 const LS_STICKER_PROB   = 'rin-sticker-prob';    // 0..50 (%)
-const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off   (используется как внешний гейт)
-const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'                (доп. запреты при негативном контексте)
+const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off
+const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'
 const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0'
 const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
-const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
+const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100 (в JS трактуем как вуаль, не прозрачность контента)
+const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0' — показывать лог в настройках
 
 /* DOM */
 const chatEl        = document.getElementById('chat');
@@ -42,6 +43,10 @@ const voiceEnabled  = document.getElementById('voiceEnabled');
 const voiceRate     = document.getElementById('voiceRate');
 const voiceRateVal  = document.getElementById('voiceRateVal');
 
+/* Debug в настройках (не блокирует экран) */
+const debugToggle   = document.getElementById('debugToggle'); // <input type="checkbox">
+const debugLogEl    = document.getElementById('debugLog');    // <div class="diary-log" id="debugLog"></div>
+
 /* === Окружение Рин (время/сезон/погода) === */
 const RIN_TZ     = 'Asia/Tokyo';
 const RIN_CITY   = 'Kanazawa';
@@ -64,34 +69,11 @@ function nowInTz(tz) {
     return new Date();
   }
 }
-function monthNameRu(m){ // 0..11
-  return ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'][m];
-}
-function seasonFromMonth(m){ // северное полушарие
-  if (m===11 || m<=1) return 'зима';
-  if (m>=2 && m<=4)   return 'весна';
-  if (m>=5 && m<=7)   return 'лето';
-  return 'осень';
-}
-function partOfDayFromHour(h){
-  if (h>=5 && h<12) return 'утро';
-  if (h>=12 && h<18) return 'день';
-  if (h>=18 && h<23) return 'вечер';
-  return 'ночь';
-}
-function fmtRinHuman(d){ // "YYYY-MM-DD HH:mm"
-  const Y=d.getFullYear();
-  const M=String(d.getMonth()+1).padStart(2,'0');
-  const D=String(d.getDate()).padStart(2,'0');
-  const h=String(d.getHours()).padStart(2,'0');
-  const m=String(d.getMinutes()).padStart(2,'0');
-  return `${Y}-${M}-${D} ${h}:${m}`;
-}
-function hoursDiffWithRin(){
-  const here = new Date();
-  const rin  = nowInTz(RIN_TZ);
-  return Math.round((rin - here) / 3600000);
-}
+function monthNameRu(m){ return ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'][m]; }
+function seasonFromMonth(m){ if (m===11 || m<=1) return 'зима'; if (m>=2 && m<=4) return 'весна'; if (m>=5 && m<=7) return 'лето'; return 'осень'; }
+function partOfDayFromHour(h){ if (h>=5 && h<12) return 'утро'; if (h>=12 && h<18) return 'день'; if (h>=18 && h<23) return 'вечер'; return 'ночь'; }
+function fmtRinHuman(d){ const Y=d.getFullYear(); const M=String(d.getMonth()+1).padStart(2,'0'); const D=String(d.getDate()).padStart(2,'0'); const h=String(d.getHours()).padStart(2,'0'); const m=String(d.getMinutes()).padStart(2,'0'); return `${Y}-${M}-${D} ${h}:${m}`; }
+function hoursDiffWithRin(){ const here = new Date(); const rin  = nowInTz(RIN_TZ); return Math.round((rin - here) / 3600000); }
 
 /* — API погоды (через наш /api/weather) — */
 async function fetchRinWeather(){
@@ -121,12 +103,7 @@ async function fetchRinWeather(){
 }
 
 /* — форматирование и естественная фраза о погоде — */
-function fmtC(n){
-  if (typeof n !== 'number' || !isFinite(n)) return null;
-  const s = Math.round(n);
-  const sign = s > 0 ? '+' : (s < 0 ? '−' : '');
-  return `${sign}${Math.abs(s)}°C`;
-}
+function fmtC(n){ if (typeof n !== 'number' || !isFinite(n)) return null; const s = Math.round(n); const sign = s > 0 ? '+' : (s < 0 ? '−' : ''); return `${sign}${Math.abs(s)}°C`; }
 function pickWeatherEmoji(desc=''){
   const t = (desc||'').toLowerCase();
   if (/гроза|thunder|storm/.test(t)) return '⛈️';
@@ -157,43 +134,19 @@ function buildWeatherPhrase(env){
 
     return `${main} ${emo}${tail}`.trim();
   }
-  return ''; // если нет данных — пусть решит composeWeatherMood или fallback в ветке
+  return '';
 }
 
-let currentEnv = null;
-async function refreshRinEnv(){
-  const rin = nowInTz(RIN_TZ);
-  const monthIdx = rin.getMonth();
-  const env = {
-    _ts: Date.now(),
-    rinTz: RIN_TZ,
-    rinHuman: fmtRinHuman(rin),
-    season: seasonFromMonth(monthIdx),
-    month: monthNameRu(monthIdx),
-    partOfDay: partOfDayFromHour(rin.getHours()),
-    userVsRinHoursDiff: hoursDiffWithRin(),
-    weather: null
-  };
-  const w = await fetchRinWeather();
-  if (w) env.weather = w;
-  currentEnv = env;
-  return env;
-}
-
-/* ===== mini debug (видно на iPhone) ===== */
-let _rinDbgEl = null;
+/* ===== Debug (в настройках) ===== */
+function debugEnabled(){ return localStorage.getItem(LS_DEBUG_ENABLED) === '1'; }
+function setDebugEnabled(v){ localStorage.setItem(LS_DEBUG_ENABLED, v ? '1' : '0'); if (debugToggle) debugToggle.checked = !!v; }
 function rinDebug(line){
   try{
-    if (!_rinDbgEl){
-      _rinDbgEl = document.createElement('div');
-      _rinDbgEl.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;font:12px/1.35 -apple-system,system-ui,Segoe UI,Roboto,Arial;padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.6);color:#fff;backdrop-filter:blur(4px);max-height:40vh;overflow:auto';
-      _rinDbgEl.setAttribute('aria-live','polite');
-      document.body.appendChild(_rinDbgEl);
-    }
+    if (!debugEnabled() || !debugLogEl) return;
     const row=document.createElement('div');
-    row.textContent='[stickers] '+line;
-    _rinDbgEl.appendChild(row);
-    _rinDbgEl.scrollTop=_rinDbgEl.scrollHeight;
+    row.textContent=String(line);
+    debugLogEl.appendChild(row);
+    debugLogEl.scrollTop=debugLogEl.scrollHeight;
   }catch{}
 }
 
@@ -212,16 +165,13 @@ let stickersLib = null; // { loadStickerConfig, buildSignals, decideSticker, mar
 async function ensureStickersReady(){
   if (STICKERS_CFG) return true;
   try{
-    if (!stickersLib) {
-      stickersLib = await import('/lib/stickers.js');
-    }
-    STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers.json'); // v3
-    rinDebug('v3 loaded');
+    if (!stickersLib) stickersLib = await import('/lib/stickers.js');
+    STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers.json'); // файл должен существовать
+    rinDebug('[stickers] v3 loaded');
     return true;
   }catch(e){
-    rinDebug('v3 failed, fallback to v2: '+(e?.message||e));
-    STICKERS_CFG = null;
-    stickersLib = null;
+    rinDebug('[stickers] v3 failed: '+(e?.message||e));
+    STICKERS_CFG = null; stickersLib = null;
     return false;
   }
 }
@@ -233,7 +183,7 @@ async function fallbackPickSticker(userText, replyText){
     const map = [
       { re: /(обним|рядом|иди ко мне|обниму)/, src: '/stickers/inviting.webp' },
       { re: /(поцел|kiss|муа|губ)/,            src: '/stickers/kiss_gesture.webp' },
-      { re: /(нежн|лампов|уют|тепл)/,          src: '/stickers/warm_smile.webp' },
+      { re: /(нежн|лампов|уют|тепл|тёпл)/,     src: '/stickers/warm_smile.webp' },
       { re: /(смуща|стесня|ой|эм)/,            src: '/stickers/shy.webp' },
       { re: /(интересно|почему|расскажи)/,     src: '/stickers/curious.webp' },
       { re: /(думаю|задумал|хмм)/,             src: '/stickers/thoughtful.webp' },
@@ -256,12 +206,12 @@ function getInitCountFor(k){ const m=JSON.parse(localStorage.getItem(DAILY_INIT_
 function bumpInitCount(k){ const m=JSON.parse(localStorage.getItem(DAILY_INIT_KEY)||'{}'); m[k]=(m[k]||0)+1; localStorage.setItem(DAILY_INIT_KEY, JSON.stringify(m)); }
 
 /* === UI: SETTINGS === */
-function openSettings(){ settingsPanel.classList.remove('hidden'); }
-function closeSettingsPanel(){ settingsPanel.classList.add('hidden'); }
+function openSettings(){ settingsPanel?.classList.remove('hidden'); }
+function closeSettingsPanel(){ settingsPanel?.classList.add('hidden'); }
 
-if (settingsToggle){ settingsToggle.onclick=openSettings; }
-if (closeSettings){ closeSettings.onclick=closeSettingsPanel; }
-if (closeSettingsBtn){ closeSettingsBtn.onclick=closeSettingsPanel; }
+settingsToggle && (settingsToggle.onclick=openSettings);
+closeSettings   && (closeSettings.onclick=closeSettingsPanel);
+closeSettingsBtn&& (closeSettingsBtn.onclick=closeSettingsPanel);
 
 /* — Тема — */
 if (themeToggle){
@@ -274,15 +224,16 @@ if (themeToggle){
   };
 }
 
-/* — Обои — */
+/* — Обои — (фиксим прозрачность бабблов: используем вуаль, а не opacity контента) */
 function applyWallpaper(){
   const data = localStorage.getItem(LS_WP_DATA) || '';
-  const op   = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100;
+  const veil = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100; // 0..1
 
   document.documentElement.style.setProperty('--wallpaper-url', data ? `url("${data}")` : 'none');
-  document.documentElement.style.setProperty('--wallpaper-opacity', String(op));
+  // новая переменная — только интенсивность «вуали» поверх обоев
+  document.documentElement.style.setProperty('--wallpaper-veil', String(veil));
 
-  if (wpOpacity) wpOpacity.value = Math.round(op * 100);
+  if (wpOpacity) wpOpacity.value = Math.round(veil * 100);
 }
 applyWallpaper();
 
@@ -291,24 +242,15 @@ if (wpFile){
     const f = e.target.files?.[0];
     if (!f) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      localStorage.setItem(LS_WP_DATA, reader.result);
-      applyWallpaper();
-    };
+    reader.onload = () => { localStorage.setItem(LS_WP_DATA, reader.result); applyWallpaper(); };
     reader.readAsDataURL(f);
   });
 }
 if (wpClear){
-  wpClear.onclick=()=>{
-    localStorage.removeItem(LS_WP_DATA);
-    applyWallpaper();
-  };
+  wpClear.onclick=()=>{ localStorage.removeItem(LS_WP_DATA); applyWallpaper(); };
 }
 if (wpOpacity){
-  wpOpacity.oninput=()=>{
-    localStorage.setItem(LS_WP_OPACITY, String(wpOpacity.value));
-    applyWallpaper();
-  };
+  wpOpacity.oninput=()=>{ localStorage.setItem(LS_WP_OPACITY, String(wpOpacity.value)); applyWallpaper(); };
 }
 
 /* — Стикеры: настройки UI — */
@@ -318,10 +260,10 @@ function lsStickerSafe(){ return localStorage.getItem(LS_STICKER_SAFE)==='1'; }
 
 if (stickerProb){
   stickerProb.value = String(lsStickerProb());
-  if (stickerProbVal) stickerProbVal.textContent = `${stickerProb.value}%`;
+  stickerProbVal && (stickerProbVal.textContent = `${stickerProb.value}%`);
   stickerProb.oninput = () => {
     localStorage.setItem(LS_STICKER_PROB, String(stickerProb.value));
-    if (stickerProbVal) stickerProbVal.textContent = `${stickerProb.value}%`;
+    stickerProbVal && (stickerProbVal.textContent = `${stickerProb.value}%`);
   };
 }
 if (stickerMode){
@@ -342,11 +284,17 @@ if (voiceEnabled){
 }
 if (voiceRate){
   voiceRate.value = String(lsSpeakRate());
-  if (voiceRateVal) voiceRateVal.textContent = `${voiceRate.value}%`;
+  voiceRateVal && (voiceRateVal.textContent = `${voiceRate.value}%`);
   voiceRate.oninput = ()=>{
     localStorage.setItem(LS_SPEAK_RATE, String(voiceRate.value));
-    if (voiceRateVal) voiceRateVal.textContent = `${voiceRate.value}%`;
+    voiceRateVal && (voiceRateVal.textContent = `${voiceRate.value}%`);
   };
+}
+
+/* — Debug toggle — */
+if (debugToggle){
+  debugToggle.checked = debugEnabled();
+  debugToggle.onchange = ()=> setDebugEnabled(debugToggle.checked);
 }
 
 /* — Сброс — */
@@ -355,12 +303,8 @@ if (resetApp){
     if (!confirm('Сбросить историю чата, настройки и кэш?')) return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(DAILY_INIT_KEY);
-    [LS_STICKER_PROB,LS_STICKER_MODE,LS_STICKER_SAFE,LS_SPEAK_ENABLED,LS_SPEAK_RATE,LS_WP_DATA,LS_WP_OPACITY].forEach(k=>localStorage.removeItem(k));
-    chatEl.innerHTML='';
-    history=[];
-    applyWallpaper();
-    greet();
-    closeSettingsPanel();
+    [LS_STICKER_PROB,LS_STICKER_MODE,LS_STICKER_SAFE,LS_SPEAK_ENABLED,LS_SPEAK_RATE,LS_WP_DATA,LS_WP_OPACITY,LS_DEBUG_ENABLED].forEach(k=>localStorage.removeItem(k));
+    chatEl.innerHTML=''; history=[]; applyWallpaper(); greet(); closeSettingsPanel();
   };
 }
 
@@ -409,14 +353,12 @@ function addTyping(){
 
 /* === Стикеры: рендер === */
 function addStickerBubble(src, who='assistant', utterance=null){
-  // поддержка вызова как addStickerBubble(stickerObj, ...) или addStickerBubble('/stickers/x.webp', ...)
   if (src && typeof src === 'object' && src.src) src = src.src;
-  if (!src || typeof src !== 'string') { rinDebug('skip render: bad src'); return; }
+  if (!src || typeof src !== 'string') { rinDebug('[stickers] skip render: bad src'); return; }
 
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
   const timeStr = fmtTime(new Date());
-
   const utterHtml = utterance ? `<div class="sticker-utter">${escapeHtml(utterance)}</div>` : '';
 
   if (who === 'user') {
@@ -433,7 +375,6 @@ function addStickerBubble(src, who='assistant', utterance=null){
         <span class="bubble-time">${timeStr}</span>
       </div>`;
   }
-
   chatEl.appendChild(row);
   chatEl.scrollTop = chatEl.scrollHeight;
 }
@@ -442,7 +383,6 @@ function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&am
 /* === Voice bubble === */
 function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   const d = new Date(ts);
-
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
 
@@ -482,9 +422,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   act.textContent='→A';
   act.title='Показать текст';
 
-  top.appendChild(btn);
-  top.appendChild(wave);
-  top.appendChild(act);
+  top.appendChild(btn); top.appendChild(wave); top.appendChild(act);
 
   const meta=document.createElement('div');
   meta.className='voice-tg__meta';
@@ -497,26 +435,18 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   timeStamp.className='bubble-time';
   timeStamp.textContent=fmtTime(d);
 
-  meta.appendChild(dur);
-  meta.appendChild(timeStamp);
-
-  wrap.appendChild(top);
-  wrap.appendChild(meta);
+  meta.appendChild(dur); meta.appendChild(timeStamp);
+  wrap.appendChild(top); wrap.appendChild(meta);
   row.appendChild(wrap);
   chatEl.appendChild(row);
   chatEl.scrollTop=chatEl.scrollHeight;
 
   const audio=new Audio(audioUrl);
-
-  const secToMMSS = s => {
-    const v=Math.max(0, Math.floor(s||0));
-    return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`;
-  };
+  const secToMMSS = s => { const v=Math.max(0, Math.floor(s||0)); return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`; };
 
   audio.ontimeupdate = () => {
     const cur = audio.currentTime || 0;
     dur.textContent = secToMMSS(cur);
-    // простая маска прогресса для волны
     const p = (cur / Math.max(1, audio.duration || 1)) * 100;
     wave.style.setProperty('--progress', `${p}%`);
   };
@@ -552,70 +482,46 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 /* === INIT === */
 (async function init(){
   try{
-    // 1) профиль персонажа доступен из persona_ui bootstrap:
     profile = window.RIN_PROFILE || null;
-
-    // 2) stickers v3 (может упасть — будет фолбэк)
     await ensureStickersReady();
-
-    // 3) окружение
     await refreshRinEnv();
     setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
-  }catch(e){ console.warn('init error',e); }
+  }catch(e){ rinDebug('init error: '+(e?.message||e)); }
 
-  // подхватываем обновления профиля из редактора
-  window.addEventListener('rin:profile-updated', (ev)=>{
-    profile = ev.detail || profile;
-  });
+  window.addEventListener('rin:profile-updated', (ev)=>{ profile = ev.detail || profile; });
 
   history=loadHistory();
-  if (history.length){
-    for (const m of history) addBubble(m.content, m.role==='user'?'user':'assistant', m.ts);
-  } else {
-    greet();
-  }
+  if (history.length){ for (const m of history) addBubble(m.content, m.role==='user'?'user':'assistant', m.ts); }
+  else { greet(); }
 
   setInterval(()=>{ peerStatus.textContent = Math.random()<0.85?'онлайн':'была недавно'; },15000);
-
   setInterval(tryInitiateBySchedule, 60_000);
   tryInitiateBySchedule();
+
+  // инициализируем состояние debug-переключателя
+  if (debugToggle) debugToggle.checked = debugEnabled();
 })();
 
 /* — приветствие на основе профиля — */
 function greet(){
-  // пул по времени суток
   let pool = 'day';
   if (currentEnv && currentEnv.partOfDay){
     const p = currentEnv.partOfDay;
-    if (p === 'утро') pool = 'morning';
-    else if (p === 'день') pool = 'day';
-    else if (p === 'вечер') pool = 'evening';
-    else pool = 'night';
+    pool = (p==='утро')?'morning':(p==='день')?'day':(p==='вечер')?'evening':'night';
   } else {
     const h = new Date().getHours();
-    if (h >= 5 && h < 12) pool = 'morning';
-    else if (h >= 12 && h < 18) pool = 'day';
-    else if (h >= 18 && h < 23) pool = 'evening';
-    else pool = 'night';
+    pool = (h>=5&&h<12)?'morning':(h<18)?'day':(h<23)?'evening':'night';
   }
 
   let greeting = null;
   const starters = Array.isArray(profile?.starters) ? profile.starters : [];
-
-  if (starters.length){
-    greeting = starters[Math.floor(Math.random()*starters.length)];
-  }
+  if (starters.length) greeting = starters[Math.floor(Math.random()*starters.length)];
   if (!greeting){
     const pod = currentEnv?.partOfDay || 'сейчас';
-    greeting = (pod==='утро') ? 'Доброе утро. Как ты?' :
-               (pod==='вечер') ? 'Добрый вечер. Как твой день?' :
-               (pod==='ночь') ? 'Тихая ночь тут… ты как?' :
-               'Привет. Как ты?';
+    greeting = (pod==='утро')?'Доброе утро. Как ты?':(pod==='вечер')?'Добрый вечер. Как твой день?':(pod==='ночь')?'Тихая ночь тут… ты как?':'Привет. Как ты?';
   }
 
   addBubble(greeting,'assistant');
-
-  // stickers v3 / fallback — аккуратный вызов
   maybeSticker('', greeting, pool);
 
   history.push({ role:'assistant', content:greeting, ts:Date.now() });
@@ -631,7 +537,7 @@ function inWindow(local,from,to){
 }
 function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
-/* === Voice-only шанс — без изменений === */
+/* === Voice-only шанс === */
 function lsSpeakEnabled(){ return localStorage.getItem(LS_SPEAK_ENABLED) === '1'; }
 function lsSpeakRate(){ return +(localStorage.getItem(LS_SPEAK_RATE) || '20'); } // %
 function shouldVoiceFor(text){
@@ -651,19 +557,17 @@ async function getTTSUrl(text){
   }catch{ return null; }
 }
 
-/* === Вспомогательные функции для истории стикеров === */
+/* === История стикеров (сигналы для v3) === */
 function computeStickerHistoryStats(){
   const total = history.length;
   const withStickers = 0;
-  let messagesSinceSticker = 999;
+  let messagesSinceSticker = chainStickerCount > 0 ? chainStickerCount : 999;
 
   let recentStickerSrcs = [];
   try{
     const stats = JSON.parse(localStorage.getItem('rin-stats') || '{"recent":[]}');
     recentStickerSrcs = Array.isArray(stats.recent) ? stats.recent : [];
   }catch{}
-
-  messagesSinceSticker = chainStickerCount > 0 ? chainStickerCount : 999;
 
   const todayCountBySrc = {};
   try{
@@ -676,41 +580,46 @@ function computeStickerHistoryStats(){
   return { total, withStickers, messagesSinceSticker, recentStickerSrcs, todayCountBySrc };
 }
 
-/* === Гейт стикеров поверх v3: учитываем твои настройки (mode/prob/safe) === */
+/* — URL-режим принудительного показа + ключевые фразы */
+const FORCE_STICKERS_ALWAYS = new URLSearchParams(location.search).get('stickers') === 'always';
+const FORCE_STICKER_RE = /(обним|обними|рядом|иди ко мне|поцел|целуй|kiss|муа|губ|нежн|тёпл|тепл)/i;
+
+/* === Гейт стикеров === */
 function externalStickerGate(userText, replyText){
-  const mode = lsStickerMode();       // 'smart' | 'keywords' | 'off'
+  const mode = lsStickerMode();
   if (mode === 'off') return false;
 
-  const baseProb = Math.max(0, Math.min(50, lsStickerProb())) / 100;
-  if (Math.random() > baseProb) return false;
+  const u = (userText || '');
+  const r = (replyText || '');
+
+  if (FORCE_STICKERS_ALWAYS) return true;                 // режим теста через URL
+  if (FORCE_STICKER_RE.test(u) || FORCE_STICKER_RE.test(r)) return true; // ключевые фразы
 
   if (lsStickerSafe()) {
-    const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
-    if (userText && NEG.test(userText)) return false;
+    const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо|кризис|выгор)/i;
+    if (u && NEG.test(u)) return false;
   }
 
-  return true;
+  const baseProb = Math.max(0, Math.min(50, lsStickerProb())) / 100; // 0..0.5
+  return Math.random() <= baseProb;
 }
 
-/* === stickers v3 → fallback: единый хелпер — решает и рисует === */
+/* === stickers v3 → fallback: единый хелпер === */
 async function maybeSticker(userText, replyText, poolOverride=null){
   try{
-    if (!externalStickerGate(userText, replyText)) { rinDebug('gate: blocked'); return; }
+    if (!externalStickerGate(userText, replyText)) { rinDebug('[stickers] gate: blocked'); return; }
 
-    // сначала пробуем v3
     const okV3 = await ensureStickersReady();
     if (okV3 && stickersLib && STICKERS_CFG){
       try{
         const historyInfo = computeStickerHistoryStats();
 
         let tod = null;
-        if (poolOverride) {
-          tod = poolOverride;
-        } else if (currentEnv?.partOfDay) {
+        if (poolOverride) tod = poolOverride;
+        else if (currentEnv?.partOfDay) {
           tod = (currentEnv.partOfDay === 'утро') ? 'morning'
             : (currentEnv.partOfDay === 'день') ? 'day'
-            : (currentEnv.partOfDay === 'вечер') ? 'evening'
-            : 'night';
+            : (currentEnv.partOfDay === 'вечер') ? 'evening' : 'night';
         }
 
         const signals = stickersLib.buildSignals({
@@ -722,35 +631,34 @@ async function maybeSticker(userText, replyText, poolOverride=null){
 
         const decision = stickersLib.decideSticker(STICKERS_CFG, signals, { attachUtterance: true, addDelay: true });
         if (decision?.sticker?.src){
-          rinDebug('v3 pick: '+decision.sticker.src+(decision.utterance? ' | '+decision.utterance : ''));
+          rinDebug('[stickers] v3 pick: '+decision.sticker.src+(decision.utterance? ' | '+decision.utterance : ''));
           if (decision.delayMs > 0) await new Promise(r => setTimeout(r, decision.delayMs));
           addStickerBubble(decision.sticker, 'assistant', decision.utterance || null);
           stickersLib.markStickerSent(decision.sticker);
           chainStickerCount = 0;
           return;
         } else {
-          rinDebug('v3 no-decision');
+          rinDebug('[stickers] v3 no-decision');
         }
       }catch(e){
-        rinDebug('v3 error: '+(e?.message||e));
+        rinDebug('[stickers] v3 error: '+(e?.message||e));
       }
     }
 
-    // если v3 не сработал — минимальный keyword-фолбэк
     const fb = await fallbackPickSticker(userText, replyText);
     if (fb?.src){
-      rinDebug('fallback pick: '+fb.src);
+      rinDebug('[stickers] fallback pick: '+fb.src);
       addStickerBubble(fb.src, 'assistant', fb.utterance || null);
       chainStickerCount = 0;
     } else {
-      rinDebug('fallback: nothing');
+      rinDebug('[stickers] fallback: nothing');
     }
   } catch(e){
-    console.warn('sticker decision error', e);
+    rinDebug('[stickers] unexpected: '+(e?.message||e));
   }
 }
 
-/* === Автоинициации (используем profile.initiation) — stickers v3/фолбэк уже работают === */
+/* === Автоинициации === */
 async function tryInitiateBySchedule(){
   if (!profile) return;
 
@@ -785,14 +693,9 @@ async function tryInitiateBySchedule(){
     let voiced=false;
     if (shouldVoiceFor(text)){
       const url = await getTTSUrl(text);
-      if (url){
-        addVoiceBubble(url, text, 'assistant');
-        voiced=true;
-      }
+      if (url){ addVoiceBubble(url, text, 'assistant'); voiced=true; }
     }
-    if (!voiced){
-      addBubble(text,'assistant');
-    }
+    if (!voiced){ addBubble(text,'assistant'); }
 
     await maybeSticker('', text, win.pool || null);
 
@@ -801,13 +704,13 @@ async function tryInitiateBySchedule(){
   }, 900+Math.random()*900);
 }
 
-/* === Отправка (локальные ответы + запрос к модели) — stickers v3/fallback, время и погода === */
+/* === Отправка === */
 formEl.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const text = (inputEl.value || '').trim();
   if (!text) return;
 
-  // служебные команды для iPhone (без консоли)
+  // служебные команды
   if (text === '/reset stickers'){
     localStorage.removeItem('rin-stats');
     localStorage.setItem('rin-sticker-mode','smart');
@@ -815,12 +718,12 @@ formEl.addEventListener('submit', async (e)=>{
     localStorage.setItem('rin-sticker-safe','0');
     addBubble('Статистика и настройки стикеров сброшены. Вероятность 50%, режим smart.','assistant');
     rinDebug('reset done');
-    return;
+    inputEl.value=''; return;
   }
   if (text === '/test sticker'){
     addBubble('Окей, проверяю подбор стикера…','assistant');
     await maybeSticker('обними меня', 'Я рядом.');
-    return;
+    inputEl.value=''; return;
   }
 
   addBubble(text,'user');
@@ -828,27 +731,22 @@ formEl.addEventListener('submit', async (e)=>{
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
 
-  // увеличиваем счётчик сообщений до следующего стикера
   chainStickerCount++;
 
   const t = text.toLowerCase();
 
   // A) smalltalk
   const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
-  // B) время (Канадзава / Asia/Tokyo)
+  // B) время
   const RE_TIME = /(сколько\s+у\s+тебя\s+сейчас\s+времен(и|я)|сколько\s+у\s+тебя\s+времен(и|я)|который\s+час|время\s+у\s+тебя|что\s+у\s+тебя\s+по\s+времени)/i;
-  // C) погода (допускаем «сейчас» и любые слова между «какая» и «погода»)
+  // C) погода
   const RE_WEATHER = /(какая[^?]*погода|что там с погодой|на улице[^?]*(холодно|тепло|жарко|дождь|снег)|как[^?]*на улице)/i;
 
   function composeTimeMood(env){
     if (!env) return '';
     const parts = [];
-    if (env.partOfDay && env.rinHuman){
-      parts.push(`${env.partOfDay} у меня (${env.rinHuman} по Канадзаве)`);
-    }
-    if (env.month && env.season){
-      parts.push(`${env.month}, ${env.season}`);
-    }
+    if (env.partOfDay && env.rinHuman) parts.push(`${env.partOfDay} у меня (${env.rinHuman} по Канадзаве)`);
+    if (env.month && env.season) parts.push(`${env.month}, ${env.season}`);
     return parts.join('; ');
   }
   function composeWeatherMood(env){
@@ -865,7 +763,6 @@ formEl.addEventListener('submit', async (e)=>{
     return starters[Math.floor(Math.random()*starters.length)];
   }
   function formatRinTime(env){
-    // вернём «HH:MM по Канадзаве» даже если env ещё не подгрузился
     const d = env?.rinHuman ? new Date(env.rinHuman.replace(' ', 'T')+':00') : nowInTz(RIN_TZ);
     const hh = String(d.getHours()).padStart(2,'0');
     const mm = String(d.getMinutes()).padStart(2,'0');
@@ -884,17 +781,11 @@ formEl.addEventListener('submit', async (e)=>{
     if (weatherMood) pieces.push(weatherMood);
     if (filler) pieces.push(filler);
 
-    const tail = Math.random()<0.5
-      ? 'Рада, что ты написал — с тобой момент теплее.'
-      : 'Рядом с тобой как-то спокойнее.';
-
+    const tail = Math.random()<0.5 ? 'Рада, что ты написал — с тобой момент теплее.' : 'Рядом с тобой как-то спокойнее.';
     const reply = [pieces.join(' '), tail].filter(Boolean).join(' ');
 
     let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
-    }
+    if (shouldVoiceFor(reply)){ const url=await getTTSUrl(reply); if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; } }
     if (!voiced) addBubble(reply,'assistant');
 
     await maybeSticker(text, reply, null);
@@ -918,10 +809,7 @@ formEl.addEventListener('submit', async (e)=>{
     const reply = `У меня сейчас ${timeStr}. ${tail}`;
 
     let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
-    }
+    if (shouldVoiceFor(reply)){ const url=await getTTSUrl(reply); if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; } }
     if (!voiced) addBubble(reply,'assistant');
 
     await maybeSticker(text, reply, null);
@@ -941,11 +829,8 @@ formEl.addEventListener('submit', async (e)=>{
     const reply = [head, weatherPhrase].filter(Boolean).join(' ');
 
     let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
-    }
-    if (!воiced) addBubble(reply,'assistant');
+    if (shouldVoiceFor(reply)){ const url=await getTTSUrl(reply); if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; } }
+    if (!voiced) addBubble(reply,'assistant');
 
     await maybeSticker(text, reply, null);
 
@@ -955,7 +840,7 @@ formEl.addEventListener('submit', async (e)=>{
     return;
   }
 
-  // 4) обычный путь → к модели (env+профиль передаются на сервер)
+  // 4) обычный путь → к модели
   peerStatus.textContent='печатает…';
   const typingRow=addTyping();
 
@@ -967,36 +852,21 @@ formEl.addEventListener('submit', async (e)=>{
         pin: localStorage.getItem('rin-pin'),
         env: currentEnv || undefined,
         profile: profile || undefined,
-        client: {
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
-          sentAt: Date.now()
-        }
+        client: { tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null, sentAt: Date.now() }
       })
     });
     const data=await res.json();
     typingRow.remove();
 
-    if (res.status === 401) {
-      try { localStorage.removeItem('rin-pin'); } catch {}
-      window.location.href = '/login';
-      return;
-    }
-
+    if (res.status === 401) { try { localStorage.removeItem('rin-pin'); } catch {} window.location.href = '/login'; return; }
     if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP '+res.status));
 
-    if (data.long){
-      const prev=peerStatus.textContent; peerStatus.textContent='📖 рассказывает…';
-      setTimeout(()=>{ peerStatus.textContent=prev||'онлайн'; }, 2500);
-    } else peerStatus.textContent='онлайн';
+    if (data.long){ const prev=peerStatus.textContent; peerStatus.textContent='📖 рассказывает…'; setTimeout(()=>{ peerStatus.textContent=prev||'онлайн'; }, 2500); }
+    else peerStatus.textContent='онлайн';
 
     let voiced=false;
-    if (shouldVoiceFor(data.reply)){
-      const url=await getTTSUrl(data.reply);
-      if (url){ addVoiceBubble(url, data.reply, 'assistant'); voiced=true; }
-    }
-    if (!voiced){
-      addBubble(data.reply,'assistant');
-    }
+    if (shouldVoiceFor(data.reply)){ const url=await getTTSUrl(data.reply); if (url){ addVoiceBubble(url, data.reply, 'assistant'); voiced=true; } }
+    if (!voiced) addBubble(data.reply,'assistant');
 
     await maybeSticker(text, data.reply, null);
 
@@ -1004,11 +874,8 @@ formEl.addEventListener('submit', async (e)=>{
     saveHistory(history);
     chainStickerCount++;
   } catch (err) {
-    typingRow.remove(); 
-    peerStatus.textContent = 'онлайн';
-    const msg = (err && typeof err.message === 'string') 
-      ? err.message 
-      : (typeof err === 'string' ? err : JSON.stringify(err));
+    typingRow.remove(); peerStatus.textContent = 'онлайн';
+    const msg = (err && typeof err.message === 'string') ? err.message : (typeof err === 'string' ? err : JSON.stringify(err));
     addBubble('Ой… связь шалит. ' + (msg || 'Попробуем ещё раз?'), 'assistant');
   }
 });
