@@ -5,9 +5,9 @@ const DAILY_INIT_KEY = 'rin-init-count';
 const THEME_KEY      = 'rin-theme';
 
 /* настройки, что храним в LS */
-const LS_STICKER_PROB   = 'rin-sticker-prob';    // 0..50 (%)
-const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off   (используется как внешний гейт)
-const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'                (доп. запреты при негативном контексте)
+const LS_STICKER_PROB   = 'rin-sticker-prob';    // 0..100 (%)
+const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off | always   (внешний гейт)
+const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'  (доп. запреты при негативном контексте)
 const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0'
 const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
@@ -86,7 +86,7 @@ function monthNameRu(m){ // 0..11
 }
 function seasonFromMonth(m){ // северное полушарие
   if (m===11 || m<=1) return 'зима';
-  if (m>=2 && м<=4)   return 'весна';
+  if (m>=2 && m<=4)   return 'весна';
   if (m>=5 && m<=7)   return 'лето';
   return 'осень';
 }
@@ -174,7 +174,7 @@ function buildWeatherPhrase(env){
 
     return `${main} ${emo}${tail}`.trim();
   }
-  return '';
+  return ''; // если нет данных — пусть решит composeWeatherMood или fallback
 }
 
 /* === Debug helpers (в панели настроек) === */
@@ -188,6 +188,7 @@ function dbg(line){
     const div = document.createElement('div');
     div.innerText = `[${ts}] ${line}`;
     debugLogEl.appendChild(div);
+    // ограничим лог последними ~80 строками
     while (debugLogEl.childNodes.length > 80) debugLogEl.removeChild(debugLogEl.firstChild);
     debugLogEl.scrollTop = debugLogEl.scrollHeight;
   }catch{}
@@ -545,12 +546,18 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 /* === INIT === */
 (async function init(){
   try{
+    // 1) профиль персонажа доступен из persona_ui bootstrap:
     profile = window.RIN_PROFILE || null;
+
+    // 2) stickers v3
     await ensureStickersReady();
+
+    // 3) окружение
     await refreshRinEnv();
     setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
   }catch(e){ dbg('init error: '+(e?.message||e)); }
 
+  // подхватываем обновления профиля из редактора
   window.addEventListener('rin:profile-updated', (ev)=>{
     profile = ev.detail || profile;
   });
@@ -570,6 +577,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 
 /* — приветствие на основе профиля — */
 function greet(){
+  // пул по времени суток
   let pool = 'day';
   if (currentEnv && currentEnv.partOfDay){
     const p = currentEnv.partOfDay;
@@ -600,6 +608,8 @@ function greet(){
   }
 
   addBubble(greeting,'assistant');
+
+  // stickers v3 — аккуратный вызов
   maybeSticker('', greeting, pool);
 
   history.push({ role:'assistant', content:greeting, ts:Date.now() });
@@ -660,17 +670,18 @@ function computeStickerHistoryStats(){
 
 /* === Гейт стикеров поверх v3: учитываем твои настройки (mode/prob/safe) === */
 function externalStickerGate(userText, replyText){
-  const mode = lsStickerMode();       // 'smart' | 'keywords' | 'off'
-  if (mode === 'off') { dbg('stickers gate: off'); return false; }
+  const mode = lsStickerMode();       // 'smart' | 'keywords' | 'off' | 'always'
+  if (mode === 'off')    { dbg('stickers gate: off');    return false; }
+  if (mode === 'always'){ dbg('stickers gate: always'); return true;  }
 
-  const baseProb = Math.max(0, Math.min(50, lsStickerProb())) / 100;
+  // Разрешаем диапазон 0..100% (ранее было 0..50)
+  const baseProb = Math.max(0, Math.min(100, lsStickerProb())) / 100;
   if (Math.random() > baseProb) { dbg('stickers gate: blocked (prob)'); return false; }
 
   if (lsStickerSafe()) {
     const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
     if (userText && NEG.test(userText)) { dbg('stickers gate: safe blocked'); return false; }
   }
-
   return true;
 }
 
@@ -680,6 +691,7 @@ async function maybeSticker(userText, replyText, poolOverride=null){
   stickerBusy = true;
   try{
     await ensureStickersReady();
+
     if (!externalStickerGate(userText, replyText)) return;
 
     // v3 доступен?
@@ -812,12 +824,16 @@ formEl.addEventListener('submit', async (e)=>{
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
 
+  // увеличиваем счётчик сообщений до следующего стикера
   chainStickerCount++;
 
   const t = text.toLowerCase();
 
+  // A) smalltalk
   const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
+  // B) время (Канадзава / Asia/Tokyo)
   const RE_TIME = /(сколько\s+у\s+тебя\s+сейчас\s+времен(и|я)|сколько\s+у\s+тебя\s+времен(и|я)|который\s+час|время\s+у\s+тебя|что\s+у\s+тебя\s+по\s+времени)/i;
+  // C) погода
   const RE_WEATHER = /(какая[^?]*погода|что там с погодой|на улице[^?]*(холодно|тепло|жарко|дождь|снег)|как[^?]*на улице)/i;
 
   function composeTimeMood(env){
@@ -827,7 +843,7 @@ formEl.addEventListener('submit', async (e)=>{
       parts.push(`${env.partOfDay} у меня (${env.rinHuman} по Канадзаве)`);
     }
     if (env.month && env.season){
-      parts.push(`${env.month}, ${env.seон}`);
+      parts.push(`${env.month}, ${env.season}`);
     }
     return parts.join('; ');
   }
@@ -1017,7 +1033,3 @@ async function refreshRinEnv(){
     dbg('refresh env failed: '+(e?.message||e));
   }
 }
-
-/* — геттеры LS для голоса — вынесены вниз для читабельности */
-function lsSpeakEnabled(){ return localStorage.getItem(LS_SPEAK_ENABLED) === '1'; }
-function lsSpeakRate(){ return +(localStorage.getItem(LS_SPEAK_RATE) || '20'); }
