@@ -121,14 +121,7 @@ body {
   background-attachment: fixed;
   isolation: isolate; /* чтобы псевдоэлемент не влияł на детей */
 }
-.chat::after{
-  content:"";
-  position:absolute;
-  inset:0;
-  z-index:0;           /* под контентом */
-  background: var(--bg);   /* цвет поверхности */
-  opacity: var(--wallpaper-veil, 0.9); /* 0..1 — управляемый ползунком */
-  pointer-events:none;
+.chat::after { display: none !important; 
 }
 
 /* Ряд сообщения */
