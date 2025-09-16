@@ -52,6 +52,22 @@ function userAffinity(stats, src) {
   return +(base.toFixed(3));
 }
 
+/* === ДЕТЕРМИНИРОВАННЫЙ РАНДОМ (seeded) === */
+function hash32(str){
+  let h = 2166136261 >>> 0; // FNV-1a
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function seededRand(seedText){
+  const h = hash32(String(seedText || ""));
+  // один шаг LCG для 0..1
+  const x = (h * 1664525 + 1013904223) >>> 0;
+  return x / 2**32;
+}
+
 // ---- КЛАССИФИКАЦИИ (простые эвристики)
 
 function detectTimeOfDay(date = new Date()) {
@@ -121,6 +137,15 @@ function timeOfDayScore(cfg, tod, moods) {
   return hit ? 1 : 0.4;
 }
 
+// стабилен выбор среди равных по score
+function pickStableByScore(cands, seedText){
+  if (!cands || !cands.length) return null;
+  return cands
+    .slice()
+    .sort((a,b)=> b.score - a.score
+      || (seededRand(String(seedText)+a.s.src) - seededRand(String(seedText)+b.s.src)))[0];
+}
+
 // ---- ПРАВИЛА
 
 function violatesGlobal(cfg, history) {
@@ -162,13 +187,17 @@ function pickUtterance(sticker) {
   return sticker.utterances[Math.floor(Math.random() * sticker.utterances.length)];
 }
 
-function pickSticker(cfg, signals, stats) {
+/**
+ * Выбор стикера с расчётом score по кандидатам.
+ * Добавлен seedText для детерминированного tie-break и grace.
+ */
+function pickSticker(cfg, signals, stats, seedText = null) {
   const desired = cfg.defaults?.byTime?.[signals.timeOfDay]?.moods || [];
   const candidates = (cfg.stickers || []).filter(s => shouldConsider(cfg, s, signals, stats));
   if (!candidates.length) return null;
 
-  let best = null;
-
+  // посчитаем score для всех кандидатов
+  const scored = [];
   for (const s of candidates) {
     const score =
       kwScore(signals.text, s.keywords) * 0.45 +
@@ -178,19 +207,26 @@ function pickSticker(cfg, signals, stats) {
 
     const diversityPenalty = signals.history.recentStickerSrcs?.slice(-8).includes(s.src) ? 0.85 : 1;
     const aff = userAffinity(stats, s.src);
-
     const finalScore = score * (s.weight ?? 1) * aff * diversityPenalty;
 
-    if (!best || finalScore > best.score) best = { s, score: finalScore };
+    scored.push({ s, score: finalScore });
   }
 
+  // лучший и пороги
+  let best = null;
+  for (const e of scored) {
+    if (!best || e.score > best.score) best = e;
+  }
   if (!best) return null;
 
-  const thr = cfg.defaults?.global?.score_threshold ?? 0.62;
+  const thr   = cfg.defaults?.global?.score_threshold ?? 0.62;
   const grace = cfg.defaults?.global?.random_grace ?? 0.06;
 
-  if (best.score >= thr) return best.s;
-  if (best.score >= thr * (1 - grace) && Math.random() < grace) return best.s;
+  if (best.score >= thr) {
+    const top = scored.filter(x => x.score === best.score);
+    return pickStableByScore(top, seedText)?.s || best.s;
+  }
+  if (best.score >= thr * (1 - grace) && seededRand(seedText) < grace) return best.s;
 
   return null;
 }
@@ -242,10 +278,13 @@ export function buildSignals({
  * Основной помощник: решает, ставить ли стикер, и возвращает результат.
  * Возвращает:
  *  { sticker: {src,...} | null, utterance: string|null, delayMs: number }
+ *
+ * Новое: опциональный seedText — для детерминизма tie-break и grace.
  */
 export function decideSticker(cfg, signals, {
   attachUtterance = true,
-  addDelay = true
+  addDelay = true,
+  seedText = null
 } = {}) {
   // быстрые отказы
   if (violatesGlobal(cfg, signals.history)) {
@@ -253,7 +292,7 @@ export function decideSticker(cfg, signals, {
   }
 
   const stats = readStats();
-  const selected = pickSticker(cfg, signals, stats);
+  const selected = pickSticker(cfg, signals, stats, seedText);
   if (!selected) return { sticker: null, utterance: null, delayMs: 0 };
 
   // подсказка-фраза
