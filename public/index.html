@@ -122,7 +122,7 @@
         <div class="settings__actions" style="display:grid;gap:8px;">
           <div style="display:flex;align-items:center;gap:10px;">
             <label for="stickerProb" style="color:var(--muted);font-size:12px;">Вероятность</label>
-            <input id="stickerProb" type="range" min="0" max="50" value="30" />
+            <input id="stickerProb" type="range" min="0" max="100" value="50" />
             <span id="stickerProbVal" style="font-size:12px;color:var(--muted);">30%</span>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
@@ -130,6 +130,7 @@
             <select id="stickerMode" class="btn">
               <option value="smart">Умный</option>
               <option value="keywords">Только по ключам</option>
+              <option value="always">Всегда</option>
               <option value="off">Выключить</option>
             </select>
           </div>
