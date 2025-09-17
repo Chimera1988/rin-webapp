@@ -5,9 +5,9 @@ const DAILY_INIT_KEY = 'rin-init-count';
 const THEME_KEY      = 'rin-theme';
 
 /* настройки, что храним в LS */
-const LS_STICKER_PROB   = 'rin-sticker-prob';    // 0..100 (%)
-const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off | always   (внешний гейт)
-const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'  (доп. запреты при негативном контексте)
+const LS_STICKER_PROB   = 'rin-sticker-prob';    // 0..50 (%)
+const LS_STICKER_MODE   = 'rin-sticker-mode';    // smart | keywords | off
+const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'
 const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0'
 const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
@@ -53,7 +53,7 @@ const RIN_CITY   = 'Kanazawa';
 const RIN_COUNTRY= 'JP';
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // раз в 20 минут
 
-/* ✔️ РАННЕЕ БЕЗОПАСНОЕ ОБЪЯВЛЕНИЕ — чтобы не ловить "Can't find variable: currentEnv" */
+/* ✔️ ранняя инициализация окружения */
 let currentEnv = {
   rinTz: RIN_TZ,
   rinHuman: '',
@@ -174,7 +174,7 @@ function buildWeatherPhrase(env){
 
     return `${main} ${emo}${tail}`.trim();
   }
-  return ''; // если нет данных — пусть решит composeWeatherMood или fallback
+  return '';
 }
 
 /* === Debug helpers (в панели настроек) === */
@@ -188,7 +188,6 @@ function dbg(line){
     const div = document.createElement('div');
     div.innerText = `[${ts}] ${line}`;
     debugLogEl.appendChild(div);
-    // ограничим лог последними ~80 строками
     while (debugLogEl.childNodes.length > 80) debugLogEl.removeChild(debugLogEl.firstChild);
     debugLogEl.scrollTop = debugLogEl.scrollHeight;
   }catch{}
@@ -209,7 +208,7 @@ if (debugToggle){
 const resetApp      = document.getElementById('resetApp');
 
 /* state */
-let profile = null;         // новый профиль из persona_ui / rin_memory
+let profile = null;         // профиль из persona_ui / rin_memory
 let history=[];
 let chainStickerCount=0;
 /* 🔒 защита от гонок показа стикеров */
@@ -546,18 +545,12 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 /* === INIT === */
 (async function init(){
   try{
-    // 1) профиль персонажа доступен из persona_ui bootstrap:
     profile = window.RIN_PROFILE || null;
-
-    // 2) stickers v3
     await ensureStickersReady();
-
-    // 3) окружение
     await refreshRinEnv();
     setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
   }catch(e){ dbg('init error: '+(e?.message||e)); }
 
-  // подхватываем обновления профиля из редактора
   window.addEventListener('rin:profile-updated', (ev)=>{
     profile = ev.detail || profile;
   });
@@ -577,7 +570,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 
 /* — приветствие на основе профиля — */
 function greet(){
-  // пул по времени суток
   let pool = 'day';
   if (currentEnv && currentEnv.partOfDay){
     const p = currentEnv.partOfDay;
@@ -608,8 +600,6 @@ function greet(){
   }
 
   addBubble(greeting,'assistant');
-
-  // stickers v3 — аккуратный вызов
   maybeSticker('', greeting, pool);
 
   history.push({ role:'assistant', content:greeting, ts:Date.now() });
@@ -643,7 +633,7 @@ async function getTTSUrl(text){
   }catch{ return null; }
 }
 
-/* === Вспомогательные функции для истории стикеров === */
+/* === Вспомогательные для истории стикеров === */
 function computeStickerHistoryStats(){
   const total = history.length;
   const withStickers = 0;
@@ -668,14 +658,14 @@ function computeStickerHistoryStats(){
   return { total, withStickers, messagesSinceSticker, recentStickerSrcs, todayCountBySrc };
 }
 
-/* === Гейт стикеров поверх v3: учитываем твои настройки (mode/prob/safe) === */
+/* === Гейт стикеров поверх v3 === */
+function lsMode(){ return (localStorage.getItem(LS_STICKER_MODE) || 'smart'); }
 function externalStickerGate(userText, replyText){
-  const mode = lsStickerMode();       // 'smart' | 'keywords' | 'off' | 'always'
-  if (mode === 'off')    { dbg('stickers gate: off');    return false; }
-  if (mode === 'always'){ dbg('stickers gate: always'); return true;  }
+  const mode = lsMode(); // 'smart' | 'keywords' | 'off'
+  if (mode === 'off') { dbg('stickers gate: off'); return false; }
+  if (mode === 'keywords') { dbg('stickers gate: keywords bypass'); return true; }
 
-  // Разрешаем диапазон 0..100% (ранее было 0..50)
-  const baseProb = Math.max(0, Math.min(100, lsStickerProb())) / 100;
+  const baseProb = Math.max(0, Math.min(50, lsStickerProb())) / 100;
   if (Math.random() > baseProb) { dbg('stickers gate: blocked (prob)'); return false; }
 
   if (lsStickerSafe()) {
@@ -685,6 +675,15 @@ function externalStickerGate(userText, replyText){
   return true;
 }
 
+/* === Набор ключей для режима keywords → принудительный стикер === */
+const KEYWORDS_MAP = [
+  { re: /(обним|обними|обнимаю|объят|hug|обнимеш)/i, src: '/stickers/inviting.webp', utter: 'Иди сюда…' },
+  { re: /(поцел|поцелуй|kiss|😘|💋)/i,               src: '/stickers/kiss_gesture.webp', utter: 'мм…' },
+  { re: /(люблю|❤|❤️|нравишь|скучаю|милая|милый)/i,  src: '/stickers/soft_smile.webp',   utter: 'Я рядом.' },
+  { re: /(доброе утро|утро)/i,                      src: '/stickers/warm_smile.webp',   utter: 'Доброе ☀️' },
+  { re: /(спокойной ночи|ночь)/i,                   src: '/stickers/thoughtful.webp',   utter: 'Тихой ночи.' }
+];
+
 /* === stickers v3: единый хелпер — решает и рисует === */
 async function maybeSticker(userText, replyText, poolOverride=null){
   if (stickerBusy) return;
@@ -692,9 +691,26 @@ async function maybeSticker(userText, replyText, poolOverride=null){
   try{
     await ensureStickersReady();
 
+    // 0) Режим "keywords": пытаемся отдать принудительно, без v3
+    if (lsMode() === 'keywords') {
+      const textPool = `${userText||''} ${replyText||''}`;
+      const hit = KEYWORDS_MAP.find(k => k.re.test(textPool));
+      if (hit) {
+        addStickerBubble(hit.src, 'assistant', hit.utter || null);
+        try { stickersLib?.markStickerSent({ src: hit.src }); } catch {}
+        chainStickerCount = 0;
+        dbg('stickers keywords forced: ' + hit.src);
+        return;
+      }
+      // если ключи не совпали — падать в smart/v2 не будем, просто выходим
+      dbg('stickers keywords: no key hit');
+      return;
+    }
+
+    // 1) общий гейт
     if (!externalStickerGate(userText, replyText)) return;
 
-    // v3 доступен?
+    // 2) v3 доступен?
     if (stickersLib && STICKERS_CFG){
       let tod = null;
       if (poolOverride) {
@@ -714,14 +730,14 @@ async function maybeSticker(userText, replyText, poolOverride=null){
         user_state: []
       });
 
-      /* 🧩 Детерминированный seed: текст пользователя + ответ + время суток + дата */
+      // детерминированный seed на сегодня
       const dayKey = new Date().toISOString().slice(0,10);
       const seedText = `${(userText||'').trim().toLowerCase()}|${(replyText||'').trim().toLowerCase()}|${tod||''}|${dayKey}`;
 
       const decision = stickersLib.decideSticker(
         STICKERS_CFG,
         signals,
-        { attachUtterance: true, addDelay: true, seedText } // ← новый параметр
+        { attachUtterance: true, addDelay: true, seedText }
       );
 
       if (!decision?.sticker){ dbg('stickers v3 no-decision'); return; }
@@ -734,7 +750,7 @@ async function maybeSticker(userText, replyText, poolOverride=null){
       return;
     }
 
-    // ---- Fallback (простой v2 по ключам/времени суток) ----
+    // 3) Fallback (простой v2 по ключам/времени суток)
     const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж|kiss)/i;
     const pool = poolOverride || (currentEnv?.partOfDay === 'утро' ? 'morning'
       : currentEnv?.partOfDay === 'день' ? 'day'
@@ -762,7 +778,7 @@ async function maybeSticker(userText, replyText, poolOverride=null){
   }
 }
 
-/* === Автоинициации (используем profile.initiation) — stickers v3 уже работает === */
+/* === Автоинициации === */
 async function tryInitiateBySchedule(){
   if (!profile) return;
 
@@ -813,7 +829,7 @@ async function tryInitiateBySchedule(){
   }, 900+Math.random()*900);
 }
 
-/* === Отправка (локальные ответы + запрос к модели) — stickers v3, время и погода === */
+/* === Отправка (локальные ответы + запрос к модели) === */
 formEl.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const text = (inputEl.value || '').trim();
@@ -824,16 +840,12 @@ formEl.addEventListener('submit', async (e)=>{
   saveHistory(history);
   inputEl.value=''; inputEl.focus();
 
-  // увеличиваем счётчик сообщений до следующего стикера
   chainStickerCount++;
 
   const t = text.toLowerCase();
 
-  // A) smalltalk
   const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
-  // B) время (Канадзава / Asia/Tokyo)
   const RE_TIME = /(сколько\s+у\s+тебя\s+сейчас\s+времен(и|я)|сколько\s+у\s+тебя\s+времен(и|я)|который\s+час|время\s+у\s+тебя|что\s+у\s+тебя\s+по\s+времени)/i;
-  // C) погода
   const RE_WEATHER = /(какая[^?]*погода|что там с погодой|на улице[^?]*(холодно|тепло|жарко|дождь|снег)|как[^?]*на улице)/i;
 
   function composeTimeMood(env){
@@ -869,167 +881,4 @@ formEl.addEventListener('submit', async (e)=>{
 
   // 1) smalltalk
   if (RE_SMALLTALK.test(t)) {
-    const env = currentEnv || null;
-    const timeMood = composeTimeMood(env);
-    const weatherMood = (Math.random()<0.7) ? composeWeatherMood(env) : '';
-    const filler = pickSmallTalkPhrase();
-
-    const pieces = [];
-    if (timeMood) pieces.push(timeMood + '.');
-    if (weatherMood) pieces.push(weatherMood);
-    if (filler) pieces.push(filler);
-
-    const tail = Math.random()<0.5
-      ? 'Рада, что ты написал — с тобой момент теплее.'
-      : 'Рядом с тобой как-то спокойнее.';
-
-    const reply = [pieces.join(' '), tail].filter(Boolean).join(' ');
-
-    let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
-    }
-    if (!voiced) addBubble(reply,'assistant');
-
-    await maybeSticker(text, reply, null);
-
-    history.push({role:'assistant',content:reply,ts:Date.now()});
-    saveHistory(history);
-    chainStickerCount++;
-    return;
-  }
-
-  // 2) время в Канадзаве
-  if (RE_TIME.test(t)) {
-    if (!currentEnv) { try { await refreshRinEnv(); } catch {} }
-    const env = currentEnv || null;
-    const timeStr = formatRinTime(env);
-    const pod = env?.partOfDay ? env.partOfDay : partOfDayFromHour(nowInTz(RIN_TZ).getHours());
-    const tail = pod==='утро' ? 'У меня ещё утро — люблю это спокойствие.' :
-                 pod==='день' ? 'У меня день — в хорошем темпе, но без спешки.' :
-                 pod==='вечер' ? 'У меня вечер — тянет к чаю и тишине.' :
-                 'У меня глубокая ночь — город почти не дышит.';
-    const reply = `У меня сейчас ${timeStr}. ${tail}`;
-
-    let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
-    }
-    if (!voiced) addBubble(reply,'assistant');
-
-    await maybeSticker(text, reply, null);
-
-    history.push({role:'assistant',content:reply,ts:Date.now()});
-    saveHistory(history);
-    chainStickerCount++;
-    return;
-  }
-
-  // 3) погода
-  if (RE_WEATHER.test(t)) {
-    if (!currentEnv) { try { await refreshRinEnv(); } catch {} }
-    const env = currentEnv || null;
-    const head = 'Смотрю в окно и на термометр…';
-    const weatherPhrase = buildWeatherPhrase(env) || composeWeatherMood(env) || 'Пока без сюрпризов: спокойно.';
-    const reply = [head, weatherPhrase].filter(Boolean).join(' ');
-
-    let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
-    }
-    if (!voiced) addBubble(reply,'assistant');
-
-    await maybeSticker(text, reply, null);
-
-    history.push({role:'assistant',content:reply,ts:Date.now()});
-    saveHistory(history);
-    chainStickerCount++;
-    return;
-  }
-
-  // 4) обычный путь → к модели (env+профиль передаются на сервер)
-  peerStatus.textContent='печатает…';
-  const typingRow=addTyping();
-
-  try{
-    const res=await fetch('/api/chat',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        history,
-        pin: localStorage.getItem('rin-pin'),
-        env: currentEnv || undefined,
-        profile: profile || undefined,
-        client: {
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
-          sentAt: Date.now()
-        }
-      })
-    });
-    const data=await res.json();
-    typingRow.remove();
-
-    if (res.status === 401) {
-      try { localStorage.removeItem('rin-pin'); } catch {}
-      window.location.href = '/login';
-      return;
-    }
-
-    if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP '+res.status));
-
-    if (data.long){
-      const prev=peerStatus.textContent; peerStatus.textContent='📖 рассказывает…';
-      setTimeout(()=>{ peerStatus.textContent=prev||'онлайн'; }, 2500);
-    } else peerStatus.textContent='онлайн';
-
-    let voiced=false;
-    if (shouldVoiceFor(data.reply)){
-      const url=await getTTSUrl(data.reply);
-      if (url){ addVoiceBubble(url, data.reply, 'assistant'); voiced=true; }
-    }
-    if (!voiced){
-      addBubble(data.reply,'assistant');
-    }
-
-    await maybeSticker(text, data.reply, null);
-
-    history.push({role:'assistant',content:data.reply,ts:Date.now()});
-    saveHistory(history);
-    chainStickerCount++;
-  } catch (err) {
-    typingRow.remove(); 
-    peerStatus.textContent = 'онлайн';
-    const msg = (err && typeof err.message === 'string') 
-      ? err.message 
-      : (typeof err === 'string' ? err : JSON.stringify(err));
-    addBubble('Ой… связь шалит. ' + (msg || 'Попробуем ещё раз?'), 'assistant');
-  }
-});
-
-/* совместимость: старый maybeSpeak больше не используется */
-async function maybeSpeak(_text){ return false; }
-
-/* — обновление окружения */
-async function refreshRinEnv(){
-  try{
-    const rin = nowInTz(RIN_TZ);
-    const monthIdx = rin.getMonth();
-    const env = {
-      _ts: Date.now(),
-      rinTz: RIN_TZ,
-      rinHuman: fmtRinHuman(rin),
-      season: seasonFromMonth(monthIdx),
-      month: monthNameRu(monthIdx),
-      partOfDay: partOfDayFromHour(rin.getHours()),
-      userVsRinHoursDiff: hoursDiffWithRin(),
-      weather: null
-    };
-    const w = await fetchRinWeather();
-    if (w) env.weather = w;
-    currentEnv = env;
-  }catch(e){
-    dbg('refresh env failed: '+(e?.message||e));
-  }
-}
+    const env = currentEnv ||
