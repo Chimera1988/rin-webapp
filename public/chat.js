@@ -704,24 +704,55 @@ function externalStickerGate(userText, replyText){
 }
 
 /* === stickers v3: единый хелпер — решает и рисует === */
-async function maybeSticker(userText, replyText, poolOverride=null){
+async function maybeSticker(userText, replyText, poolOverride = null){
   if (stickerBusy) return;
   stickerBusy = true;
+
   try{
     await ensureStickersReady();
 
+    // внешний гейт (off/always/safe/keywords hit)
     if (!externalStickerGate(userText, replyText)) return;
 
-    // v3 доступен?
+    const mode = lsStickerMode(); // 'smart' | 'keywords' | 'off' | 'always'
+
+    // ---------- 1) РЕЖИМ KEYWORDS: сразу рисуем фоллбэком, без v3 ----------
+    if (mode === 'keywords'){
+      const textPool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
+      if (!KEYWORDS_RE.test(textPool)) {
+        dbg('stickers keywords: MISS after gate (shouldn’t happen)');
+        return;
+      }
+
+      const pool = poolOverride || (
+        currentEnv?.partOfDay === 'утро'   ? 'morning' :
+        currentEnv?.partOfDay === 'день'   ? 'day'     :
+        currentEnv?.partOfDay === 'вечер'  ? 'evening' : 'night'
+      );
+
+      // простой выбор стикера по ключам
+      const pickSrc = Math.random() < 0.5
+        ? '/stickers/inviting.webp'
+        : '/stickers/kiss_gesture.webp';
+
+      addStickerBubble(pickSrc, 'assistant', null);
+      // запишем в статистику (для дневных лимитов/диверсификации)
+      try { stickersLib?.markStickerSent({ src: pickSrc }); } catch {}
+      chainStickerCount = 0;
+      dbg('stickers keywords: shown ' + pickSrc);
+      return;
+    }
+
+    // ---------- 2) УМНЫЙ / ALWAYS: сначала v3, при no-decision можно мягко упасть в keywords ----------
     if (stickersLib && STICKERS_CFG){
       let tod = null;
       if (poolOverride) {
         tod = poolOverride;
       } else if (currentEnv?.partOfDay) {
         tod = (currentEnv.partOfDay === 'утро') ? 'morning'
-          : (currentEnv.partOfDay === 'день') ? 'day'
-          : (currentEnv.partOfDay === 'вечер') ? 'evening'
-          : 'night';
+             : (currentEnv.partOfDay === 'день') ? 'day'
+             : (currentEnv.partOfDay === 'вечер') ? 'evening'
+             : 'night';
       }
 
       const historyInfo = computeStickerHistoryStats();
@@ -732,48 +763,85 @@ async function maybeSticker(userText, replyText, poolOverride=null){
         user_state: []
       });
 
-      /* 🧩 Детерминированный seed: текст пользователя + ответ + время суток + дата */
-      const dayKey = new Date().toISOString().slice(0,10);
+      const dayKey   = new Date().toISOString().slice(0,10);
       const seedText = `${(userText||'').trim().toLowerCase()}|${(replyText||'').trim().toLowerCase()}|${tod||''}|${dayKey}`;
 
       const decision = stickersLib.decideSticker(
         STICKERS_CFG,
         signals,
-        { attachUtterance: true, addDelay: true, seedText } // ← новый параметр
+        { attachUtterance: true, addDelay: true, seedText }
       );
 
-      if (!decision?.sticker){ dbg('stickers v3 no-decision'); return; }
+      if (decision?.sticker){
+        if (decision.delayMs > 0) await new Promise(r => setTimeout(r, decision.delayMs));
+        addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
+        stickersLib.markStickerSent(decision.sticker);
+        chainStickerCount = 0;
+        dbg('stickers v3: shown ' + decision.sticker.src);
+        return;
+      }
 
-      if (decision.delayMs > 0) await new Promise(r => setTimeout(r, decision.delayMs));
+      dbg('stickers v3 no-decision');
 
-      addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
-      stickersLib.markStickerSent(decision.sticker);
-      chainStickerCount = 0;
+      // мягкий фоллбек: если always — показываем универсальный; если smart и есть ключи — можно порадовать
+      const textPool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
+      const pool     = tod || (
+        currentEnv?.partOfDay === 'утро'   ? 'morning' :
+        currentEnv?.partOfDay === 'день'   ? 'day'     :
+        currentEnv?.partOfDay === 'вечер'  ? 'evening' : 'night'
+      );
+
+      let pickSrc = null;
+      if (mode === 'always'){
+        // гарантированный «мягкий» стикер
+        if      (pool === 'morning') pickSrc = '/stickers/warm_smile.webp';
+        else if (pool === 'evening') pickSrc = '/stickers/tender_smile.webp';
+        else if (pool === 'night')   pickSrc = '/stickers/thoughtful.webp';
+        else                         pickSrc = '/stickers/soft_smile.webp';
+      } else if (KEYWORDS_RE.test(textPool)) {
+        // smart + ключи попали → фоллбек по ключам
+        pickSrc = Math.random() < 0.5
+          ? '/stickers/inviting.webp'
+          : '/stickers/kiss_gesture.webp';
+      }
+
+      if (pickSrc){
+        addStickerBubble(pickSrc, 'assistant', null);
+        try { stickersLib?.markStickerSent({ src: pickSrc }); } catch {}
+        chainStickerCount = 0;
+        dbg('stickers fallback: shown ' + pickSrc);
+        return;
+      }
+
+      // иначе — молчим
       return;
     }
 
-    // ---- Fallback (простой v2 по ключам/времени суток) ----
-    const pool = poolOverride || (currentEnv?.partOfDay === 'утро' ? 'morning'
-    : currentEnv?.partOfDay === 'день' ? 'day'
-    : currentEnv?.partOfDay === 'вечер' ? 'evening' : 'night');
+    // ---------- 3) Если v3 недоступен — чистый фоллбек (как раньше) ----------
+    const pool = poolOverride || (
+      currentEnv?.partOfDay === 'утро'   ? 'morning' :
+      currentEnv?.partOfDay === 'день'   ? 'day'     :
+      currentEnv?.partOfDay === 'вечер'  ? 'evening' : 'night'
+    );
+    const textPool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
 
     let pickSrc = null;
-    const textPool = (userText?userText+' ':'') + (replyText||'');
-
     if (KEYWORDS_RE.test(textPool)) {
-    pickSrc = Math.random()<0.5 ? '/stickers/inviting.webp' : '/stickers/kiss_gesture.webp';
-  } else {
-    if (pool==='morning') pickSrc='/stickers/warm_smile.webp';
-    else if (pool==='evening') pickSrc='/stickers/tender_smile.webp';
-    else if (pool==='night') pickSrc='/stickers/thoughtful.webp';
-    else pickSrc='/stickers/soft_smile.webp';
-}
+      pickSrc = Math.random() < 0.5 ? '/stickers/inviting.webp' : '/stickers/kiss_gesture.webp';
+    } else {
+      if      (pool === 'morning') pickSrc = '/stickers/warm_smile.webp';
+      else if (pool === 'evening') pickSrc = '/stickers/tender_smile.webp';
+      else if (pool === 'night')   pickSrc = '/stickers/thoughtful.webp';
+      else                         pickSrc = '/stickers/soft_smile.webp';
+    }
 
     addStickerBubble(pickSrc, 'assistant', null);
-    dbg('stickers fallback pick: '+pickSrc);
+    try { stickersLib?.markStickerSent({ src: pickSrc }); } catch {}
     chainStickerCount = 0;
+    dbg('stickers plain-fallback: shown ' + pickSrc);
+
   } catch(e){
-    dbg('sticker decision error: '+(e?.message||e));
+    dbg('sticker decision error: ' + (e?.message || e));
   } finally {
     stickerBusy = false;
   }
