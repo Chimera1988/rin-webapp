@@ -668,20 +668,38 @@ function computeStickerHistoryStats(){
   return { total, withStickers, messagesSinceSticker, recentStickerSrcs, todayCountBySrc };
 }
 
+/* === Ключевые слова для «keywords» режима (единый источник) === */
+const KEYWORDS_RE = /(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж|kiss)/i;
+
+function keywordsHit(userText, replyText){
+  const pool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
+  return KEYWORDS_RE.test(pool);
+}
+
 /* === Гейт стикеров поверх v3: учитываем твои настройки (mode/prob/safe) === */
 function externalStickerGate(userText, replyText){
   const mode = lsStickerMode();       // 'smart' | 'keywords' | 'off' | 'always'
   if (mode === 'off')    { dbg('stickers gate: off');    return false; }
   if (mode === 'always'){ dbg('stickers gate: always'); return true;  }
 
-  // Разрешаем диапазон 0..100% (ранее было 0..50)
+  // «safe»-фильтр (общий для smart/keywords)
+  const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
+  if (lsStickerSafe() && userText && NEG.test(userText)) {
+    dbg('stickers gate: safe blocked');
+    return false;
+  }
+
+  if (mode === 'keywords') {
+    // В режиме "keywords" вероятность игнорируем: нужен именно ключевой триггер
+    const hit = keywordsHit(userText, replyText);
+    dbg('stickers gate: keywords mode ' + (hit ? 'HIT' : 'MISS'));
+    return hit;
+  }
+
+  // smart: оставляем вероятность 0..100% (как у тебя сейчас)
   const baseProb = Math.max(0, Math.min(100, lsStickerProb())) / 100;
   if (Math.random() > baseProb) { dbg('stickers gate: blocked (prob)'); return false; }
 
-  if (lsStickerSafe()) {
-    const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
-    if (userText && NEG.test(userText)) { dbg('stickers gate: safe blocked'); return false; }
-  }
   return true;
 }
 
@@ -735,22 +753,21 @@ async function maybeSticker(userText, replyText, poolOverride=null){
     }
 
     // ---- Fallback (простой v2 по ключам/времени суток) ----
-    const KEY_FLIRT=/(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж|kiss)/i;
     const pool = poolOverride || (currentEnv?.partOfDay === 'утро' ? 'morning'
-      : currentEnv?.partOfDay === 'день' ? 'day'
-      : currentEnv?.partOfDay === 'вечер' ? 'evening' : 'night');
+    : currentEnv?.partOfDay === 'день' ? 'day'
+    : currentEnv?.partOfDay === 'вечер' ? 'evening' : 'night');
 
     let pickSrc = null;
     const textPool = (userText?userText+' ':'') + (replyText||'');
 
-    if (KEY_FLIRT.test(textPool)) {
-      pickSrc = Math.random()<0.5 ? '/stickers/inviting.webp' : '/stickers/kiss_gesture.webp';
-    } else {
-      if (pool==='morning') pickSrc='/stickers/warm_smile.webp';
-      else if (pool==='evening') pickSrc='/stickers/tender_smile.webp';
-      else if (pool==='night') pickSrc='/stickers/thoughtful.webp';
-      else pickSrc='/stickers/soft_smile.webp';
-    }
+    if (KEYWORDS_RE.test(textPool)) {
+    pickSrc = Math.random()<0.5 ? '/stickers/inviting.webp' : '/stickers/kiss_gesture.webp';
+  } else {
+    if (pool==='morning') pickSrc='/stickers/warm_smile.webp';
+    else if (pool==='evening') pickSrc='/stickers/tender_smile.webp';
+    else if (pool==='night') pickSrc='/stickers/thoughtful.webp';
+    else pickSrc='/stickers/soft_smile.webp';
+}
 
     addStickerBubble(pickSrc, 'assistant', null);
     dbg('stickers fallback pick: '+pickSrc);
