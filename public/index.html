@@ -9,7 +9,7 @@
   <link rel="icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" href="/avatar.jpg" />
 
-  <!-- Тема до отрисовки -->
+  <!-- Тема до отрисовки (во избежание мигания темы) -->
   <script>
     (function(){
       const K='rin-theme';
@@ -41,7 +41,7 @@
   <!-- Шапка -->
   <header class="tg-header">
     <button class="tg-ico btn-back" aria-label="Назад" title="Назад" onclick="history.length>1?history.back():null">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
@@ -55,7 +55,7 @@
     </div>
 
     <div class="tg-actions">
-      <button id="settingsToggle" class="tg-ico" title="Настройки">⚙️</button>
+      <button id="settingsToggle" class="tg-ico" title="Настройки" aria-haspopup="dialog">⚙️</button>
     </div>
   </header>
 
@@ -78,7 +78,7 @@
         aria-label="Поле ввода сообщения"
       />
       <button id="send" type="submit" aria-label="Отправить">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="currentColor"/>
         </svg>
@@ -87,7 +87,7 @@
   </main>
 
   <!-- Настройки -->
-  <div id="settingsPanel" class="settings hidden" role="dialog" aria-modal="true">
+  <div id="settingsPanel" class="settings hidden" role="dialog" aria-modal="true" aria-label="Настройки">
     <div class="settings__backdrop" id="closeSettings"></div>
     <div class="settings__sheet">
       <div class="settings__head">
@@ -99,7 +99,7 @@
       <div class="settings__row">
         <div class="settings__label">Тема</div>
         <div class="settings__actions">
-          <button id="themeToggle" class="btn">Переключить тему</button>
+          <button id="themeToggle" class="btn" type="button">Переключить тему</button>
         </div>
       </div>
 
@@ -156,7 +156,7 @@
         </div>
       </div>
 
-      <!-- Отладка (перенесено сюда, больше нет плавающей плашки) -->
+      <!-- Отладка -->
       <div class="settings__row">
         <div class="settings__label">Отладка</div>
         <div class="settings__actions" style="display:grid;gap:8px;">
@@ -164,7 +164,6 @@
             <input id="debugToggle" type="checkbox" />
             <span style="font-size:12px;color:var(--muted);">Показывать лог стикеров внизу</span>
           </label>
-          <!-- область для лога; вид/скролл оформлен в style.css как .diary-log -->
           <div id="debugLog" class="diary-log" style="max-height:120px;"></div>
         </div>
       </div>
@@ -258,7 +257,7 @@
   <!-- Модуль UI персонажа (импортирует /js/rin_memory.js) -->
   <script type="module" src="/js/persona_ui.js?v=2025-03-05"></script>
 
-  <!-- Мини-стили панели персонажа (если у тебя уже есть подобные — можешь удалить этот блок) -->
+  <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>
     .sheet{position:fixed;left:0;right:0;bottom:0;top:auto;max-height:85vh;background:#111;color:#eee;border-top:1px solid #222;display:flex;flex-direction:column;box-shadow:0 -10px 30px rgba(0,0,0,.4);z-index:50}
     .sheet.hidden{display:none}
