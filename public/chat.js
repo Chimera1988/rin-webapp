@@ -855,8 +855,8 @@ formEl.addEventListener('submit', async (e)=>{
       parts.push(`${env.partOfDay} у меня (${env.rinHuman} по Канадзаве)`);
     }
     if (env.month && env.season){
-      parts.push(`${env.month}, ${env.season}`);
-    }
+  parts.push(`${env.month}, ${env.season}`);
+ }
     return parts.join('; ');
   }
   function composeWeatherMood(env){
