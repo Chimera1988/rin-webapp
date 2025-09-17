@@ -12,7 +12,7 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
 function lower(s) { return (s || "").toLowerCase(); }
-function includesAny(text, items=[]) {
+function includesAny(text, items = []) {
   const t = lower(text);
   return items.some(k => t.includes(lower(k)));
 }
@@ -31,7 +31,9 @@ function readStats() {
     }
     obj.recent ||= [];
     return obj;
-  } catch { return { bySrc: {}, recent: [], today: todayKey() }; }
+  } catch {
+    return { bySrc: {}, recent: [], today: todayKey() };
+  }
 }
 function writeStats(stats) {
   try { localStorage.setItem('rin-stats', JSON.stringify(stats)); } catch {}
@@ -53,7 +55,7 @@ function userAffinity(stats, src) {
 }
 
 /* === ДЕТЕРМИНИРОВАННЫЙ РАНДОМ (seeded) === */
-function hash32(str){
+function hash32(str) {
   let h = 2166136261 >>> 0; // FNV-1a
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -61,11 +63,11 @@ function hash32(str){
   }
   return h >>> 0;
 }
-function seededRand(seedText){
+function seededRand(seedText) {
   const h = hash32(String(seedText || ""));
   // один шаг LCG для 0..1
   const x = (h * 1664525 + 1013904223) >>> 0;
-  return x / 2**32;
+  return x / 2 ** 32;
 }
 
 // ---- КЛАССИФИКАЦИИ (простые эвристики)
@@ -80,11 +82,11 @@ function detectTimeOfDay(date = new Date()) {
 
 function detectSentiment(text) {
   const t = lower(text);
-  const happy = ["ура","класс","супер","рада","рад","счаст","обож","люблю","😍","😊",":)","☺️","❤️"];
-  const veryHappy = ["офигенно","лучше не бывает","мечта сбылась","🎉","🥳","💖"];
-  const sad = ["груст","жаль","обидно","плохо","печаль","😔","😢","😭",":("];
-  const verySad = ["невозможно","ужас","депресс","невыносимо","отчаян","безнадёж"];
-  const angry = ["злюсь","бесит","раздраж","чёрт","ненавиж","капец","%$#@","!!!"];
+  const happy = ["ура", "класс", "супер", "рада", "рад", "счаст", "обож", "люблю", "😍", "😊", ":)", "☺️", "❤️"];
+  const veryHappy = ["офигенно", "лучше не бывает", "мечта сбылась", "🎉", "🥳", "💖"];
+  const sad = ["груст", "жаль", "обидно", "плохо", "печаль", "😔", "😢", "😭", ":("];
+  const verySad = ["невозможно", "ужас", "депресс", "невыносимо", "отчаян", "безнадёж"];
+  const angry = ["злюсь", "бесит", "раздраж", "чёрт", "ненавиж", "капец", "%$#@", "!!!"];
 
   if (includesAny(t, veryHappy)) return "very_happy";
   if (includesAny(t, angry)) return "angry";
@@ -96,14 +98,14 @@ function detectSentiment(text) {
 
 function detectIntent(text) {
   const t = lower(text);
-  if (t.includes("?") || includesAny(t, ["почему","как","когда","что","зачем"])) return "question";
-  if (includesAny(t, ["спасибо","благодарю","благодарен","благодарна"])) return "thanks";
-  if (includesAny(t, ["прости","извини","сорри"])) return "apology";
-  if (includesAny(t, ["обними","поддержи","тяжело","мне плохо","нужна поддержка"])) return "support";
-  if (includesAny(t, ["целую","обнимаю","скуч","поцелуй","милый","милая","❤️","😘"])) return "flirt";
-  if (includesAny(t, ["давай","сделаем","поехали","план","запланируем"])) return "plan";
-  if (includesAny(t, ["пока","спокойной ночи","до завтра","увидимся"])) return "goodbye";
-  if (includesAny(t, ["просьба","можешь","сделай","нужно"])) return "request";
+  if (t.includes("?") || includesAny(t, ["почему", "как", "когда", "что", "зачем"])) return "question";
+  if (includesAny(t, ["спасибо", "благодарю", "благодарен", "благодарна"])) return "thanks";
+  if (includesAny(t, ["прости", "извини", "сорри"])) return "apology";
+  if (includesAny(t, ["обними", "поддержи", "тяжело", "мне плохо", "нужна поддержка"])) return "support";
+  if (includesAny(t, ["целую", "обнимаю", "скуч", "поцелуй", "милый", "милая", "❤️", "😘"])) return "flirt";
+  if (includesAny(t, ["давай", "сделаем", "поехали", "план", "запланируем"])) return "plan";
+  if (includesAny(t, ["пока", "спокойной ночи", "до завтра", "увидимся"])) return "goodbye";
+  if (includesAny(t, ["просьба", "можешь", "сделай", "нужно"])) return "request";
   return "smalltalk";
 }
 
@@ -138,12 +140,14 @@ function timeOfDayScore(cfg, tod, moods) {
 }
 
 // стабилен выбор среди равных по score
-function pickStableByScore(cands, seedText){
+function pickStableByScore(cands, seedText) {
   if (!cands || !cands.length) return null;
   return cands
     .slice()
-    .sort((a,b)=> b.score - a.score
-      || (seededRand(String(seedText)+a.s.src) - seededRand(String(seedText)+b.s.src)))[0];
+    .sort((a, b) =>
+      b.score - a.score ||
+      (seededRand(String(seedText) + a.s.src) - seededRand(String(seedText) + b.s.src))
+    )[0];
 }
 
 // ---- ПРАВИЛА
