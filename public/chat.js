@@ -239,6 +239,155 @@ async function ensureStickersReady(){
   }
 }
 
+/* === Stickers: keyword map (RU/EN) + helpers === */
+const KEYWORDS_MAP = [
+  // 💖 флирт / любовь / нежность
+  { src:'/stickers/gentle_kiss.webp', utter:['чмок','нежно','ммм'], kw:[
+    'целую','поцелуй','поцеловать','поцелуи','kiss','kisses','😘','💋'
+  ]},
+  { src:'/stickers/kiss_gesture.webp', utter:['лови','*кис*'], kw:[
+    'поцелуйчик','чмок','поцелуйчик мне','kiss me','kiss you'
+  ]},
+  { src:'/stickers/inviting.webp', kw:[
+    'обними','обнял','обнимаш','обнимемся','обниму','обнимки','объятья','объятия','обнимашки','embrace','hug','hugs','🤗'
+  ]},
+  { src:'/stickers/flirty.webp', kw:[
+    'флирт','ты милая','ты красив','нравишься','ты нравишься','люблю тебя','i love you','love u','luv u','😍','❤️'
+  ]},
+
+  // 🙂 радость / тепло / одобрение
+  { src:'/stickers/joy.webp', kw:[
+    'ура','класс','супер','отлично','кайф','рад','рада','счаст','огонь','топ','🥳','🎉','😁','😄'
+  ]},
+  { src:'/stickers/warm_smile.webp', kw:[
+    'доброе утро','утро доброе','добрый ден','хорошего дня','спокойной ночи','доброй ночи','милота','тёпло','уютно'
+  ]},
+  { src:'/stickers/admiration.webp', kw:[
+    'восхищаюсь','восхитительно','великолепно','шикарно','горжусь',"you're amazing",'impressive','wow','вау','🤩'
+  ]},
+  { src:'/stickers/agreement.webp', kw:[
+    'согласен','согласна','ок','окей','ага','давай','так и сделаем','sounds good','deal','👍','👌'
+  ]},
+  { src:'/stickers/engaged.webp', kw:[
+    'круто','нравится','мне нравится','кайфово','интересно','в тему','поддерживаю','гоу'
+  ]},
+  { src:'/stickers/interested_smile.webp', kw:[
+    'интересно','любопытно','кайфово','прикольно','хм любопытно','интересненько'
+  ]},
+
+  // ❓ вопросы / любопытство
+  { src:'/stickers/questioning.webp', kw:[
+    'почему','зачем','как','когда','что это','где','чего','какой','который','?','расскажи','объясни'
+  ]},
+  { src:'/stickers/curiosity.webp', kw:[
+    'интересно','любопытно','расскажи больше','more?','хочу знать','хочу подробности'
+  ]},
+  { src:'/stickers/curious.webp', kw:[
+    'а что если','представь','а вдруг','интригует','загадка'
+  ]},
+
+  // 😔 грусть / сожаление / эмпатия
+  { src:'/stickers/disappointment.webp', kw:[
+    'груст','печаль','жаль','обидно','разочар','не вышло','не получилось','эх','эхх'
+  ]},
+  { src:'/stickers/regret_1.webp', kw:[
+    'прости','извини','сорри','виноват','виновата','сожалею','мне жаль'
+  ]},
+  { src:'/stickers/regret_2.webp', kw:[
+    'виноват был','виновата была','не следовало','не надо было','my bad'
+  ]},
+
+  // 😠 раздражение / злость / фрустрация
+  { src:'/stickers/annoyance.webp', kw:[
+    'раздражает','раздражён','раздражена','бесит','достало','достал','задолбало','капец'
+  ]},
+  { src:'/stickers/frustrated.webp', kw:[
+    'злюсь','зла','злой','ярость','злость','злюка','горю'
+  ]},
+
+  // 😴 усталость
+  { src:'/stickers/fatigue.webp', kw:[
+    'устал','устала','выгорел','выгорела','измотан','измотана','сонный','хочу спать','засыпаю','zzz','🥱'
+  ]},
+
+  // 😳 робость / смущение
+  { src:'/stickers/shy.webp', kw:[
+    'стыдно','неловко','смущён','смущена','смущаюсь','скромничаю','ой','ойй','😳'
+  ]},
+  { src:'/stickers/shy_pride.webp', kw:[
+    'немного стесняюсь','немного неловко','смущен но рад','смущена но рада'
+  ]},
+  { src:'/stickers/soft_shy_smile.webp', kw:[
+    'миленько','милашно','мило','aw','aww','🥺'
+  ]},
+
+  // 🤔 размышления / мечтательность
+  { src:'/stickers/thoughtful.webp', kw:[
+    'думаю','задумался','задумалась','надо подумать','подумать бы','обдумаю','под вопросом','сомневаюсь','сомнения'
+  ]},
+  { src:'/stickers/pensive.webp', kw:[
+    'погрустил','погрустила','задумчиво','в раздумьях','мысли'
+  ]},
+  { src:'/stickers/dreamy.webp', kw:[
+    'мечтаю','мечты','мечтательно','ах','эх если бы','если бы'
+  ]},
+  { src:'/stickers/dreamy_smile.webp', kw:[
+    'ммм','мм','мечтушно','хех','улыбнуло'
+  ]},
+
+  // 🤗 поддержка / надежда
+  { src:'/stickers/embrace.webp', kw:[
+    'поддержи','поддержка','нужна поддержка','мне плохо','плохо мне','очень тяжело','тяжело'
+  ]},
+  { src:'/stickers/hopeful.webp', kw:[
+    'надеюсь','есть надежда','всё получится','получится','справлюсь','держусь'
+  ]},
+
+  // 😲 удивление / интерес
+  { src:'/stickers/surprise_interest.webp', kw:[
+    'ого','ничего себе','вот это да','неожиданно','серьёзно','реально','правда?','shock','omg','😮'
+  ]},
+
+  // 🙂 нейтральное / базовое
+  { src:'/stickers/smile.webp', kw:[
+    'спасибо','благодарю','благодарен','благодарна','thanks','ty','🙏','🙂'
+  ]},
+  { src:'/stickers/neutral.webp', kw:[
+    'ладно','понял','поняла','ясно','ясненько','ну ок','ну ладно'
+  ]},
+];
+
+const KEYWORDS_RE = (() => {
+  const words = KEYWORDS_MAP.flatMap(x => x.kw);
+  // Экраним спецсимволы и собираем один общий паттерн
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b(?:${words.map(esc).join('|')})\\b`, 'iu');
+})();
+
+function pickByKeywords(text) {
+  const t = (text || '').toLowerCase();
+  // Находим все подходящие кандидаты и выбираем самый «специфичный» (максимум совпадений)
+  let best = null;
+  for (const item of KEYWORDS_MAP) {
+    let hits = 0;
+    for (const kw of item.kw) {
+      if (t.includes(kw.toLowerCase())) hits++;
+    }
+    if (hits > 0) {
+      const score = hits / Math.min(4, item.kw.length); // лёгкая насыщаемость
+      if (!best || score > best.score) best = { ...item, score };
+    }
+  }
+  return best ? { src: best.src, utter: (best.utter && best.utter[Math.floor(Math.random()*best.utter.length)]) || null } : null;
+}
+
+function pickByTimeOfDay(pool){
+  if      (pool === 'morning') return '/stickers/warm_smile.webp';
+  else if (pool === 'evening') return '/stickers/tender_smile.webp';
+  else if (pool === 'night')   return '/stickers/thoughtful.webp';
+  return '/stickers/soft_smile.webp';
+}
+
 /* utils */
 const nowLocal=()=>new Date();
 const fmtDateKey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -703,39 +852,50 @@ function externalStickerGate(userText, replyText){
   return true;
 }
 
-/* === stickers v3: единый хелпер — решает и рисует === */
-async function maybeSticker(userText, replyText, poolOverride=null){
+/* === stickers v3: единый хелпер — решает и рисует (v3 + keywords + time fallback) === */
+async function maybeSticker(userText, replyText, poolOverride = null){
   if (stickerBusy) return;
   stickerBusy = true;
+
   try{
     await ensureStickersReady();
 
-    // режим off / safe / prob / always
+    // внешний гейт (off/always/safe/keywords-hit в режиме keywords)
     if (!externalStickerGate(userText, replyText)) return;
 
-    // v3 доступен?
+    const mode = lsStickerMode(); // 'smart' | 'keywords' | 'off' | 'always'
+    const textPool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
+    const pool = poolOverride || (
+      currentEnv?.partOfDay === 'утро'   ? 'morning' :
+      currentEnv?.partOfDay === 'день'   ? 'day'     :
+      currentEnv?.partOfDay === 'вечер'  ? 'evening' : 'night'
+    );
+
+    // --- 1) Жёсткий режим "keywords": сразу по словарю
+    if (mode === 'keywords'){
+      const hit = pickByKeywords(textPool);
+      if (!hit){ dbg('stickers keywords: MISS'); return; }
+      addStickerBubble(hit.src, 'assistant', hit.utter || null);
+      try { stickersLib?.markStickerSent({ src: hit.src }); } catch {}
+      chainStickerCount = 0;
+      dbg('stickers keywords: shown '+hit.src);
+      return;
+    }
+
+    // --- 2) Умный/Всегда: пробуем v3
     if (stickersLib && STICKERS_CFG){
-      let tod = null;
-      if (poolOverride) {
-        tod = poolOverride;
-      } else if (currentEnv?.partOfDay) {
-        tod = (currentEnv.partOfDay === 'утро') ? 'morning'
-          : (currentEnv.partOfDay === 'день') ? 'day'
-          : (currentEnv.partOfDay === 'вечер') ? 'evening'
-          : 'night';
-      }
+      let tod = pool;
 
       const historyInfo = computeStickerHistoryStats();
       const signals = stickersLib.buildSignals({
-        userText: (userText || '') + ' ' + (replyText || ''),
-        timeOfDay: tod || undefined,
+        userText: textPool,
+        timeOfDay: tod,
         history: historyInfo,
         user_state: []
       });
 
-      /* 🧩 seed для детерминизма */
-      const dayKey = new Date().toISOString().slice(0,10);
-      const seedText = `${(userText||'').trim().toLowerCase()}|${(replyText||'').trim().toLowerCase()}|${tod||''}|${dayKey}`;
+      const dayKey   = new Date().toISOString().slice(0,10);
+      const seedText = `${textPool}|${tod}|${dayKey}`;
 
       const decision = stickersLib.decideSticker(
         STICKERS_CFG,
@@ -743,60 +903,39 @@ async function maybeSticker(userText, replyText, poolOverride=null){
         { attachUtterance: true, addDelay: true, seedText }
       );
 
-      if (!decision?.sticker){ dbg('stickers v3 no-decision'); return; }
+      if (decision?.sticker){
+        if (decision.delayMs > 0) await new Promise(r => setTimeout(r, decision.delayMs));
+        addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
+        stickersLib.markStickerSent(decision.sticker);
+        chainStickerCount = 0;
+        dbg('stickers v3: shown ' + decision.sticker.src);
+        return;
+      }
+      dbg('stickers v3 no-decision');
+    }
 
-      if (decision.delayMs > 0) await new Promise(r => setTimeout(r, decision.delayMs));
-
-      addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
-      stickersLib.markStickerSent(decision.sticker);
+    // --- 3) Фоллбек: сначала пробуем keywords, затем — по времени суток
+    const hit = pickByKeywords(textPool);
+    if (hit) {
+      addStickerBubble(hit.src, 'assistant', hit.utter || null);
+      try { stickersLib?.markStickerSent({ src: hit.src }); } catch {}
       chainStickerCount = 0;
+      dbg('stickers fallback keywords: shown '+hit.src);
       return;
     }
 
-    // ---- Fallback (расширенный словарь по ключам) ----
-    const pool = poolOverride || (currentEnv?.partOfDay === 'утро' ? 'morning'
-      : currentEnv?.partOfDay === 'день' ? 'day'
-      : currentEnv?.partOfDay === 'вечер' ? 'evening' : 'night');
-
-    const textPool = (userText?userText+' ':'') + (replyText||'');
-    let pickSrc = null;
-
-    // Расширенный словарь
-    const MAP = [
-      { re: /(обним|обнять|hug|прижм)/i, src: '/stickers/hug.webp' },
-      { re: /(поцел|kiss|чмок|💋)/i, src: '/stickers/kiss_gesture.webp' },
-      { re: /(скуч|miss you|жду тебя|тоскую)/i, src: '/stickers/sad.webp' },
-      { re: /(люблю|нравишься|like you|❤|💖)/i, src: '/stickers/romantic.webp' },
-      { re: /(смешн|лол|ахах|😂|😁)/i, src: '/stickers/playful.webp' },
-      { re: /(споко|тихо|calm|уют|chill)/i, src: '/stickers/calm.webp' },
-      { re: /(зл[ао]|сердит|angry|rage)/i, src: '/stickers/angry.webp' },
-      { re: /(смущ|стесня|shy|bashful|😳)/i, src: '/stickers/bashful.webp' },
-      { re: /(дум|размышл|интересн|curious|🤔)/i, src: '/stickers/curious.webp' },
-      { re: /(романт|романтик|romantic|💕)/i, src: '/stickers/romantic.webp' },
-      { re: /(шутк|подкол|игрив|play|😏)/i, src: '/stickers/playful.webp' },
-      { re: /(тепл|нежн|заботл|ласк|tender)/i, src: '/stickers/tender.webp' },
-      { re: /(наде|hope|верю)/i, src: '/stickers/hopeful.webp' },
-      { re: /(серй|важн|дело)/i, src: '/stickers/serious.webp' }
-    ];
-
-    for (const {re, src} of MAP){
-      if (re.test(textPool)){ pickSrc = src; break; }
+    if (mode === 'always'){ // гарантированно показать «мягкий» стикер
+      const src = pickByTimeOfDay(pool);
+      addStickerBubble(src, 'assistant', null);
+      try { stickersLib?.markStickerSent({ src }); } catch {}
+      chainStickerCount = 0;
+      dbg('stickers always: shown '+src);
+      return;
     }
 
-    // fallback по времени суток
-    if (!pickSrc){
-      if (pool==='morning') pickSrc='/stickers/warm_smile.webp';
-      else if (pool==='evening') pickSrc='/stickers/tender_smile.webp';
-      else if (pool==='night') pickSrc='/stickers/thoughtful.webp';
-      else pickSrc='/stickers/soft_smile.webp';
-    }
-
-    addStickerBubble(pickSrc, 'assistant', null);
-    dbg('stickers fallback pick: '+pickSrc);
-    chainStickerCount = 0;
-
+    // иначе — тихо выходим
   } catch(e){
-    dbg('sticker decision error: '+(e?.message||e));
+    dbg('sticker decision error: ' + (e?.message || e));
   } finally {
     stickerBusy = false;
   }
