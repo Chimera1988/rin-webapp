@@ -174,7 +174,7 @@ function buildWeatherPhrase(env){
 
     return `${main} ${emo}${tail}`.trim();
   }
-  return ''; // если нет данных — пусть решит composeWeatherMood или fallback
+  return '';
 }
 
 /* === Debug helpers (в панели настроек) === */
@@ -188,7 +188,6 @@ function dbg(line){
     const div = document.createElement('div');
     div.innerText = `[${ts}] ${line}`;
     debugLogEl.appendChild(div);
-    // ограничим лог последними ~80 строками
     while (debugLogEl.childNodes.length > 80) debugLogEl.removeChild(debugLogEl.firstChild);
     debugLogEl.scrollTop = debugLogEl.scrollHeight;
   }catch{}
@@ -359,14 +358,12 @@ const KEYWORDS_MAP = [
 
 const KEYWORDS_RE = (() => {
   const words = KEYWORDS_MAP.flatMap(x => x.kw);
-  // Экраним спецсимволы и собираем один общий паттерн
   const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`\\b(?:${words.map(esc).join('|')})\\b`, 'iu');
 })();
 
 function pickByKeywords(text) {
   const t = (text || '').toLowerCase();
-  // Находим все подходящие кандидаты и выбираем самый «специфичный» (максимум совпадений)
   let best = null;
   for (const item of KEYWORDS_MAP) {
     let hits = 0;
@@ -374,7 +371,7 @@ function pickByKeywords(text) {
       if (t.includes(kw.toLowerCase())) hits++;
     }
     if (hits > 0) {
-      const score = hits / Math.min(4, item.kw.length); // лёгкая насыщаемость
+      const score = hits / Math.min(4, item.kw.length);
       if (!best || score > best.score) best = { ...item, score };
     }
   }
@@ -817,15 +814,7 @@ function computeStickerHistoryStats(){
   return { total, withStickers, messagesSinceSticker, recentStickerSrcs, todayCountBySrc };
 }
 
-/* === Ключевые слова для «keywords» режима (единый источник) === */
-const KEYWORDS_RE = /(обним|поцел|скуч|нрав|хочу тебя|рядом|люблю|неж|kiss)/i;
-
-function keywordsHit(userText, replyText){
-  const pool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
-  return KEYWORDS_RE.test(pool);
-}
-
-/* === Гейт стикеров поверх v3: учитываем твои настройки (mode/prob/safe) === */
+/* === Внешний гейт стикеров (mode/prob/safe) === */
 function externalStickerGate(userText, replyText){
   const mode = lsStickerMode();       // 'smart' | 'keywords' | 'off' | 'always'
   if (mode === 'off')    { dbg('stickers gate: off');    return false; }
@@ -833,19 +822,19 @@ function externalStickerGate(userText, replyText){
 
   // «safe»-фильтр (общий для smart/keywords)
   const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
-  if (lsStickerSafe() && userText && NEG.test(userText)) {
+  if (lsStickerSafe() && userText && NEG.test((userText||''))){
     dbg('stickers gate: safe blocked');
     return false;
   }
 
   if (mode === 'keywords') {
-    // В режиме "keywords" вероятность игнорируем: нужен именно ключевой триггер
-    const hit = keywordsHit(userText, replyText);
+    const textPool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
+    const hit = !!pickByKeywords(textPool);
     dbg('stickers gate: keywords mode ' + (hit ? 'HIT' : 'MISS'));
     return hit;
   }
 
-  // smart: оставляем вероятность 0..100% (как у тебя сейчас)
+  // smart: вероятность 0..100 %
   const baseProb = Math.max(0, Math.min(100, lsStickerProb())) / 100;
   if (Math.random() > baseProb) { dbg('stickers gate: blocked (prob)'); return false; }
 
