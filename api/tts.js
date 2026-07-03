@@ -1,6 +1,6 @@
 // /api/tts.js — озвучка коротких реплик Рин (ElevenLabs TTS, голос Rachel)
 const ELEVEN_KEY   = process.env.ELEVENLABS_API_KEY;
-const VOICE_ID_DEF = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // Rachel
+const VOICE_ID_DEF = process.env.ELEVENLABS_VOICE_ID || 'DIcmWR2oXfmLIlrj43rH'; // Rin
 const MODEL_ID_DEF = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
 
 export default async function handler(req, res) {
