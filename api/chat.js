@@ -48,29 +48,55 @@ const STYLE_HINT = `
 `.trim();
 
 // определяем «длинный» режим по последнему запросу пользователя
+
 function detectLongMode(userText) {
-    ...
-    return false;
+
+  if (!userText) return false;
+
+  const t = String(userText).toLowerCase();
+
+  const strong = /(легенд|истор|расскажи|подробно|предан|миф|сказан|почему так|объясни подробно)/i;
+
+  if (strong.test(t)) return true;
+
+  const info = /(подробнее|разверн|побольше|дай рассказ|интересно расскажи)/i;
+
+  if (info.test(t)) return true;
+
+  const creative = /(представь|вообрази|давай представим|история от лица)/i;
+
+  if (creative.test(t)) return true;
+
+  return false;
+
 }
 
 /* ============================= */
+
 /* СОСТОЯНИЕ ДИАЛОГА */
+
 /* ============================= */
 
 function detectConversationState(history = []) {
+
   const last = [...history].reverse().find(m => m.role === 'user');
+
   if (!last) return 'new';
 
   const text = String(last.content || '').toLowerCase();
 
   const goodbye =
+
     /(пока|до встречи|до завтра|спокойной ночи|доброй ночи|увидимся|до связи|бай|bye)/i;
 
   if (goodbye.test(text)) {
+
     return 'ending';
+
   }
 
   return 'ongoing';
+
 }
 
 // строим системный промпт из профиля + окружения
@@ -214,8 +240,13 @@ export default async function handler(req, res) {
     const env     = body?.env || null;
     const profile = body?.profile || {}; // ← берём профиль из клиента (панель «Персонаж»)
 
-    // системный промпт
-    const system = buildSystemPrompt(profile, env);
+    const conversationState = detectConversationState(history);
+
+const system = buildSystemPrompt(
+  profile,
+  env,
+  conversationState
+);
 
     // собираем сообщения
     const baseMsgs = [{ role: 'system', content: system }];
