@@ -981,198 +981,280 @@ async function tryInitiateBySchedule(){
   }, 900+Math.random()*900);
 }
 
-/* === Отправка (локальные ответы + запрос к модели) — stickers v3, время и погода === */
-formEl.addEventListener('submit', async (e)=>{
+/* === Отправка: время, погода и запрос к модели === */
+formEl.addEventListener('submit', async (e) => {
   e.preventDefault();
+
   const text = (inputEl.value || '').trim();
   if (!text) return;
 
-  addBubble(text,'user');
-  history.push({role:'user',content:text,ts:Date.now()});
-  saveHistory(history);
-  inputEl.value=''; inputEl.focus();
+  addBubble(text, 'user');
 
-  // увеличиваем счётчик сообщений до следующего стикера
+  history.push({
+    role: 'user',
+    content: text,
+    ts: Date.now()
+  });
+
+  saveHistory(history);
+
+  inputEl.value = '';
+  inputEl.focus();
+
+  // Увеличиваем счётчик сообщений до следующего стикера
   chainStickerCount++;
 
   const t = text.toLowerCase();
 
-  // A) smalltalk
-  const RE_SMALLTALK = /(как (дела|ты)|как день|как прош(е|ё)л день|что (делаешь|сейчас)|чем занята|чем занимаешься|ты где|как настроени|как самочувств)/i;
-  // B) время (Канадзава / Asia/Tokyo)
-  const RE_TIME = /(сколько\s+у\s+тебя\s+сейчас\s+времен(и|я)|сколько\s+у\s+тебя\s+времен(и|я)|который\s+час|время\s+у\s+тебя|что\s+у\s+тебя\s+по\s+времени)/i;
-  // C) погода
-  const RE_WEATHER = /(какая[^?]*погода|что там с погодой|на улице[^?]*(холодно|тепло|жарко|дождь|снег)|как[^?]*на улице)/i;
+  /*
+   * ВАЖНО:
+   * Локальный обработчик smalltalk полностью удалён.
+   *
+   * Фразы:
+   * — «Как дела?»
+   * — «Чем занимаешься?»
+   * — «Что сейчас происходит в твоём городе?»
+   * — «Как настроение?»
+   *
+   * теперь отправляются модели и не заменяются шаблонной
+   * фразой о времени, сезоне и погоде.
+   */
 
-  function composeTimeMood(env){
-    if (!env) return '';
-    const parts = [];
-    if (env.partOfDay && env.rinHuman){
-      parts.push(`${env.partOfDay} у меня (${env.rinHuman} по Канадзаве)`);
-    }
-    if (env.month && env.season){
-      parts.push(`${env.month}, ${env.season}`);
-    }
-    return parts.join('; ');
-  }
-  function composeWeatherMood(env){
+  // Вопросы именно о времени Рин
+  const RE_TIME =
+    /(сколько\s+у\s+тебя\s+сейчас\s+времен(и|я)|сколько\s+у\s+тебя\s+времен(и|я)|который\s+час|время\s+у\s+тебя|что\s+у\s+тебя\s+по\s+времени)/i;
+
+  // Вопросы именно о погоде
+  const RE_WEATHER =
+    /(какая[^?]*погода|что там с погодой|на улице[^?]*(холодно|тепло|жарко|дождь|снег)|как[^?]*на улице)/i;
+
+  function composeWeatherMood(env) {
     const w = env?.weather;
     if (!w) return '';
+
     const bits = [];
-    if (typeof w.temp === 'number') bits.push(`${w.temp}°C`);
-    if (w.desc) bits.push(w.desc);
-    return bits.length ? `Сейчас в Канадзаве ${bits.join(', ')}.` : '';
+
+    if (typeof w.temp === 'number') {
+      bits.push(`${w.temp}°C`);
+    }
+
+    if (w.desc) {
+      bits.push(w.desc);
+    }
+
+    return bits.length
+      ? `Сейчас в Канадзаве ${bits.join(', ')}.`
+      : '';
   }
-  function pickSmallTalkPhrase(){
-    const starters = Array.isArray(profile?.starters) ? profile.starters : [];
-    if (!starters.length) return '';
-    return starters[Math.floor(Math.random()*starters.length)];
-  }
-  function formatRinTime(env){
-    const d = env?.rinHuman ? new Date(env.rinHuman.replace(' ', 'T')+':00') : nowInTz(RIN_TZ);
-    const hh = String(d.getHours()).padStart(2,'0');
-    const mm = String(d.getMinutes()).padStart(2,'0');
+
+  function formatRinTime(env) {
+    let d;
+
+    if (env?.rinHuman) {
+      d = new Date(env.rinHuman.replace(' ', 'T') + ':00');
+    } else {
+      d = nowInTz(RIN_TZ);
+    }
+
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+
     return `${hh}:${mm} по Канадзаве`;
   }
 
-  // 1) smalltalk
-  if (RE_SMALLTALK.test(t)) {
-    const env = currentEnv || null;
-    const timeMood = composeTimeMood(env);
-    const weatherMood = (Math.random()<0.7) ? composeWeatherMood(env) : '';
-    const filler = pickSmallTalkPhrase();
+  async function renderAssistantReply(reply) {
+    let voiced = false;
 
-    const pieces = [];
-    if (timeMood) pieces.push(timeMood + '.');
-    if (weatherMood) pieces.push(weatherMood);
-    if (filler) pieces.push(filler);
+    if (shouldVoiceFor(reply)) {
+      const url = await getTTSUrl(reply);
 
-    const tail = Math.random()<0.5
-      ? 'Рада, что ты написал — с тобой момент теплее.'
-      : 'Рядом с тобой как-то спокойнее.';
-
-    const reply = [pieces.join(' '), tail].filter(Boolean).join(' ');
-
-    let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
+      if (url) {
+        addVoiceBubble(url, reply, 'assistant');
+        voiced = true;
+      }
     }
-    if (!voiced) addBubble(reply,'assistant');
+
+    if (!voiced) {
+      addBubble(reply, 'assistant');
+    }
 
     await maybeSticker(text, reply, null);
 
-    history.push({role:'assistant',content:reply,ts:Date.now()});
+    history.push({
+      role: 'assistant',
+      content: reply,
+      ts: Date.now()
+    });
+
     saveHistory(history);
     chainStickerCount++;
-    return;
   }
 
-  // 2) время в Канадзаве
+  // 1. Локальный ответ только на прямой вопрос о времени
   if (RE_TIME.test(t)) {
-    if (!currentEnv) { try { await refreshRinEnv(); } catch {} }
+    try {
+      await refreshRinEnv();
+    } catch (error) {
+      dbg(
+        'time env refresh failed: ' +
+        (error?.message || error)
+      );
+    }
+
     const env = currentEnv || null;
     const timeStr = formatRinTime(env);
-    const pod = env?.partOfDay ? env.partOfDay : partOfDayFromHour(nowInTz(RIN_TZ).getHours());
-    const tail = pod==='утро' ? 'У меня ещё утро — люблю это спокойствие.' :
-                 pod==='день' ? 'У меня день — в хорошем темпе, но без спешки.' :
-                 pod==='вечер' ? 'У меня вечер — тянет к чаю и тишине.' :
-                 'У меня глубокая ночь — город почти не дышит.';
+
+    const rinHour = nowInTz(RIN_TZ).getHours();
+
+    const pod =
+      env?.partOfDay ||
+      partOfDayFromHour(rinHour);
+
+    const tail =
+      pod === 'утро'
+        ? 'У меня ещё утро — люблю это спокойствие.'
+        : pod === 'день'
+          ? 'У меня день — в хорошем темпе, но без спешки.'
+          : pod === 'вечер'
+            ? 'У меня вечер — тянет к чаю и тишине.'
+            : 'У меня глубокая ночь — город почти не дышит.';
+
     const reply = `У меня сейчас ${timeStr}. ${tail}`;
 
-    let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
-    }
-    if (!voiced) addBubble(reply,'assistant');
-
-    await maybeSticker(text, reply, null);
-
-    history.push({role:'assistant',content:reply,ts:Date.now()});
-    saveHistory(history);
-    chainStickerCount++;
+    await renderAssistantReply(reply);
     return;
   }
 
-  // 3) погода
+  // 2. Локальный ответ только на прямой вопрос о погоде
   if (RE_WEATHER.test(t)) {
-    if (!currentEnv) { try { await refreshRinEnv(); } catch {} }
-    const env = currentEnv || null;
-    const head = 'Смотрю в окно и на термометр…';
-    const weatherPhrase = buildWeatherPhrase(env) || composeWeatherMood(env) || 'Пока без сюрпризов: спокойно.';
-    const reply = [head, weatherPhrase].filter(Boolean).join(' ');
-
-    let voiced=false;
-    if (shouldVoiceFor(reply)){
-      const url=await getTTSUrl(reply);
-      if (url){ addVoiceBubble(url, reply, 'assistant'); voiced=true; }
+    try {
+      await refreshRinEnv();
+    } catch (error) {
+      dbg(
+        'weather env refresh failed: ' +
+        (error?.message || error)
+      );
     }
-    if (!voiced) addBubble(reply,'assistant');
 
-    await maybeSticker(text, reply, null);
+    const env = currentEnv || null;
 
-    history.push({role:'assistant',content:reply,ts:Date.now()});
-    saveHistory(history);
-    chainStickerCount++;
+    const head = 'Смотрю в окно и на погоду…';
+
+    const weatherPhrase =
+      buildWeatherPhrase(env) ||
+      composeWeatherMood(env) ||
+      'Пока не получилось узнать точную погоду.';
+
+    const reply = `${head} ${weatherPhrase}`.trim();
+
+    await renderAssistantReply(reply);
     return;
   }
 
-  // 4) обычный путь → к модели (env+профиль передаются на сервер)
-  peerStatus.textContent='печатает…';
-  const typingRow=addTyping();
+  // 3. Все остальные сообщения отправляются модели
+  peerStatus.textContent = 'печатает…';
 
-  try{
-    const res=await fetch('/api/chat',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
+  const typingRow = addTyping();
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+
+      headers: {
+        'Content-Type': 'application/json'
+      },
+
+      body: JSON.stringify({
         history,
+
         pin: localStorage.getItem('rin-pin'),
+
         env: currentEnv || undefined,
+
         profile: profile || undefined,
+
         client: {
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+          tz:
+            Intl.DateTimeFormat()
+              .resolvedOptions()
+              .timeZone || null,
+
           sentAt: Date.now()
         }
       })
     });
-    const data=await res.json();
+
+    let data;
+
+    try {
+      data = await res.json();
+    } catch {
+      data = {};
+    }
+
     typingRow.remove();
 
     if (res.status === 401) {
-      try { localStorage.removeItem('rin-pin'); } catch {}
+      try {
+        localStorage.removeItem('rin-pin');
+      } catch {}
+
       window.location.href = '/login';
       return;
     }
 
-    if (!res.ok) throw new Error(data?.detail || data?.error || ('HTTP '+res.status));
-
-    if (data.long){
-      const prev=peerStatus.textContent; peerStatus.textContent='📖 рассказывает…';
-      setTimeout(()=>{ peerStatus.textContent=prev||'онлайн'; }, 2500);
-    } else peerStatus.textContent='онлайн';
-
-    let voiced=false;
-    if (shouldVoiceFor(data.reply)){
-      const url=await getTTSUrl(data.reply);
-      if (url){ addVoiceBubble(url, data.reply, 'assistant'); voiced=true; }
-    }
-    if (!voiced){
-      addBubble(data.reply,'assistant');
+    if (!res.ok) {
+      throw new Error(
+        data?.detail ||
+        data?.error ||
+        `HTTP ${res.status}`
+      );
     }
 
-    await maybeSticker(text, data.reply, null);
+    const reply =
+      typeof data?.reply === 'string'
+        ? data.reply.trim()
+        : '';
 
-    history.push({role:'assistant',content:data.reply,ts:Date.now()});
-    saveHistory(history);
-    chainStickerCount++;
+    if (!reply) {
+      throw new Error('Сервер вернул пустой ответ');
+    }
+
+    if (data.long) {
+      const previousStatus = peerStatus.textContent;
+
+      peerStatus.textContent = '📖 рассказывает…';
+
+      setTimeout(() => {
+        peerStatus.textContent =
+          previousStatus || 'онлайн';
+      }, 2500);
+    } else {
+      peerStatus.textContent = 'онлайн';
+    }
+
+    await renderAssistantReply(reply);
   } catch (err) {
-    typingRow.remove(); 
+    if (typingRow?.isConnected) {
+      typingRow.remove();
+    }
+
     peerStatus.textContent = 'онлайн';
-    const msg = (err && typeof err.message === 'string') 
-      ? err.message 
-      : (typeof err === 'string' ? err : JSON.stringify(err));
-    addBubble('Ой… связь шалит. ' + (msg || 'Попробуем ещё раз?'), 'assistant');
+
+    const message =
+      err && typeof err.message === 'string'
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : 'Неизвестная ошибка';
+
+    dbg(`chat request failed: ${message}`);
+
+    addBubble(
+      'Ой… связь шалит. ' +
+      (message || 'Попробуем ещё раз?'),
+      'assistant'
+    );
   }
 });
 
