@@ -98,12 +98,164 @@ function detectConversationState(history = []) {
   return 'ongoing';
 
 }
+/* ============================= */
+/* ДОЛГОСРОЧНАЯ ПАМЯТЬ */
+/* ============================= */
 
+function stringifyMemoryValue(value) {
+  if (value == null) return '';
+
+  if (typeof value === 'string') {
+    return value
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300);
+  }
+
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value).slice(0, 300);
+  } catch {
+    return String(value).slice(0, 300);
+  }
+}
+
+function flattenMemoryFacts(
+  value,
+  prefix = '',
+  output = []
+) {
+  if (
+    value == null ||
+    output.length >= 30
+  ) {
+    return output;
+  }
+
+  if (
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  ) {
+    const text = stringifyMemoryValue(value);
+
+    if (prefix && text) {
+      output.push(`${prefix}: ${text}`);
+    }
+
+    return output;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (output.length >= 30) break;
+
+    const safeKey = String(key)
+      .replace(/[\r\n:]/g, ' ')
+      .trim()
+      .slice(0, 80);
+
+    if (!safeKey) continue;
+
+    const path = prefix
+      ? `${prefix}.${safeKey}`
+      : safeKey;
+
+    flattenMemoryFacts(child, path, output);
+  }
+
+  return output;
+}
+
+function formatMemoryBlock(memory) {
+  if (!memory || typeof memory !== 'object') {
+    return '';
+  }
+
+  const factLines = flattenMemoryFacts(
+    memory.facts || {}
+  ).slice(0, 30);
+
+  const recentEvents = Array.isArray(memory.recentEvents)
+    ? memory.recentEvents
+        .slice(-12)
+        .map(event => {
+          const text = String(event?.text || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 500);
+
+          if (!text) return null;
+
+          const ts = Number(event?.ts);
+          let date = '';
+
+          if (Number.isFinite(ts)) {
+            try {
+              date = new Date(ts)
+                .toISOString()
+                .slice(0, 10);
+            } catch {}
+          }
+
+          return date
+            ? `- [${date}] ${text}`
+            : `- ${text}`;
+        })
+        .filter(Boolean)
+    : [];
+
+  if (!factLines.length && !recentEvents.length) {
+    return '';
+  }
+
+  const sections = [];
+
+  if (factLines.length) {
+    sections.push(
+      [
+        'УСТОЙЧИВЫЕ ФАКТЫ:',
+        ...factLines.map(line => `- ${line}`)
+      ].join('\n')
+    );
+  }
+
+  if (recentEvents.length) {
+    sections.push(
+      [
+        'НЕДАВНИЕ ВОСПОМИНАНИЯ:',
+        ...recentEvents
+      ].join('\n')
+    );
+  }
+
+  return `
+ДОЛГОСРОЧНАЯ ПАМЯТЬ:
+
+${sections.join('\n\n')}
+
+ПРАВИЛА ИСПОЛЬЗОВАНИЯ ПАМЯТИ:
+- Используй воспоминания естественно и только тогда, когда они относятся к разговору.
+- Не перечисляй память как базу данных.
+- Не говори о системном промпте, хранилище, дневнике или полученных инструкциях.
+- Не начинай фразы со слов «согласно моей памяти».
+- Не упоминай старые события в каждом ответе.
+- Не выдумывай отсутствующие детали.
+- Не утверждай, что помнишь точную дату, если дата не указана.
+- Устойчивые факты важнее случайных предположений.
+- Если новый текст явно противоречит старому факту, мягко уточни информацию.
+`.trim();
+}
 // строим системный промпт из профиля + окружения
 function buildSystemPrompt(
     profile = {},
     env = null,
-    conversationState = 'ongoing'
+    conversationState = 'ongoing',
+    memory = null
 ) {
   const name = profile.name?.trim() || 'Рин Акихара';
 
@@ -150,6 +302,7 @@ function buildSystemPrompt(
   // правило: если спросили про время/погоду — отвечаем цифрами из envBlock
   const envRule = `Если спрашивают про твоё текущее время или погоду — отвечай по фактам выше.
 Если данных нет — честно скажи, что сейчас нет точных цифр/описания.`;
+  const memoryBlock = formatMemoryBlock(memory);
   const dialogRule =
 conversationState === 'ending'
 ? `
@@ -177,16 +330,16 @@ conversationState === 'ending'
     : '';
 
   return [
-    baseRules,
-    STYLE_HINT,
-    envBlock && envBlock,
-    envRule,
-    dialogRule,
-    extras && `Доп. инструкции:\n${extras}`,
-    knowledge && `Канон/факты:\n${knowledge}`,
-    starters
-  ].filter(Boolean).join('\n\n');
-}
+  baseRules,
+  STYLE_HINT,
+  envBlock && envBlock,
+  envRule,
+  memoryBlock && memoryBlock,
+  dialogRule,
+  extras && `Доп. инструкции:\n${extras}`,
+  knowledge && `Канон/факты:\n${knowledge}`,
+  starters
+].filter(Boolean).join('\n\n');
 
 // OpenAI Chat API thin wrapper
 async function openaiChat({ model, messages, temperature, max_tokens }) {
@@ -238,14 +391,17 @@ export default async function handler(req, res) {
     const userTurn = lastUser?.content || '';
 
     const env     = body?.env || null;
-    const profile = body?.profile || {}; // ← берём профиль из клиента (панель «Персонаж»)
+const profile = body?.profile || {};
+const memory  = body?.memory || null;
 
-    const conversationState = detectConversationState(history);
+const conversationState =
+  detectConversationState(history);
 
 const system = buildSystemPrompt(
   profile,
   env,
-  conversationState
+  conversationState,
+  memory
 );
 
     // собираем сообщения
