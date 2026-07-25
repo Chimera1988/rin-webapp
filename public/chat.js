@@ -211,6 +211,88 @@ const resetApp      = document.getElementById('resetApp');
 let profile = null;         // новый профиль из persona_ui / rin_memory
 let history=[];
 let chainStickerCount=0;
+/* === Долгосрочная память Рин === */
+
+let memoryLib = null;
+
+/**
+ * Загружает библиотеку памяти только при первом обращении.
+ * chat.js остаётся обычным скриптом — переводить весь файл в module не нужно.
+ */
+async function ensureMemoryReady() {
+  if (memoryLib) return memoryLib;
+
+  try {
+    memoryLib = await import('/js/rin_memory.js');
+    dbg('memory module loaded');
+    return memoryLib;
+  } catch (error) {
+    dbg(
+      'memory module load failed: ' +
+      (error?.message || error)
+    );
+
+    return null;
+  }
+}
+
+/**
+ * Формирует компактный пакет памяти для модели.
+ * Весь дневник не отправляем, чтобы не раздувать запрос.
+ */
+async function buildMemoryPayload() {
+  try {
+    const lib = await ensureMemoryReady();
+
+    if (!lib?.loadDiary) {
+      return null;
+    }
+
+    const diary = await lib.loadDiary();
+
+    if (!diary || typeof diary !== 'object') {
+      return null;
+    }
+
+    const recentEvents = Array.isArray(diary.events)
+      ? diary.events
+          .slice(-12)
+          .map(event => ({
+            ts: Number(event?.ts) || null,
+            type: String(event?.type || 'note').slice(0, 30),
+            text: String(event?.text || '').trim().slice(0, 500),
+            tags: Array.isArray(event?.tags)
+              ? event.tags.slice(0, 8).map(tag =>
+                  String(tag).slice(0, 40)
+                )
+              : []
+          }))
+          .filter(event => event.text)
+      : [];
+
+    return {
+      facts:
+        diary.facts &&
+        typeof diary.facts === 'object'
+          ? diary.facts
+          : {
+              self: {},
+              user: {},
+              world: {}
+            },
+
+      recentEvents
+    };
+  } catch (error) {
+    dbg(
+      'memory payload failed: ' +
+      (error?.message || error)
+    );
+
+    // Ошибка памяти не должна ломать сам чат.
+    return null;
+  }
+}
 /* 🔒 защита от гонок показа стикеров */
 let stickerBusy = false;
 
@@ -1157,7 +1239,9 @@ formEl.addEventListener('submit', async (e) => {
   const typingRow = addTyping();
 
   try {
-    const res = await fetch('/api/chat', {
+  const memory = await buildMemoryPayload();
+
+  const res = await fetch('/api/chat', {
       method: 'POST',
 
       headers: {
@@ -1172,6 +1256,8 @@ formEl.addEventListener('submit', async (e) => {
         env: currentEnv || undefined,
 
         profile: profile || undefined,
+
+        memory: memory || undefined,
 
         client: {
           tz:
