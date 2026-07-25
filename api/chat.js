@@ -340,7 +340,7 @@ conversationState === 'ending'
   knowledge && `Канон/факты:\n${knowledge}`,
   starters
 ].filter(Boolean).join('\n\n');
-
+}
 // OpenAI Chat API thin wrapper
 async function openaiChat({ model, messages, temperature, max_tokens }) {
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
