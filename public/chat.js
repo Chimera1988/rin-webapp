@@ -273,18 +273,46 @@ async function buildMemoryPayload() {
       : [];
 
     return {
-      facts:
-        diary.facts &&
-        typeof diary.facts === 'object'
-          ? diary.facts
-          : {
-              self: {},
-              user: {},
-              world: {}
-            },
+  facts:
+    diary.facts &&
+    typeof diary.facts === 'object'
+      ? diary.facts
+      : {
+          self: {},
+          user: {},
+          world: {}
+        },
 
-      recentEvents
-    };
+  recentEvents,
+
+  mood:
+    diary.mood &&
+    typeof diary.mood === 'object'
+      ? {
+          affection:
+            Number(diary.mood.affection) || 50,
+
+          energy:
+            Number(diary.mood.energy) || 50,
+
+          playfulness:
+            Number(diary.mood.playfulness) || 50,
+
+          trust:
+            Number(diary.mood.trust) || 50,
+
+          label:
+            String(
+              diary.mood.label || 'спокойная'
+            ).slice(0, 30),
+
+          lastInteractionAt:
+            Number(
+              diary.mood.lastInteractionAt
+            ) || null
+        }
+      : null
+};
   } catch (error) {
     dbg(
       'memory payload failed: ' +
@@ -421,6 +449,130 @@ async function analyzeConversationForMemory(
       'memory analysis failed: ' +
       (error?.message || error)
     );
+  }
+}
+
+/* ============================= */
+/* НАСТРОЕНИЕ РИН */
+/* ============================= */
+
+function analyzeUserMoodImpact(userText = '') {
+  const text = String(userText)
+    .toLowerCase()
+    .trim();
+
+  const delta = {
+    affection: 0,
+    energy: 0,
+    playfulness: 0,
+    trust: 0
+  };
+
+  if (!text) {
+    return delta;
+  }
+
+  const warm =
+    /(спасибо|благодарю|ты милая|ты хорошая|рад тебя видеть|соскучился|обнимаю|целую|люблю тебя|мне приятно с тобой|ты мне нравишься)/i;
+
+  const playful =
+    /(шучу|шутка|хаха|ахаха|😁|😏|😉|подкол|пофлиртуем|флирт)/i;
+
+  const trust =
+    /(хочу рассказать|никому не говорил|только тебе|поделюсь с тобой|мне важно твоё мнение|я доверяю тебе)/i;
+
+  const tired =
+    /(устал|вымотался|тяжёлый день|нет сил|выгорел|хочу спать|очень тяжело)/i;
+
+  const sad =
+    /(мне грустно|плохо на душе|расстроен|одиноко|обидно|печально|не получилось)/i;
+
+  const hostile =
+    /(заткнись|отстань|бесишь|глупая|тупая|ненавижу тебя|замолчи)/i;
+
+  const goodbye =
+    /(пока|до завтра|спокойной ночи|доброй ночи|до встречи|увидимся|бай|bye)/i;
+
+  if (warm.test(text)) {
+    delta.affection += 3;
+    delta.energy += 2;
+    delta.trust += 1;
+  }
+
+  if (playful.test(text)) {
+    delta.playfulness += 4;
+    delta.energy += 2;
+    delta.affection += 1;
+  }
+
+  if (trust.test(text)) {
+    delta.trust += 4;
+    delta.affection += 2;
+  }
+
+  if (tired.test(text)) {
+    delta.energy -= 3;
+    delta.affection += 1;
+    delta.playfulness -= 2;
+  }
+
+  if (sad.test(text)) {
+    delta.energy -= 3;
+    delta.affection += 2;
+    delta.playfulness -= 3;
+  }
+
+  if (hostile.test(text)) {
+    delta.affection -= 8;
+    delta.energy -= 5;
+    delta.playfulness -= 6;
+    delta.trust -= 5;
+  }
+
+  if (goodbye.test(text)) {
+    delta.energy -= 2;
+  }
+
+  return delta;
+}
+
+async function updateRinMoodFromMessage(userText) {
+  try {
+    const lib = await ensureMemoryReady();
+
+    if (
+      !lib?.updateMood ||
+      !lib?.applyMoodTimeDecay
+    ) {
+      return null;
+    }
+
+    await lib.applyMoodTimeDecay();
+
+    const delta =
+      analyzeUserMoodImpact(userText);
+
+    const mood = await lib.updateMood({
+      ...delta,
+      lastInteractionAt: Date.now()
+    });
+
+    dbg(
+      `mood updated: ${mood.label}; ` +
+      `affection=${mood.affection}, ` +
+      `energy=${mood.energy}, ` +
+      `playfulness=${mood.playfulness}, ` +
+      `trust=${mood.trust}`
+    );
+
+    return mood;
+  } catch (error) {
+    dbg(
+      'mood update failed: ' +
+      (error?.message || error)
+    );
+
+    return null;
   }
 }
 
@@ -1373,6 +1525,8 @@ void analyzeConversationForMemory(text, reply);
   const typingRow = addTyping();
 
   try {
+  await updateRinMoodFromMessage(text);
+  
   const memory = await buildMemoryPayload();
 
   const res = await fetch('/api/chat', {
