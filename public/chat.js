@@ -253,6 +253,48 @@ async function buildMemoryPayload() {
     if (!diary || typeof diary !== 'object') {
       return null;
     }
+
+    const recentEvents = Array.isArray(diary.events)
+      ? diary.events
+          .slice(-12)
+          .map(event => ({
+            ts: Number(event?.ts) || null,
+            type: String(event?.type || 'note').slice(0, 30),
+            text: String(event?.text || '')
+              .trim()
+              .slice(0, 500),
+            tags: Array.isArray(event?.tags)
+              ? event.tags
+                  .slice(0, 8)
+                  .map(tag => String(tag).slice(0, 40))
+              : []
+          }))
+          .filter(event => event.text)
+      : [];
+
+    return {
+      facts:
+        diary.facts &&
+        typeof diary.facts === 'object'
+          ? diary.facts
+          : {
+              self: {},
+              user: {},
+              world: {}
+            },
+
+      recentEvents
+    };
+  } catch (error) {
+    dbg(
+      'memory payload failed: ' +
+      (error?.message || error)
+    );
+
+    return null;
+  }
+}
+
 /**
  * Сохраняет результат анализа памяти в локальный дневник.
  */
@@ -304,9 +346,9 @@ async function applyExtractedMemory(extracted) {
         continue;
       }
 
-      const importance = Number(event?.importance) || 5;
+      const importance =
+        Number(event?.importance) || 5;
 
-      // Малозначимые события не сохраняем.
       if (importance < 6) {
         continue;
       }
@@ -318,7 +360,9 @@ async function applyExtractedMemory(extracted) {
           : []
       });
 
-      dbg(`memory event saved: ${text.slice(0, 80)}`);
+      dbg(
+        `memory event saved: ${text.slice(0, 80)}`
+      );
     }
   } catch (error) {
     dbg(
@@ -327,55 +371,17 @@ async function applyExtractedMemory(extracted) {
     );
   }
 }
-    const recentEvents = Array.isArray(diary.events)
-      ? diary.events
-          .slice(-12)
-          .map(event => ({
-            ts: Number(event?.ts) || null,
-            type: String(event?.type || 'note').slice(0, 30),
-            text: String(event?.text || '').trim().slice(0, 500),
-            tags: Array.isArray(event?.tags)
-              ? event.tags.slice(0, 8).map(tag =>
-                  String(tag).slice(0, 40)
-                )
-              : []
-          }))
-          .filter(event => event.text)
-      : [];
 
-    return {
-      facts:
-        diary.facts &&
-        typeof diary.facts === 'object'
-          ? diary.facts
-          : {
-              self: {},
-              user: {},
-              world: {}
-            },
-
-      recentEvents
-    };
-  } catch (error) {
-    dbg(
-      'memory payload failed: ' +
-      (error?.message || error)
-    );
-
-    // Ошибка памяти не должна ломать сам чат.
-    return null;
-  }
-}
 /**
  * Отправляет последнюю пару сообщений на скрытый анализ памяти.
- * Не блокирует показ ответа Рин.
  */
 async function analyzeConversationForMemory(
   userText,
   assistantText
 ) {
   try {
-    const existingMemory = await buildMemoryPayload();
+    const existingMemory =
+      await buildMemoryPayload();
 
     const res = await fetch('/api/memory', {
       method: 'POST',
@@ -386,16 +392,15 @@ async function analyzeConversationForMemory(
 
       body: JSON.stringify({
         pin: localStorage.getItem('rin-pin'),
-
         userText,
         assistantText,
-
         existingMemory:
           existingMemory || undefined
       })
     });
 
     if (res.status === 401) {
+      dbg('memory API unauthorized');
       return;
     }
 
@@ -405,6 +410,10 @@ async function analyzeConversationForMemory(
     }
 
     const extracted = await res.json();
+
+    if (extracted?.warning) {
+      dbg(`memory API warning: ${extracted.warning}`);
+    }
 
     await applyExtractedMemory(extracted);
   } catch (error) {
