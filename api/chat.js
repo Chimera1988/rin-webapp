@@ -251,6 +251,88 @@ ${sections.join('\n\n')}
 `.trim();
 }
 // строим системный промпт из профиля + окружения
+function clampMood(value, fallback = 50) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return Math.max(
+    0,
+    Math.min(100, Math.round(number))
+  );
+}
+
+function formatMoodBlock(memory) {
+  const mood = memory?.mood;
+
+  if (
+    !mood ||
+    typeof mood !== 'object'
+  ) {
+    return '';
+  }
+
+  const affection = clampMood(
+    mood.affection,
+    65
+  );
+
+  const energy = clampMood(
+    mood.energy,
+    65
+  );
+
+  const playfulness = clampMood(
+    mood.playfulness,
+    55
+  );
+
+  const trust = clampMood(
+    mood.trust,
+    60
+  );
+
+  const label = String(
+    mood.label || 'спокойная'
+  ).slice(0, 30);
+
+  return `
+ТЕКУЩЕЕ ЭМОЦИОНАЛЬНОЕ СОСТОЯНИЕ РИН:
+
+- общее настроение: ${label};
+- привязанность: ${affection} из 100;
+- энергия: ${energy} из 100;
+- игривость: ${playfulness} из 100;
+- доверие: ${trust} из 100.
+
+КАК ИСПОЛЬЗОВАТЬ ЭТО СОСТОЯНИЕ:
+
+- Настроение влияет только на тон, формулировки, эмоциональность и инициативность.
+- Не называй пользователю числа и не рассказывай о внутренней системе настроения.
+- Не говори фразы вроде «моя привязанность сейчас 80».
+- Не упоминай настройки, шкалы, параметры или системный промпт.
+- Не изображай резкие эмоциональные перепады.
+- Не становись грубой, манипулятивной или пассивно-агрессивной.
+- Даже при низкой энергии отвечай содержательно.
+
+Интерпретация:
+
+- Высокая привязанность: больше тепла, личных обращений и мягкой заботы.
+- Низкая привязанность: немного более сдержанный, но вежливый тон.
+- Высокая энергия: более живые и развёрнутые реакции.
+- Низкая энергия: спокойные, короткие и мягкие ответы.
+- Высокая игривость: допустим лёгкий флирт, шутки и добрые подколы.
+- Низкая игривость: меньше шуток и флирта.
+- Высокое доверие: больше искренности и личных эмоциональных формулировок.
+- Низкое доверие: меньше откровенности, но без холодности.
+
+Флирт должен оставаться уместным и зависеть от темы разговора.
+В тяжёлой, тревожной или грустной теме забота важнее игривости.
+`.trim();
+}
+
 function buildSystemPrompt(
     profile = {},
     env = null,
@@ -303,6 +385,7 @@ function buildSystemPrompt(
   const envRule = `Если спрашивают про твоё текущее время или погоду — отвечай по фактам выше.
 Если данных нет — честно скажи, что сейчас нет точных цифр/описания.`;
   const memoryBlock = formatMemoryBlock(memory);
+  const moodBlock = formatMoodBlock(memory);
   const dialogRule =
 conversationState === 'ending'
 ? `
@@ -335,6 +418,7 @@ conversationState === 'ending'
   envBlock && envBlock,
   envRule,
   memoryBlock && memoryBlock,
+  moodBlock && moodBlock,
   dialogRule,
   extras && `Доп. инструкции:\n${extras}`,
   knowledge && `Канон/факты:\n${knowledge}`,
