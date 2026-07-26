@@ -392,7 +392,54 @@ async function applyExtractedMemory(extracted) {
         `memory event saved: ${text.slice(0, 80)}`
       );
     }
-  } catch (error) {
+ const moodDelta = extracted?.moodDelta;
+const moodConfidence = Number(
+  moodDelta?.confidence
+);
+
+if (
+  moodDelta &&
+  typeof moodDelta === 'object' &&
+  Number.isFinite(moodConfidence) &&
+  moodConfidence >= 0.55 &&
+  lib?.updateMood
+) {
+  if (lib?.applyMoodTimeDecay) {
+    await lib.applyMoodTimeDecay();
+  }
+
+  const mood = await lib.updateMood({
+    affection:
+      Number(moodDelta.affection) || 0,
+
+    energy:
+      Number(moodDelta.energy) || 0,
+
+    playfulness:
+      Number(moodDelta.playfulness) || 0,
+
+    trust:
+      Number(moodDelta.trust) || 0,
+
+    lastInteractionAt: Date.now()
+  });
+
+  if (mood) {
+  dbg(
+    `AI mood updated: ${mood.label}; ` +
+    `affection=${mood.affection}, ` +
+    `energy=${mood.energy}, ` +
+    `playfulness=${mood.playfulness}, ` +
+    `trust=${mood.trust}; ` +
+    `reason=${moodDelta.reason || 'нет причины'}`
+  );
+
+  return true;
+}
+
+  return false;
+
+} catch (error) {
     dbg(
       'apply extracted memory failed: ' +
       (error?.message || error)
@@ -429,12 +476,12 @@ async function analyzeConversationForMemory(
 
     if (res.status === 401) {
       dbg('memory API unauthorized');
-      return;
+      return false;
     }
 
     if (!res.ok) {
       dbg(`memory API failed: HTTP ${res.status}`);
-      return;
+      return false;
     }
 
     const extracted = await res.json();
@@ -443,12 +490,13 @@ async function analyzeConversationForMemory(
       dbg(`memory API warning: ${extracted.warning}`);
     }
 
-    await applyExtractedMemory(extracted);
+    return await applyExtractedMemory(extracted);
   } catch (error) {
     dbg(
       'memory analysis failed: ' +
       (error?.message || error)
     );
+    return false;
   }
 }
 
@@ -1455,7 +1503,15 @@ saveHistory(history);
 chainStickerCount++;
 
 // Фоновый анализ для долгосрочной памяти.
-void analyzeConversationForMemory(text, reply);
+const aiMoodApplied =
+  await analyzeConversationForMemory(
+    text,
+    reply
+  );
+
+if (!aiMoodApplied) {
+  await updateRinMoodFromMessage(text);
+}
   }
 
   // 1. Локальный ответ только на прямой вопрос о времени
@@ -1525,9 +1581,7 @@ void analyzeConversationForMemory(text, reply);
   const typingRow = addTyping();
 
   try {
-  await updateRinMoodFromMessage(text);
-  
-  const memory = await buildMemoryPayload();
+    const memory = await buildMemoryPayload();
 
   const res = await fetch('/api/chat', {
       method: 'POST',
