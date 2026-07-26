@@ -107,11 +107,34 @@ export async function saveProfile(profile) {
 
 =============================================================================== */
 
+function _defaultMood() {
+  return {
+    affection: 65,
+    energy: 65,
+    playfulness: 55,
+    trust: 60,
+
+    label: 'спокойная',
+
+    lastInteractionAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
 function _emptyDiary() {
   return {
-    facts: { self: {}, user: {}, world: {} },
+    facts: {
+      self: {},
+      user: {},
+      world: {}
+    },
+
     events: [],
+
     anchors: {},
+
+    mood: _defaultMood(),
+
     _updated_at: Date.now()
   };
 }
@@ -123,8 +146,22 @@ export async function loadDiary() {
     const obj = JSON.parse(raw);
     if (!obj.facts) obj.facts = { self: {}, user: {}, world: {} };
     if (!Array.isArray(obj.events)) obj.events = [];
-    if (!obj.anchors) obj.anchors = {};
-    return obj;
+    if (!obj.anchors) {
+  obj.anchors = {};
+}
+
+if (!obj.mood || typeof obj.mood !== 'object') {
+  obj.mood = _defaultMood();
+} else {
+  const defaults = _defaultMood();
+
+  obj.mood = {
+    ...defaults,
+    ...obj.mood
+  };
+}
+
+return obj;
   } catch {
     return _emptyDiary();
   }
@@ -161,6 +198,187 @@ export async function getRecentEvents(limit = 20, filterFn = null) {
     arr = arr.filter(filterFn);
   }
   return arr;
+}
+
+/* ---------------------------- mood ---------------------------- */
+
+function clampMoodValue(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return 50;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function determineMoodLabel(mood) {
+  const affection = clampMoodValue(mood?.affection);
+  const energy = clampMoodValue(mood?.energy);
+  const playfulness = clampMoodValue(mood?.playfulness);
+  const trust = clampMoodValue(mood?.trust);
+
+  if (
+    affection >= 78 &&
+    playfulness >= 72 &&
+    energy >= 55
+  ) {
+    return 'игривая';
+  }
+
+  if (
+    affection >= 80 &&
+    trust >= 75
+  ) {
+    return 'нежная';
+  }
+
+  if (energy <= 30) {
+    return 'уставшая';
+  }
+
+  if (
+    affection <= 35 &&
+    trust <= 40
+  ) {
+    return 'отстранённая';
+  }
+
+  if (energy <= 45) {
+    return 'задумчивая';
+  }
+
+  if (
+    affection >= 70 &&
+    energy >= 65
+  ) {
+    return 'радостная';
+  }
+
+  return 'спокойная';
+}
+
+export async function getMood() {
+  const diary = await loadDiary();
+
+  return {
+    ..._defaultMood(),
+    ...(diary.mood || {})
+  };
+}
+
+export async function saveMood(moodInput = {}) {
+  const diary = await loadDiary();
+  const current = diary.mood || _defaultMood();
+
+  const next = {
+    ...current,
+    ...moodInput,
+
+    affection: clampMoodValue(
+      moodInput.affection ?? current.affection
+    ),
+
+    energy: clampMoodValue(
+      moodInput.energy ?? current.energy
+    ),
+
+    playfulness: clampMoodValue(
+      moodInput.playfulness ?? current.playfulness
+    ),
+
+    trust: clampMoodValue(
+      moodInput.trust ?? current.trust
+    ),
+
+    updatedAt: Date.now()
+  };
+
+  next.label = determineMoodLabel(next);
+
+  diary.mood = next;
+
+  await saveDiary(diary);
+
+  return next;
+}
+
+export async function updateMood(delta = {}) {
+  const current = await getMood();
+
+  return saveMood({
+    affection:
+      current.affection +
+      (Number(delta.affection) || 0),
+
+    energy:
+      current.energy +
+      (Number(delta.energy) || 0),
+
+    playfulness:
+      current.playfulness +
+      (Number(delta.playfulness) || 0),
+
+    trust:
+      current.trust +
+      (Number(delta.trust) || 0),
+
+    lastInteractionAt:
+      delta.lastInteractionAt ??
+      current.lastInteractionAt
+  });
+}
+
+/**
+ * Учитывает время, прошедшее с последнего общения.
+ * Вызывается перед новым сообщением пользователя.
+ */
+export async function applyMoodTimeDecay() {
+  const current = await getMood();
+
+  const lastInteractionAt =
+    Number(current.lastInteractionAt) ||
+    Date.now();
+
+  const elapsedMs =
+    Date.now() - lastInteractionAt;
+
+  const elapsedHours =
+    elapsedMs / (60 * 60 * 1000);
+
+  let affectionDelta = 0;
+  let energyDelta = 0;
+  let playfulnessDelta = 0;
+
+  if (elapsedHours >= 24) {
+    energyDelta -= 4;
+  }
+
+  if (elapsedHours >= 72) {
+    affectionDelta += 2;
+    energyDelta -= 3;
+    playfulnessDelta -= 2;
+  }
+
+  if (elapsedHours >= 168) {
+    affectionDelta += 2;
+    energyDelta -= 4;
+    playfulnessDelta -= 2;
+  }
+
+  if (
+    affectionDelta === 0 &&
+    energyDelta === 0 &&
+    playfulnessDelta === 0
+  ) {
+    return current;
+  }
+
+  return updateMood({
+    affection: affectionDelta,
+    energy: energyDelta,
+    playfulness: playfulnessDelta
+  });
 }
 
 /* ---------------------------- helpers: facts ---------------------------- */
