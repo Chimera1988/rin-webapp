@@ -253,7 +253,80 @@ async function buildMemoryPayload() {
     if (!diary || typeof diary !== 'object') {
       return null;
     }
+/**
+ * Сохраняет результат анализа памяти в локальный дневник.
+ */
+async function applyExtractedMemory(extracted) {
+  try {
+    const lib = await ensureMemoryReady();
 
+    if (!lib) {
+      return;
+    }
+
+    const facts = Array.isArray(extracted?.facts)
+      ? extracted.facts
+      : [];
+
+    const events = Array.isArray(extracted?.events)
+      ? extracted.events
+      : [];
+
+    for (const fact of facts) {
+      const path = String(fact?.path || '').trim();
+      const value = String(fact?.value || '').trim();
+      const confidence = Number(fact?.confidence);
+
+      if (!path.startsWith('user.')) {
+        continue;
+      }
+
+      if (!value) {
+        continue;
+      }
+
+      if (
+        Number.isFinite(confidence) &&
+        confidence < 0.75
+      ) {
+        continue;
+      }
+
+      await lib.upsertFact(path, value);
+
+      dbg(`memory fact saved: ${path}`);
+    }
+
+    for (const event of events) {
+      const text = String(event?.text || '').trim();
+
+      if (!text) {
+        continue;
+      }
+
+      const importance = Number(event?.importance) || 5;
+
+      // Малозначимые события не сохраняем.
+      if (importance < 6) {
+        continue;
+      }
+
+      await lib.addEvent(text, {
+        type: String(event?.type || 'memory'),
+        tags: Array.isArray(event?.tags)
+          ? event.tags.slice(0, 8)
+          : []
+      });
+
+      dbg(`memory event saved: ${text.slice(0, 80)}`);
+    }
+  } catch (error) {
+    dbg(
+      'apply extracted memory failed: ' +
+      (error?.message || error)
+    );
+  }
+}
     const recentEvents = Array.isArray(diary.events)
       ? diary.events
           .slice(-12)
@@ -293,6 +366,55 @@ async function buildMemoryPayload() {
     return null;
   }
 }
+/**
+ * Отправляет последнюю пару сообщений на скрытый анализ памяти.
+ * Не блокирует показ ответа Рин.
+ */
+async function analyzeConversationForMemory(
+  userText,
+  assistantText
+) {
+  try {
+    const existingMemory = await buildMemoryPayload();
+
+    const res = await fetch('/api/memory', {
+      method: 'POST',
+
+      headers: {
+        'Content-Type': 'application/json'
+      },
+
+      body: JSON.stringify({
+        pin: localStorage.getItem('rin-pin'),
+
+        userText,
+        assistantText,
+
+        existingMemory:
+          existingMemory || undefined
+      })
+    });
+
+    if (res.status === 401) {
+      return;
+    }
+
+    if (!res.ok) {
+      dbg(`memory API failed: HTTP ${res.status}`);
+      return;
+    }
+
+    const extracted = await res.json();
+
+    await applyExtractedMemory(extracted);
+  } catch (error) {
+    dbg(
+      'memory analysis failed: ' +
+      (error?.message || error)
+    );
+  }
+}
+
 /* 🔒 защита от гонок показа стикеров */
 let stickerBusy = false;
 
@@ -1163,13 +1285,16 @@ formEl.addEventListener('submit', async (e) => {
     await maybeSticker(text, reply, null);
 
     history.push({
-      role: 'assistant',
-      content: reply,
-      ts: Date.now()
-    });
+  role: 'assistant',
+  content: reply,
+  ts: Date.now()
+});
 
-    saveHistory(history);
-    chainStickerCount++;
+saveHistory(history);
+chainStickerCount++;
+
+// Фоновый анализ для долгосрочной памяти.
+void analyzeConversationForMemory(text, reply);
   }
 
   // 1. Локальный ответ только на прямой вопрос о времени
