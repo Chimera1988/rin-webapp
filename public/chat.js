@@ -438,7 +438,8 @@ if (
 }
 
   return false;
-
+}
+    
 } catch (error) {
     dbg(
       'apply extracted memory failed: ' +
