@@ -5,6 +5,7 @@ import {
   loadProfile,
   saveProfile,
   getDefaultProfile,
+  loadPersonaDossier,
   BASE_RULES
 } from './rin_memory.js';
 
@@ -208,10 +209,18 @@ btnSave?.addEventListener('click', async () => {
   }
   try {
     await saveProfile(next);
-    // доступно глобально другим частям приложения
-    window.RIN_PROFILE = next;
-    // уведомляем слушателей (например, /chat.js), что профиль изменён
-    window.dispatchEvent(new CustomEvent('rin:profile-updated', { detail: next }));
+
+next.persona_dossier = await loadPersonaDossier();
+
+// доступно глобально другим частям приложения
+window.RIN_PROFILE = next;
+
+// уведомляем слушателей, что профиль изменён
+window.dispatchEvent(
+  new CustomEvent('rin:profile-updated', {
+    detail: next
+  })
+);
     hidePanel();
     try { navigator.vibrate && navigator.vibrate(10); } catch {}
   } catch (e) {
