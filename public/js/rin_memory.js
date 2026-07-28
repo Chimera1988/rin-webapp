@@ -4,6 +4,44 @@
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY   = 'rin-diary-v1';
+const PERSONA_URL = '/data/rin_persona.json';
+
+let personaCache = null;
+
+/**
+ * Загружает постоянное досье Рин из проекта.
+ * Досье не хранится в localStorage, поэтому обновления файла
+ * автоматически применяются после обновления страницы.
+ */
+export async function loadPersonaDossier() {
+  if (personaCache) {
+    return personaCache;
+  }
+
+  try {
+    const response = await fetch(PERSONA_URL, {
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Не удалось загрузить досье Рин: HTTP ${response.status}`
+      );
+    }
+
+    const dossier = await response.json();
+
+    if (!dossier || typeof dossier !== 'object') {
+      throw new Error('Досье Рин имеет неправильный формат');
+    }
+
+    personaCache = dossier;
+    return dossier;
+  } catch (error) {
+    console.error('[Rin persona]', error);
+    return null;
+  }
+}
 
 /* ===================== БАЗОВЫЕ ПРАВИЛА (канон по умолчанию) =====================
 
@@ -37,6 +75,7 @@ export const BASE_RULES = `
 export function getDefaultProfile() {
   return {
     name: 'Рин Акихара',
+    persona_dossier: null,
     description: '',             // кратко «кто я» (канон)
     base_rules: BASE_RULES,      // неизменяемая база (можно показать read-only в UI)
     instructions_extra: '',      // доп. инструкции автора («как отвечать», стоп-слова и т.п.)
@@ -59,26 +98,76 @@ export function getDefaultProfile() {
 }
 
 export async function loadProfile() {
+  const defaults = getDefaultProfile();
+
+  let profile;
+
   try {
     const raw = localStorage.getItem(LS_PROFILE_KEY);
-    if (!raw) return getDefaultProfile();
-    const obj = JSON.parse(raw);
-    // мягкая миграция: доклеим обязательные поля
-    if (!obj.base_rules) obj.base_rules = BASE_RULES;
-    if (!obj.initiation) obj.initiation = getDefaultProfile().initiation;
-    if (!Array.isArray(obj.starters)) obj.starters = [];
-    return obj;
-  } catch {
-    return getDefaultProfile();
-  }
-}
 
+    if (!raw) {
+      profile = defaults;
+    } else {
+      const stored = JSON.parse(raw);
+
+      profile = {
+        ...defaults,
+        ...stored
+      };
+
+      if (!profile.base_rules) {
+        profile.base_rules = BASE_RULES;
+      }
+
+      if (!profile.initiation) {
+        profile.initiation = defaults.initiation;
+      }
+
+      if (!Array.isArray(profile.starters)) {
+        profile.starters = defaults.starters;
+      }
+    }
+  } catch (error) {
+    console.error('[Rin profile]', error);
+    profile = defaults;
+  }
+
+  /*
+   * Постоянное досье всегда берём из файла проекта.
+   * Не используем старую копию из localStorage, чтобы изменения
+   * rin_persona.json применялись после обновления страницы.
+   */
+  profile.persona_dossier = await loadPersonaDossier();
+
+  return profile;
+}
+  
 export async function saveProfile(profile) {
-  const safe = { ...(profile || {}) };
-  if (!safe.name) safe.name = 'Рин Акихара';
-  if (!safe.base_rules) safe.base_rules = BASE_RULES;
+  const safe = {
+    ...(profile || {})
+  };
+
+  if (!safe.name) {
+    safe.name = 'Рин Акихара';
+  }
+
+  if (!safe.base_rules) {
+    safe.base_rules = BASE_RULES;
+  }
+
+  /*
+   * Досье загружается из rin_persona.json и не должно сохраняться
+   * как отдельная устаревающая копия в localStorage.
+   */
+  delete safe.persona_dossier;
+
   safe._updated_at = Date.now();
-  localStorage.setItem(LS_PROFILE_KEY, JSON.stringify(safe));
+
+  localStorage.setItem(
+    LS_PROFILE_KEY,
+    JSON.stringify(safe)
+  );
+
   return true;
 }
 
