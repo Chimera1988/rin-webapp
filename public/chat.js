@@ -689,9 +689,16 @@ const KEYWORDS_MAP = [
   ]},
 
   // ❓ вопросы / любопытство
-  { src:'/stickers/questioning.webp', kw:[
-    'почему','зачем','как','когда','что это','где','чего','какой','который','?','расскажи','объясни'
-  ]},
+{ src:'/stickers/questioning.webp', kw:[
+  'почему',
+  'зачем',
+  'как так',
+  'что это',
+  'можешь объяснить',
+  'объясни',
+  'не понял',
+  'не поняла'
+]},
   { src:'/stickers/curiosity.webp', kw:[
     'интересно','любопытно','расскажи больше','more?','хочу знать','хочу подробности'
   ]},
@@ -776,20 +783,84 @@ const KEYWORDS_RE = (() => {
   return new RegExp(`\\b(?:${words.map(esc).join('|')})\\b`, 'iu');
 })();
 
-function pickByKeywords(text) {
-  const t = (text || '').toLowerCase();
-  let best = null;
-  for (const item of KEYWORDS_MAP) {
-    let hits = 0;
-    for (const kw of item.kw) {
-      if (t.includes(kw.toLowerCase())) hits++;
-    }
-    if (hits > 0) {
-      const score = hits / Math.min(4, item.kw.length);
-      if (!best || score > best.score) best = { ...item, score };
-    }
+function getRecentStickerSrcs(limit = 3) {
+  try {
+    const stats = JSON.parse(
+      localStorage.getItem('rin-stats') || '{"recent":[]}'
+    );
+
+    return Array.isArray(stats.recent)
+      ? stats.recent.slice(0, limit)
+      : [];
+  } catch {
+    return [];
   }
-  return best ? { src: best.src, utter: (best.utter && best.utter[Math.floor(Math.random()*best.utter.length)]) || null } : null;
+}
+
+function keywordMatches(text, keyword) {
+  const t = (text || '').toLowerCase();
+  const kw = (keyword || '').toLowerCase().trim();
+
+  return Boolean(kw && t.includes(kw));
+}
+
+function pickByKeywords(text, { avoidRecent = true } = {}) {
+  const recent = avoidRecent
+    ? new Set(getRecentStickerSrcs(3))
+    : new Set();
+
+  const scored = [];
+
+  for (const item of KEYWORDS_MAP) {
+    // Не повторяем один из трёх последних стикеров.
+    if (recent.has(item.src)) continue;
+
+    const matched = item.kw.filter(kw =>
+      keywordMatches(text, kw)
+    );
+
+    if (!matched.length) continue;
+
+    // Длинные и точные выражения получают больше баллов,
+    // чем короткие и слишком общие слова.
+    const score = matched.reduce((sum, kw) => {
+      const words = kw.trim().split(/\s+/).length;
+
+      return (
+        sum +
+        1 +
+        Math.min(1.5, kw.length / 16) +
+        (words > 1 ? 0.75 : 0)
+      );
+    }, 0);
+
+    scored.push({
+      ...item,
+      score
+    });
+  }
+
+  if (!scored.length) return null;
+
+  scored.sort((a, b) => b.score - a.score);
+
+  // Выбираем случайно между вариантами,
+  // которые почти одинаково подходят.
+  const topScore = scored[0].score;
+
+  const top = scored.filter(
+    item => item.score >= topScore * 0.9
+  );
+
+  const best = top[Math.floor(Math.random() * top.length)];
+
+  return {
+    src: best.src,
+    utter:
+      (best.utter &&
+        best.utter[Math.floor(Math.random() * best.utter.length)]) ||
+      null
+  };
 }
 
 function pickByTimeOfDay(pool){
@@ -1242,11 +1313,17 @@ function externalStickerGate(userText, replyText){
   }
 
   if (mode === 'keywords') {
-    const textPool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
-    const hit = !!pickByKeywords(textPool);
-    dbg('stickers gate: keywords mode ' + (hit ? 'HIT' : 'MISS'));
-    return hit;
-  }
+  const keywordText = (userText || '').toLowerCase();
+
+  const hit = !!pickByKeywords(keywordText);
+
+  dbg(
+    'stickers gate: keywords mode ' +
+    (hit ? 'HIT' : 'MISS')
+  );
+
+  return hit;
+}
 
   // smart: вероятность 0..100 %
   const baseProb = Math.max(0, Math.min(100, lsStickerProb())) / 100;
@@ -1267,7 +1344,7 @@ async function maybeSticker(userText, replyText, poolOverride = null){
     if (!externalStickerGate(userText, replyText)) return;
 
     const mode = lsStickerMode(); // 'smart' | 'keywords' | 'off' | 'always'
-    const textPool = ((userText || '') + ' ' + (replyText || '')).toLowerCase();
+    const textPool = (userText || '').toLowerCase();
     const pool = poolOverride || (
       currentEnv?.partOfDay === 'утро'   ? 'morning' :
       currentEnv?.partOfDay === 'день'   ? 'day'     :
@@ -1315,10 +1392,16 @@ async function maybeSticker(userText, replyText, poolOverride = null){
         return;
       }
       dbg('stickers v3 no-decision');
-    }
+}
 
-    // --- 3) Фоллбек: сначала пробуем keywords, затем — по времени суток
-    const hit = pickByKeywords(textPool);
+// --- 3) Фоллбек.
+// В smart-режиме не запускаем его после каждого no-decision.
+if (mode === 'smart' && Math.random() > 0.35) {
+  dbg('stickers fallback: skipped by diversity gate');
+  return;
+}
+
+const hit = pickByKeywords(textPool);
     if (hit) {
       addStickerBubble(hit.src, 'assistant', hit.utter || null);
       try { stickersLib?.markStickerSent({ src: hit.src }); } catch {}
