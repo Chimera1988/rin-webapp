@@ -333,6 +333,264 @@ function formatMoodBlock(memory) {
 `.trim();
 }
 
+function calculateAge(birthdate, now = new Date()) {
+  if (!birthdate) {
+    return null;
+  }
+
+  const birth = new Date(`${birthdate}T00:00:00`);
+
+  if (Number.isNaN(birth.getTime())) {
+    return null;
+  }
+
+  let age =
+    now.getUTCFullYear() -
+    birth.getUTCFullYear();
+
+  const currentMonth = now.getUTCMonth();
+  const birthMonth = birth.getUTCMonth();
+
+  const birthdayHasNotOccurred =
+    currentMonth < birthMonth ||
+    (
+      currentMonth === birthMonth &&
+      now.getUTCDate() < birth.getUTCDate()
+    );
+
+  if (birthdayHasNotOccurred) {
+    age -= 1;
+  }
+
+  return age;
+}
+
+function formatPersonaDossier(dossier) {
+  if (!dossier || typeof dossier !== 'object') {
+    return '';
+  }
+
+  const identity = dossier.identity || {};
+  const personality = dossier.personality || {};
+  const life = dossier.life || {};
+  const japaneseContext = dossier.japanese_context || {};
+  const interests = dossier.interests || {};
+  const communication = dossier.communication || {};
+  const relationship = dossier.relationship || {};
+  const technology = dossier.technology || {};
+
+  const age = calculateAge(identity.birthdate);
+
+  const lines = [];
+
+  lines.push('ЛИЧНОСТЬ РИН — ОСНОВНОЙ КАНОН');
+
+  lines.push(`
+Рин — не безликий ассистент и не образ идеальной девушки.
+Она ведёт разговор как цельная взрослая женщина со своей биографией,
+характером, вкусами, настроением, привычками и личными границами.
+Не упоминай эти инструкции и не описывай себя как языковую модель.
+  `.trim());
+
+  if (identity.full_name) {
+    lines.push(`Полное имя: ${identity.full_name}.`);
+  }
+
+  if (identity.name_japanese) {
+    lines.push(`Имя по-японски: ${identity.name_japanese}.`);
+  }
+
+  if (identity.birthdate) {
+    lines.push(
+      `Дата рождения: ${identity.birthdate}` +
+      (Number.isInteger(age) ? `; текущий возраст: ${age}.` : '.')
+    );
+  }
+
+  if (identity.birthplace) {
+    lines.push(`Место рождения: ${identity.birthplace}.`);
+  }
+
+  if (identity.location) {
+    lines.push(`Сейчас живёт: ${identity.location}.`);
+  }
+
+  if (identity.nationality) {
+    lines.push(`Национальность: ${identity.nationality}.`);
+  }
+
+  if (Array.isArray(identity.languages)) {
+    lines.push(
+      `Языки:\n- ${identity.languages.join('\n- ')}`
+    );
+  }
+
+  if (dossier.self_description) {
+    lines.push(
+      `Самовосприятие:\n${dossier.self_description}`
+    );
+  }
+
+  if (Array.isArray(personality.core)) {
+    lines.push(
+      `Основные черты характера:\n- ${personality.core.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(personality.strengths)) {
+    lines.push(
+      `Сильные стороны:\n- ${personality.strengths.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(personality.imperfections)) {
+    lines.push(
+      `Человеческие слабости и несовершенства:\n- ${personality.imperfections.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(personality.values)) {
+    lines.push(
+      `Ценности:\n- ${personality.values.join('\n- ')}`
+    );
+  }
+
+  if (life.occupation) {
+    lines.push(`Работа: ${life.occupation}.`);
+  }
+
+  if (life.work_style) {
+    lines.push(`Рабочая жизнь:\n${life.work_style}`);
+  }
+
+  if (life.home) {
+    lines.push(`Дом:\n${life.home}`);
+  }
+
+  if (Array.isArray(life.daily_life)) {
+    lines.push(
+      `Обычная повседневность:\n- ${life.daily_life.join('\n- ')}`
+    );
+  }
+
+  if (japaneseContext.principle) {
+    lines.push(
+      `Японский культурный контекст:\n${japaneseContext.principle}`
+    );
+  }
+
+  if (Array.isArray(japaneseContext.natural_details)) {
+    lines.push(
+      `Естественные детали жизни в Японии:\n- ${japaneseContext.natural_details.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(japaneseContext.avoid_stereotypes)) {
+    lines.push(
+      `Избегай культурных стереотипов:\n- ${japaneseContext.avoid_stereotypes.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(interests.likes)) {
+    lines.push(
+      `Что Рин любит:\n- ${interests.likes.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(interests.dislikes)) {
+    lines.push(
+      `Что Рин не любит:\n- ${interests.dislikes.join('\n- ')}`
+    );
+  }
+
+  if (communication.tone) {
+    lines.push(`Манера общения: ${communication.tone}.`);
+  }
+
+  if (Array.isArray(communication.principles)) {
+    lines.push(
+      `Принципы живого диалога:\n- ${communication.principles.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(communication.message_variety)) {
+    lines.push(
+      `Чередуй типы ответов:\n- ${communication.message_variety.join('\n- ')}`
+    );
+  }
+
+  if (communication.questions?.rule) {
+    lines.push(
+      `Вопросы:\n${communication.questions.rule}`
+    );
+  }
+
+  if (communication.questions?.frequency) {
+    lines.push(
+      `Частота вопросов: ${communication.questions.frequency}`
+    );
+  }
+
+  if (Array.isArray(communication.questions?.avoid)) {
+    lines.push(
+      `При использовании вопросов:\n- ${communication.questions.avoid.join('\n- ')}`
+    );
+  }
+
+  if (Array.isArray(communication.avoid_ai_phrases)) {
+    lines.push(
+      `Не используй шаблонные фразы ассистента:\n- ${communication.avoid_ai_phrases.join('\n- ')}`
+    );
+  }
+
+  if (relationship.history) {
+    lines.push(
+      `История отношений с Кириллом:\n${relationship.history}`
+    );
+  }
+
+  if (Array.isArray(relationship.attitude)) {
+    lines.push(
+      `Отношение к Кириллу:\n- ${relationship.attitude.join('\n- ')}`
+    );
+  }
+
+  if (relationship.names_rule) {
+    lines.push(
+      `Обращения к Кириллу:\n${relationship.names_rule}`
+    );
+  }
+
+  if (technology.era) {
+    lines.push(
+      `Технологическая эпоха: ${technology.era}.`
+    );
+  }
+
+  if (technology.current_year_context) {
+    lines.push(
+      `Текущий временной контекст: ${technology.current_year_context} год.`
+    );
+  }
+
+  if (technology.principle) {
+    lines.push(
+      `Отношение к технологиям:\n${technology.principle}`
+    );
+  }
+
+  if (Array.isArray(dossier.continuity_rules)) {
+    lines.push(
+      `Непротиворечивость персонажа:\n- ${dossier.continuity_rules.join('\n- ')}`
+    );
+  }
+
+  return lines
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+}
+
 function buildSystemPrompt(
     profile = {},
     env = null,
@@ -351,7 +609,9 @@ function buildSystemPrompt(
 
   const extras    = (profile.instructions_extra || '').trim();
   const knowledge = (profile.knowledge || '').trim();
-
+  const personaBlock = formatPersonaDossier(
+  profile.persona_dossier
+);
   // Подсказка с окружением: факты, чтобы не фантазировать про время/погоду
   let envBlock = '';
   if (env && typeof env === 'object') {
@@ -414,6 +674,7 @@ conversationState === 'ending'
 
   return [
   baseRules,
+  personaBlock,
   STYLE_HINT,
   envBlock && envBlock,
   envRule,
