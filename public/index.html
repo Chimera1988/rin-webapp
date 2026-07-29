@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Рин Акихара — твой компаньон</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/avatar.jpg" />
+
+  <!-- Тема до отрисовки (во избежание мигания темы) -->
+  <script>
+    (function(){
+      const K='rin-theme';
+      let t=localStorage.getItem(K);
+      if(!t){
+        const prefersDark=window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        t = prefersDark ? 'theme-dark' : 'theme-light';
+      }
+      document.documentElement.classList.add(t);
+      window.__rinSetTheme = function(next){
+        document.documentElement.classList.remove('theme-dark','theme-light');
+        document.documentElement.classList.add(next);
+        localStorage.setItem(K, next);
+      }
+    })();
+  </script>
+
+  <!-- Автологин по PIN -->
+  <script>
+    if (!localStorage.getItem('rin-pin')) {
+      window.location.replace('/login.html');
+    }
+  </script>
+
+  <link rel="stylesheet" href="/style.css?v=2026-07-30-settings-v1" />
+</head>
+<body>
+
+  <!-- Шапка -->
+  <header class="tg-header">
+    <button class="tg-ico btn-back" aria-label="Назад" title="Назад" onclick="history.length>1?history.back():null">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <div class="tg-peer">
+      <img id="avatarTop" class="avatar" src="/avatar.jpg" alt="Рин" />
+      <div class="peer-meta">
+        <div class="peer-name">Рин Акихара</div>
+        <div id="peerStatus" class="peer-status">онлайн</div>
+      </div>
+    </div>
+
+    <div class="tg-actions">
+      <button id="settingsToggle" class="tg-ico" title="Настройки" aria-haspopup="dialog">⚙️</button>
+    </div>
+  </header>
+
+  <!-- Основной экран -->
+  <main class="app">
+    <section id="chat" class="chat" aria-live="polite"></section>
+
+    <form id="form" class="composer" autocomplete="off">
+      <input
+        id="input"
+        type="text"
+        placeholder="Напиши Рин…"
+        maxlength="1000"
+        required
+        autocomplete="off"
+        autocapitalize="sentences"
+        spellcheck="true"
+        inputmode="text"
+        enterkeyhint="send"
+        aria-label="Поле ввода сообщения"
+      />
+      <button id="send" type="submit" aria-label="Отправить">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="currentColor"/>
+        </svg>
+      </button>
+    </form>
+  </main>
+
+  <!-- Настройки -->
+  <div id="settingsPanel" class="settings hidden" role="dialog" aria-modal="true" aria-label="Настройки">
+    <div class="settings__backdrop" id="closeSettings"></div>
+    <div class="settings__sheet">
+      <section class="settings-page is-active" data-settings-page="main">
+        <div class="settings__head">
+          <div class="settings__title">Настройки</div>
+          <button class="settings__close" id="closeSettingsBtn" type="button" aria-label="Закрыть">✕</button>
+        </div>
+
+        <div class="settings-profile">
+          <img src="/avatar.jpg" alt="Рин" />
+          <div>
+            <strong>Рин</strong>
+            <span>Персональные настройки</span>
+          </div>
+          <button id="openPersona" class="settings-chevron" type="button" aria-label="Открыть персонажа">›</button>
+        </div>
+
+        <div class="settings-menu-card">
+          <button class="settings-menu-item" type="button" data-settings-target="general">
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3 1.5-4A7 7 0 0 1 3 14V8a5 5 0 0 1 5-5h9a4 4 0 0 1 4 4z"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Общие</strong><small>Язык, тема и фон чата</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
+
+          <div class="settings-menu-item">
+            <button class="settings-menu-link" type="button" data-settings-target="voice">
+              <span class="settings-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
+              </span>
+              <span class="settings-menu-copy"><strong>Голосовые сообщения</strong><small>Настройки голоса Рин</small></span>
+            </button>
+            <label class="switch" aria-label="Озвучивать короткие реплики">
+              <input id="voiceEnabled" type="checkbox" />
+              <span></span>
+            </label>
+          </div>
+
+          <button class="settings-menu-item is-featured" type="button" data-settings-target="stickers">
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 10h.01M15.5 10h.01M8.5 14c1 1.3 2.1 2 3.5 2s2.5-.7 3.5-2"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Стикеры</strong><small>Настройки стикеров и их отображения</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
+
+          <button class="settings-menu-item" type="button" data-open-persona>
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21S4 16.4 4 9.5A4.5 4.5 0 0 1 12 6.7a4.5 4.5 0 0 1 8 2.8C20 16.4 12 21 12 21z"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Поведение Рин</strong><small>Настройки личности и общения</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
+
+          <button class="settings-menu-item" type="button" data-settings-target="debug">
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h8M9 4l1 3m5-3-1 3M7 11H4m16 0h-3M7 16H4m16 0h-3M8 8v8a4 4 0 0 0 8 0V8z"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Отладка</strong><small>Логи и отладочная информация</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
+        </div>
+
+        <div class="settings-menu-card">
+          <button class="settings-menu-item" type="button" data-settings-target="data">
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Данные</strong><small>Управление данными и сброс</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
+        </div>
+
+        <p class="settings-storage-note">Переписка и персональные настройки хранятся локально на этом устройстве.</p>
+      </section>
+
+      <section class="settings-page" data-settings-page="general">
+        <div class="settings__head settings__head--sub">
+          <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+          <div class="settings__title">Общие</div>
+          <span></span>
+        </div>
+        <p class="settings-intro">Настрой внешний вид приложения и фон переписки.</p>
+
+        <div class="settings-detail-card">
+          <div class="settings-control-row">
+            <div><strong>Тема оформления</strong><small>Переключить светлую и тёмную тему</small></div>
+            <button id="themeToggle" class="settings-action" type="button">Переключить</button>
+          </div>
+        </div>
+
+        <h3 class="settings-group-title">Обои чата</h3>
+        <div class="settings-detail-card">
+          <div class="settings-control-row">
+            <div><strong>Изображение</strong><small>Выбери фотографию для фона чата</small></div>
+            <label class="settings-action settings-file-action">Выбрать
+              <input id="wallpaperFile" type="file" accept="image/*" />
+            </label>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-range-block">
+            <div class="settings-range-head"><strong>Непрозрачность фона</strong><span id="wallpaperOpacityVal">90%</span></div>
+            <input id="wallpaperOpacity" type="range" min="0" max="100" value="90" />
+            <small>Насколько ярко отображать выбранные обои</small>
+          </div>
+          <div class="settings-divider"></div>
+          <button id="wallpaperClear" class="settings-danger-link" type="button">Удалить обои</button>
+        </div>
+      </section>
+
+      <section class="settings-page" data-settings-page="stickers">
+        <div class="settings__head settings__head--sub">
+          <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+          <div class="settings__title">Стикеры</div>
+          <span></span>
+        </div>
+        <p class="settings-intro">Настрой, как Рин использует стикеры в ваших разговорах.</p>
+
+        <div class="settings-detail-card">
+          <div class="settings-control-row">
+            <span class="settings-icon settings-icon--large">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 10h.01M15.5 10h.01M8.5 14c1 1.3 2.1 2 3.5 2s2.5-.7 3.5-2"/></svg>
+            </span>
+            <div class="settings-control-copy"><strong>Стикеры</strong><small>Включить использование стикеров</small></div>
+            <label class="switch">
+              <input id="stickerEnabled" type="checkbox" />
+              <span></span>
+            </label>
+          </div>
+        </div>
+
+        <h3 class="settings-group-title">Настройки отображения</h3>
+        <div class="settings-detail-card" id="stickerSettingsCard">
+          <div class="settings-range-block">
+            <strong>Режим</strong>
+            <div class="settings-segmented" role="group" aria-label="Режим стикеров">
+              <button type="button" data-sticker-mode="smart">Умный</button>
+              <button type="button" data-sticker-mode="always">Всегда</button>
+              <button type="button" data-sticker-mode="off">Выкл.</button>
+            </div>
+            <select id="stickerMode" class="visually-hidden" tabindex="-1" aria-hidden="true">
+              <option value="smart">Умный</option>
+              <option value="always">Всегда</option>
+              <option value="off">Выключить</option>
+            </select>
+            <small>В умном режиме Рин выбирает стикеры по контексту разговора.</small>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-range-block">
+            <div class="settings-range-head"><strong>Вероятность отправки</strong><span id="stickerProbVal">30%</span></div>
+            <input id="stickerProb" type="range" min="0" max="100" value="30" />
+            <small>Как часто Рин будет отправлять подходящие стикеры</small>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-range-block">
+            <div class="settings-range-head"><strong>Непрозрачность стикеров</strong><span id="stickerOpacityVal">100%</span></div>
+            <input id="stickerOpacity" type="range" min="20" max="100" value="100" />
+            <small>Прозрачность стикеров в чате</small>
+          </div>
+          <div class="settings-divider"></div>
+          <label class="settings-control-row">
+            <div><strong>Не показывать в серьёзных темах</strong><small>Отключать стикеры в важных разговорах</small></div>
+            <span class="switch">
+              <input id="stickerSafe" type="checkbox" />
+              <span></span>
+            </span>
+          </label>
+        </div>
+
+        <div class="settings-info-card">
+          <span>i</span>
+          <p>Стикеры не увеличивают расход API и не влияют на лимиты.</p>
+        </div>
+      </section>
+
+      <section class="settings-page" data-settings-page="voice">
+        <div class="settings__head settings__head--sub">
+          <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+          <div class="settings__title">Голосовые сообщения</div>
+          <span></span>
+        </div>
+        <p class="settings-intro">Настрой озвучивание коротких ответов Рин.</p>
+        <div class="settings-detail-card">
+          <div class="settings-range-block">
+            <div class="settings-range-head"><strong>Частота озвучивания</strong><span id="voiceRateVal">20%</span></div>
+            <input id="voiceRate" type="range" min="0" max="50" value="20" />
+            <small>Как часто озвучивать подходящие короткие реплики</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-page" data-settings-page="debug">
+        <div class="settings__head settings__head--sub">
+          <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+          <div class="settings__title">Отладка</div>
+          <span></span>
+        </div>
+        <p class="settings-intro">Логи стикеров и служебная информация приложения.</p>
+        <div class="settings-detail-card">
+          <label class="settings-control-row">
+            <div><strong>Показывать лог</strong><small>Записывать решения системы стикеров</small></div>
+            <span class="switch">
+              <input id="debugToggle" type="checkbox" />
+              <span></span>
+            </span>
+          </label>
+          <div class="settings-divider"></div>
+          <div id="debugLog" class="diary-log settings-debug-log"></div>
+        </div>
+      </section>
+
+      <section class="settings-page" data-settings-page="data">
+        <div class="settings__head settings__head--sub">
+          <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+          <div class="settings__title">Данные</div>
+          <span></span>
+        </div>
+        <p class="settings-intro">Управление локальной перепиской и персональными настройками.</p>
+        <div class="settings-detail-card">
+          <div class="settings-control-row">
+            <div><strong>Сбросить данные</strong><small>Удалить историю чата, настройки и кэш на этом устройстве</small></div>
+          </div>
+          <div class="settings-divider"></div>
+          <button id="resetApp" class="settings-reset-button" type="button">Сбросить данные</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Окно редактора «Персонаж и канон» -->
+  <div id="personaPanel" class="sheet hidden" aria-hidden="true">
+    <div class="sheet__header">
+      <h3>Персонаж и канон</h3>
+      <button id="personaClose" class="icon-btn" aria-label="Закрыть">✕</button>
+    </div>
+
+    <div class="sheet__body">
+      <label class="fld">
+        <span>Имя</span>
+        <input id="pName" type="text" placeholder="Рин Акихара"/>
+      </label>
+
+      <label class="fld">
+        <span>Короткое описание</span>
+        <textarea id="pDesc" rows="2" placeholder="Как представить персонажа в одном-двух предложениях"></textarea>
+      </label>
+
+      <details class="fld">
+        <summary>Базовые правила (read-only)</summary>
+        <pre id="pInstrBase" class="mono readonly"></pre>
+      </details>
+
+      <label class="fld">
+        <span>Доп. инструкции (персональные правила)</span>
+        <textarea id="pInstrExtra" rows="4" placeholder="Как она себя ведёт, чего избегает…"></textarea>
+      </label>
+
+      <label class="fld">
+        <span>Знания (канон, кратко)</span>
+        <textarea id="pKnowledge" rows="3" placeholder="Город, работа, интересы…"></textarea>
+      </label>
+
+      <label class="fld">
+        <span>Стартовые фразы (по одной в строке)</span>
+        <textarea id="pStarters" rows="4" placeholder="Привет! Как проходит твой день?&#10;Уютный вечер — самое время поговорить. Как ты?"></textarea>
+      </label>
+
+      <fieldset class="fld">
+        <legend>Инициативы (авто-сообщения)</legend>
+        <div class="grid2">
+          <label>Максимум в день
+            <input id="pInitMax" type="number" min="0" max="10"/>
+          </label>
+          <label>Окно 1 (HH:MM–HH:MM, pool)
+            <input id="pWin1" type="text" placeholder="08:00-10:30 morning"/>
+          </label>
+          <label>Окно 2
+            <input id="pWin2" type="text" placeholder="18:30-22:30 evening"/>
+          </label>
+        </div>
+        <small class="muted">pool: <code>morning</code> | <code>day</code> | <code>evening</code> | <code>night</code></small>
+      </fieldset>
+    </div>
+
+    <div class="sheet__footer">
+      <button id="personaReset" class="ghost" type="button">Сбросить к дефолту</button>
+      <div class="spacer"></div>
+      <button id="personaSave" class="primary" type="button">Сохранить</button>
+    </div>
+  </div>
+
+  <!-- Скрипты -->
+  <script src="/chat.js?v=2026-07-30-settings-v1" defer></script>
+  <!-- Модуль UI персонажа (импортирует /js/rin_memory.js) -->
+  <script type="module" src="/js/persona_ui.js?v=2026-07-30-v4-clean-fix1"></script>
+
+  <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
+  <style>
+    .sheet{position:fixed;left:0;right:0;bottom:0;top:auto;max-height:85vh;background:#111;color:#eee;border-top:1px solid #222;display:flex;flex-direction:column;box-shadow:0 -10px 30px rgba(0,0,0,.4);z-index:50}
+    .sheet.hidden{display:none}
+    .sheet__header,.sheet__footer{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #222}
+    .sheet__footer{border-top:1px solid #222;border-bottom:0}
+    .sheet__body{padding:12px 16px;overflow:auto}
+    .fld{display:block;margin:10px 0}
+    .fld > span, .fld > legend{display:block;margin:4px 0 6px;font-size:.95rem;opacity:.9}
+    .fld input[type=text], .fld input[type=number], .fld textarea{width:100%;background:#171717;border:1px solid #2a2a2a;color:#eee;border-radius:8px;padding:10px;font-size:14px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .icon-btn{background:transparent;border:0;color:#aaa;font-size:18px;cursor:pointer}
+    .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;white-space:pre-wrap;background:#0f0f0f;border:1px solid #272727;border-radius:8px;padding:10px}
+    .ghost{background:transparent;border:1px solid #333;color:#bbb;border-radius:8px;padding:8px 12px}
+    .primary{background:#cc3355;border:0;color:#fff;border-radius:8px;padding:10px 14px}
+    .spacer{flex:1}
+    .muted{color:#9a9a9a}
+    .settings .btn{white-space:nowrap}
+  </style>
+</body>
+</html>
