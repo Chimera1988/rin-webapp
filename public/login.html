@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Вход — Рин</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="login-screen">
+    <h1>Добро пожаловать 🌸</h1>
+    <form id="loginForm">
+      <input id="pinInput" type="password" placeholder="Введите PIN" required />
+      <button type="submit">Войти</button>
+    </form>
+  </main>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const pin = document.getElementById('pinInput').value.trim();
+      if (pin) {
+        localStorage.setItem('rin-pin', pin);
+        window.location.href = '/index.html'; // сразу в чат
+      }
+    });
+  </script>
+</body>
+</html>
