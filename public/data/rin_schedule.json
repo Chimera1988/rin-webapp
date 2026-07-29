@@ -1,0 +1,29 @@
+{
+  "timezone": "Asia/Tokyo",
+  "windows": [
+    {
+      "label": "morning",
+      "from": "08:00",
+      "to": "10:30",
+      "pool": "morning",
+      "probability": 0.55
+    },
+    {
+      "label": "day_ping",
+      "from": "13:00",
+      "to": "16:30",
+      "pool": "day",
+      "probability": 0.28
+    },
+    {
+      "label": "evening",
+      "from": "19:30",
+      "to": "22:30",
+      "pool": "evening",
+      "probability": 0.5
+    }
+  ],
+  "max_daily_initiations": 2,
+  "minimum_silence_minutes": 45,
+  "note": "Все окна указаны по локальному времени Рин в Канадзаве."
+}
