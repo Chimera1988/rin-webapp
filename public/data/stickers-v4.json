@@ -1,0 +1,514 @@
+{
+  "_schema": "v4",
+  "defaults": {
+    "minGapMessages": 2,
+    "maxRatio": 0.32,
+    "threshold": 1.05
+  },
+  "stickers": [
+    {
+      "src": "/stickers/gentle_kiss.webp",
+      "family": "kiss",
+      "signals": [
+        "kiss",
+        "farewell",
+        "care",
+        "flirt"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.15,
+      "utterances": [
+        "нежно",
+        "чмок"
+      ]
+    },
+    {
+      "src": "/stickers/kiss_gesture.webp",
+      "family": "kiss",
+      "signals": [
+        "kiss",
+        "farewell"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.2,
+      "utterances": [
+        "чмок",
+        "лови"
+      ]
+    },
+    {
+      "src": "/stickers/kiss.webp",
+      "family": "kiss",
+      "signals": [
+        "kiss",
+        "flirt"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "close",
+      "weight": 1.15
+    },
+    {
+      "src": "/stickers/embrace.webp",
+      "family": "hug",
+      "signals": [
+        "hug",
+        "sad",
+        "care"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.15,
+      "utterances": [
+        "обнимаю"
+      ]
+    },
+    {
+      "src": "/stickers/flirty.webp",
+      "family": "flirt",
+      "signals": [
+        "flirt",
+        "praise"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.05,
+      "playfulnessMin": 45
+    },
+    {
+      "src": "/stickers/inviting.webp",
+      "family": "flirt",
+      "signals": [
+        "flirt",
+        "hug"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "close",
+      "weight": 0.95,
+      "playfulnessMin": 55
+    },
+    {
+      "src": "/stickers/shy.webp",
+      "family": "shy",
+      "signals": [
+        "shy",
+        "praise",
+        "flirt"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.05
+    },
+    {
+      "src": "/stickers/shy_pride.webp",
+      "family": "shy",
+      "signals": [
+        "shy",
+        "praise"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.12
+    },
+    {
+      "src": "/stickers/soft_shy_smile.webp",
+      "family": "shy",
+      "signals": [
+        "praise",
+        "care",
+        "flirt"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.95
+    },
+    {
+      "src": "/stickers/joy.webp",
+      "family": "positive",
+      "signals": [
+        "greeting",
+        "praise",
+        "surprise"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.05
+    },
+    {
+      "src": "/stickers/warm_smile.webp",
+      "family": "positive",
+      "signals": [
+        "greeting",
+        "care",
+        "thanks"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.0
+    },
+    {
+      "src": "/stickers/smile.webp",
+      "family": "positive",
+      "signals": [
+        "thanks",
+        "agreement",
+        "care"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.9
+    },
+    {
+      "src": "/stickers/admiration.webp",
+      "family": "positive",
+      "signals": [
+        "praise",
+        "surprise"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.1
+    },
+    {
+      "src": "/stickers/agreement.webp",
+      "family": "agreement",
+      "signals": [
+        "agreement"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.25
+    },
+    {
+      "src": "/stickers/engaged.webp",
+      "family": "interest",
+      "signals": [
+        "question",
+        "surprise"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.9
+    },
+    {
+      "src": "/stickers/interested_smile.webp",
+      "family": "interest",
+      "signals": [
+        "question",
+        "memory"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.95
+    },
+    {
+      "src": "/stickers/curiosity.webp",
+      "family": "question",
+      "signals": [
+        "question"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.0,
+      "forbidSignals": [
+        "farewell",
+        "sad"
+      ]
+    },
+    {
+      "src": "/stickers/curious.webp",
+      "family": "question",
+      "signals": [
+        "question",
+        "surprise"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.95,
+      "forbidSignals": [
+        "farewell"
+      ]
+    },
+    {
+      "src": "/stickers/questioning.webp",
+      "family": "question",
+      "signals": [
+        "question"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.9,
+      "forbidSignals": [
+        "farewell",
+        "flirt"
+      ]
+    },
+    {
+      "src": "/stickers/surprise_interest.webp",
+      "family": "surprise",
+      "signals": [
+        "surprise"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.3
+    },
+    {
+      "src": "/stickers/dreamy.webp",
+      "family": "dreamy",
+      "signals": [
+        "dreamy",
+        "memory"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.0
+    },
+    {
+      "src": "/stickers/dreamy_smile.webp",
+      "family": "dreamy",
+      "signals": [
+        "dreamy",
+        "memory",
+        "flirt"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "warm",
+      "weight": 1.05
+    },
+    {
+      "src": "/stickers/thoughtful.webp",
+      "family": "thoughtful",
+      "signals": [
+        "memory",
+        "question"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.82
+    },
+    {
+      "src": "/stickers/pensive.webp",
+      "family": "thoughtful",
+      "signals": [
+        "memory",
+        "sad"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.9
+    },
+    {
+      "src": "/stickers/hopeful.webp",
+      "family": "support",
+      "signals": [
+        "sad",
+        "care"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.0
+    },
+    {
+      "src": "/stickers/gentle.webp",
+      "family": "support",
+      "signals": [
+        "care",
+        "sad"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.05
+    },
+    {
+      "src": "/stickers/fatigue.webp",
+      "family": "fatigue",
+      "signals": [
+        "tired"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.3,
+      "energyMax": 72
+    },
+    {
+      "src": "/stickers/disappointment.webp",
+      "family": "negative",
+      "signals": [
+        "sad"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.05
+    },
+    {
+      "src": "/stickers/regret_1.webp",
+      "family": "regret",
+      "signals": [
+        "apology"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.25
+    },
+    {
+      "src": "/stickers/regret_2.webp",
+      "family": "regret",
+      "signals": [
+        "apology",
+        "sad"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.05
+    },
+    {
+      "src": "/stickers/annoyance.webp",
+      "family": "annoyance",
+      "signals": [
+        "angry"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.05
+    },
+    {
+      "src": "/stickers/frustrated.webp",
+      "family": "annoyance",
+      "signals": [
+        "angry",
+        "tired"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 1.0
+    },
+    {
+      "src": "/stickers/mild_jealousy.webp",
+      "family": "jealousy",
+      "signals": [
+        "jealousy"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "close",
+      "weight": 1.4,
+      "requireSignals": [
+        "jealousy"
+      ],
+      "playfulnessMin": 50
+    },
+    {
+      "src": "/stickers/neutral.webp",
+      "family": "neutral",
+      "signals": [
+        "agreement"
+      ],
+      "modes": [
+        "reaction_to_user",
+        "expression_of_reply"
+      ],
+      "minTier": "early",
+      "weight": 0.65
+    }
+  ]
+}
