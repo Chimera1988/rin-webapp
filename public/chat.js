@@ -222,119 +222,45 @@ const resetApp      = document.getElementById('resetApp');
 
 /* state */
 let profile = null;         // профиль из persona_ui / rin_memory
-let personaDossierCache = null;
-let mindDossierCache = null;
-let reasoningDossierCache = null;
-let speakingHabitsCache = null;
+const dossierCaches = new Map();
 let responsePostprocessor = null;
 let loreLib = null;
 
-async function loadPersonaDossierForChat() {
-  if (personaDossierCache) return personaDossierCache;
+/**
+ * Единый загрузчик JSON-досье. Сохраняет прежнее поведение,
+ * но убирает четыре одинаковых fetch/cache/error блока.
+ */
+async function loadDossierForChat(key, url, invalidMessage) {
+  if (dossierCaches.has(key)) return dossierCaches.get(key);
 
   try {
-    const response = await fetch('/data/rin_persona.json', {
-      cache: 'no-store'
-    });
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    const value = await response.json();
+    if (!value || typeof value !== 'object') {
+      throw new Error(invalidMessage || `invalid ${key} dossier`);
     }
 
-    const dossier = await response.json();
-
-    if (!dossier || typeof dossier !== 'object') {
-      throw new Error('invalid persona dossier');
-    }
-
-    personaDossierCache = dossier;
-    return dossier;
+    dossierCaches.set(key, value);
+    return value;
   } catch (error) {
-    dbg('persona dossier load failed: ' + (error?.message || error));
+    dbg(`${key} dossier load failed: ${error?.message || error}`);
     return null;
   }
 }
 
-async function loadMindDossierForChat() {
-  if (mindDossierCache) return mindDossierCache;
+const loadPersonaDossierForChat = () =>
+  loadDossierForChat('persona', '/data/rin_persona.json', 'invalid persona dossier');
 
-  try {
-    const response = await fetch('/data/rin_mind.json', {
-      cache: 'no-store'
-    });
+const loadMindDossierForChat = () =>
+  loadDossierForChat('mind', '/data/rin_mind.json', 'invalid mind dossier');
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+const loadReasoningDossierForChat = () =>
+  loadDossierForChat('reasoning', '/data/rin_reasoning.json', 'invalid reasoning dossier');
 
-    const mind = await response.json();
-
-    if (!mind || typeof mind !== 'object') {
-      throw new Error('invalid mind dossier');
-    }
-
-    mindDossierCache = mind;
-    return mind;
-  } catch (error) {
-    dbg('mind dossier load failed: ' + (error?.message || error));
-    return null;
-  }
-}
-
-async function loadReasoningDossierForChat() {
-  if (reasoningDossierCache) return reasoningDossierCache;
-
-  try {
-    const response = await fetch('/data/rin_reasoning.json', {
-      cache: 'no-store'
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const reasoning = await response.json();
-
-    if (!reasoning || typeof reasoning !== 'object') {
-      throw new Error('invalid reasoning dossier');
-    }
-
-    reasoningDossierCache = reasoning;
-    return reasoning;
-  } catch (error) {
-    dbg('reasoning dossier load failed: ' + (error?.message || error));
-    return null;
-  }
-}
-
-async function loadSpeakingHabitsForChat() {
-  if (speakingHabitsCache) return speakingHabitsCache;
-
-  try {
-    const response = await fetch('/data/rin_speaking_habits.json', {
-      cache: 'no-store'
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const habits = await response.json();
-
-    if (!habits || typeof habits !== 'object') {
-      throw new Error('invalid speaking habits');
-    }
-
-    speakingHabitsCache = habits;
-    return habits;
-  } catch (error) {
-    dbg(
-      'speaking habits load failed: ' +
-      (error?.message || error)
-    );
-    return null;
-  }
-}
+const loadSpeakingHabitsForChat = () =>
+  loadDossierForChat('speaking habits', '/data/rin_speaking_habits.json', 'invalid speaking habits');
 
 async function ensureLoreReady() {
   if (loreLib) return loreLib;
@@ -723,13 +649,38 @@ if (
   }
 }
 
+const LS_MEMORY_TURN = 'rin-memory-analysis-turn';
+
+function shouldAnalyzeConversationForMemory(userText = '') {
+  const text = String(userText || '').replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+
+  const turn = (Number(localStorage.getItem(LS_MEMORY_TURN)) || 0) + 1;
+  localStorage.setItem(LS_MEMORY_TURN, String(turn));
+
+  // Явные устойчивые факты, планы, предпочтения и эмоционально значимые признания.
+  const meaningful = /(меня зовут|мне \d{1,3} (?:лет|года|год)|мой день рождения|я живу|я работаю|моя работа|мой проект|я разрабатываю|я люблю|мне нравится|я предпочитаю|обычно я|кажд(?:ый|ую) (?:день|неделю)|завтра|послезавтра|на следующей неделе|собеседован|встреча|поездк|обещаю|решил|решила|планирую|хочу рассказать|только тебе|доверяю тебе|важно для меня)/iu.test(text);
+  const substantial = text.length >= 220;
+  const periodicCatchUp = turn % 8 === 0 && text.length >= 45;
+
+  const trivial = /^(?:привет|доброе утро|добрый день|добрый вечер|пока|до завтра|спокойной ночи|спасибо|ага|да|нет|ок(?:ей)?|хорошо|понятно|мм+|ха+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s.!?]+)$/iu.test(text);
+
+  return !trivial && (meaningful || substantial || periodicCatchUp);
+}
+
 /**
- * Отправляет последнюю пару сообщений на скрытый анализ памяти.
+ * Отправляет значимую пару сообщений на скрытый анализ памяти.
+ * Обычные короткие ходы не создают второй платный запрос.
  */
 async function analyzeConversationForMemory(
   userText,
   assistantText
 ) {
+  if (!shouldAnalyzeConversationForMemory(userText)) {
+    dbg('memory analysis skipped: no durable signal');
+    return false;
+  }
+
   try {
     const existingMemory =
       await buildMemoryPayload();
@@ -917,7 +868,6 @@ async function ensureStickersReady(){
 }
 
 /* utils */
-const nowLocal = () => new Date();
 const fmtDateKey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const fmtTime = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -1942,7 +1892,7 @@ if (!aiMoodApplied) {
       });
 
       dbg(
-        `reply postprocessed: ${rawReply.length} -> ${reply.length}`
+        `reply normalized: ${rawReply.length} -> ${reply.length}`
       );
     }
 
@@ -1975,6 +1925,17 @@ if (!aiMoodApplied) {
       }
     } else {
       dbg('personality core: missing from API response');
+    }
+
+    if (data.promptMetrics) {
+      const pm = data.promptMetrics;
+      dbg(
+        'tokens: ' +
+        `input=${pm.inputTokens ?? '-'}, output=${pm.outputTokens ?? '-'}, ` +
+        `cached=${pm.cachedInputTokens ?? '-'}; ` +
+        `systemChars=${pm.systemChars ?? '-'}, historyChars=${pm.historyChars ?? '-'}, ` +
+        `historyItems=${pm.historyItems ?? '-'}`
+      );
     }
 
     if (data.voiceMode) {
