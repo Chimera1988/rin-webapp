@@ -829,18 +829,18 @@ async function updateRinMoodFromMessage(userText) {
 /* 🔒 защита от гонок показа стикеров */
 let stickerBusy = false;
 
-/* === stickers v4: смысловая двухканальная система === */
+/* === stickers v5: смысловая двухканальная система === */
 let STICKERS_CFG = null;
 let stickersLib = null;
 
 async function ensureStickersReady(){
   if (!stickersLib) {
     try { stickersLib = await import('/lib/stickers-v4.js'); }
-    catch(e){ dbg('stickers v4 import failed: '+(e?.message||e)); stickersLib=null; }
+    catch(e){ dbg('stickers v5 import failed: '+(e?.message||e)); stickersLib=null; }
   }
   if (stickersLib && !STICKERS_CFG) {
-    try { STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers-v4.json'); dbg('stickers v4 loaded'); }
-    catch(e){ dbg('stickers v4 load failed: '+(e?.message||e)); STICKERS_CFG=null; }
+    try { STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers-v4.json'); dbg('stickers v5 loaded'); }
+    catch(e){ dbg('stickers v5 load failed: '+(e?.message||e)); STICKERS_CFG=null; }
   }
 }
 
@@ -1144,7 +1144,7 @@ function addStickerBubble(src, who='assistant', utterance=null){
   const stickerImg = row.querySelector('img.sticker');
   if (stickerImg) {
     stickerImg.onerror = () => {
-      dbg(`stickers v4 asset missing: ${src}`);
+      dbg(`stickers v5 asset missing: ${src}`);
       row.remove();
     };
   }
@@ -1271,7 +1271,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     dbg('compact prompt profile ready: ' + Boolean(profile?.prompt_profile));
     await ensureLoreReady();
 
-    // 2) stickers v4
+    // 2) stickers v5
     await ensureStickersReady();
 
     // 3) окружение
@@ -1400,20 +1400,20 @@ async function getTTSUrl(text){
   }catch{ return null; }
 }
 
-/* === stickers v4: решение по смыслу сообщения пользователя и ответа Рин === */
-async function maybeSticker(userText, replyText){
+/* === stickers v5: решение по смыслу сообщения пользователя и ответа Рин === */
+async function maybeSticker(userText, replyText, responseMeta = null){
   if (stickerBusy) return;
   stickerBusy = true;
   try {
     await ensureStickersReady();
-    if (!stickersLib || !STICKERS_CFG) { dbg('stickers v4 unavailable'); return; }
+    if (!stickersLib || !STICKERS_CFG) { dbg('stickers v5 unavailable'); return; }
 
     const mode = lsStickerMode();
-    if (mode === 'off') { dbg('stickers v4 none: reason=mode_off'); return; }
+    if (mode === 'off') { dbg('stickers v5 none: reason=mode_off'); return; }
 
     const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
     if (lsStickerSafe() && userText && NEG.test(String(userText || ''))) {
-      dbg('stickers v4 none: reason=safe_blocked');
+      dbg('stickers v5 none: reason=safe_blocked');
       return;
     }
 
@@ -1424,19 +1424,25 @@ async function maybeSticker(userText, replyText){
       userText: userText || '',
       replyText: replyText || '',
       mood,
-      mode: mode === 'always' ? 'always' : 'smart'
+      mode: mode === 'always' ? 'always' : 'smart',
+      context: {
+        scene: responseMeta?.conversationBrain?.activeScene?.type || responseMeta?.coreDecision?.conversationBrain?.activeScene?.type || '',
+        intent: responseMeta?.coreDecision?.intent || '',
+        userEmotion: responseMeta?.coreDecision?.userEmotion || '',
+        deliveryStyle: responseMeta?.coreDecision?.deliveryStyle || ''
+      }
     });
 
     if (decision?.action !== 'send' || !decision?.sticker) {
       const top = Array.isArray(decision?.top) ? decision.top.map(x => `${x.src}:${x.score}`).join(', ') : '';
-      dbg(`stickers v4 none: reason=${decision?.reason || 'unknown'}${top ? `; top=[${top}]` : ''}`);
+      dbg(`stickers v5 none: reason=${decision?.reason || 'unknown'}${top ? `; top=[${top}]` : ''}`);
       return;
     }
 
     if (mode !== 'always') {
       const probability = Math.max(0, Math.min(100, lsStickerProb())) / 100;
       if (Math.random() > probability) {
-        dbg(`stickers v4 skipped: reason=probability_gate; probability=${Math.round(probability * 100)}; sticker=${decision.sticker.src}`);
+        dbg(`stickers v5 skipped: reason=probability_gate; probability=${Math.round(probability * 100)}; sticker=${decision.sticker.src}`);
         return;
       }
     }
@@ -1444,15 +1450,15 @@ async function maybeSticker(userText, replyText){
     addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
     stickersLib.markStickerSent(decision.sticker);
     chainStickerCount = 0;
-    dbg(`stickers v4 decision: mode=${decision.mode}; timing=${decision.timing}; sticker=${decision.sticker.src}; confidence=${Number(decision.confidence || 0).toFixed(2)}; reason=${decision.reason}`);
+    dbg(`stickers v5 decision: mode=${decision.mode}; timing=${decision.timing}; sticker=${decision.sticker.src}; confidence=${Number(decision.confidence || 0).toFixed(2)}; reason=${decision.reason}`);
   } catch (e) {
-    dbg('stickers v4 error: ' + (e?.message || e));
+    dbg('stickers v5 error: ' + (e?.message || e));
   } finally {
     stickerBusy = false;
   }
 }
 
-/* === Автоинициации (используем profile.initiation) — stickers v4 уже работает === */
+/* === Автоинициации (используем profile.initiation) — stickers v5 уже работает === */
 async function tryInitiateBySchedule(){
   if (!profile) return;
 
@@ -1656,7 +1662,7 @@ formEl.addEventListener('submit', async (e) => {
     return `${hh}:${mm} по Канадзаве`;
   }
 
-  async function renderAssistantReply(reply) {
+  async function renderAssistantReply(reply, responseMeta = null) {
     let voiced = false;
 
     if (shouldVoiceFor(reply)) {
@@ -1672,7 +1678,7 @@ formEl.addEventListener('submit', async (e) => {
       addBubble(reply, 'assistant');
     }
 
-    await maybeSticker(text, reply);
+    await maybeSticker(text, reply, responseMeta);
 
     history.push({
   role: 'assistant',
@@ -1726,7 +1732,7 @@ if (!aiMoodApplied) {
 
     const reply = `У меня сейчас ${timeStr}. ${tail}`;
 
-    await renderAssistantReply(reply);
+    await renderAssistantReply(reply, data);
     return;
   }
 
@@ -1752,7 +1758,7 @@ if (!aiMoodApplied) {
 
     const reply = `${head} ${weatherPhrase}`.trim();
 
-    await renderAssistantReply(reply);
+    await renderAssistantReply(reply, data);
     return;
   }
 
@@ -1887,6 +1893,7 @@ if (!aiMoodApplied) {
       );
       if (core.habit) dbg(`core habit: ${core.habit}`);
       if (core.character) dbg(`core character: move=${core.character.move}; shape=${core.character.shape}`);
+      if (core.deliveryStyle) dbg(`core delivery: ${core.deliveryStyle}`);
       if (core.reason) dbg(`core reason: ${core.reason}`);
       const brain = data.conversationBrain || core.conversationBrain;
       if (brain) {
@@ -1938,7 +1945,7 @@ if (!aiMoodApplied) {
       peerStatus.textContent = 'онлайн';
     }
 
-    await renderAssistantReply(reply);
+    await renderAssistantReply(reply, data);
   } catch (err) {
     if (typingRow?.isConnected) {
       typingRow.remove();
