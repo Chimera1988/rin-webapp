@@ -15,7 +15,7 @@ const decision = buildCoreDecision({
   conversationState: 'ongoing'
 });
 
-assert.equal(decision.version, 'v8.0');
+assert.equal(decision.version, 'v8.1');
 assert.ok(decision.humanizer);
 assert.ok(Number.isFinite(decision.humanizer.poetryLevel));
 assert.ok(decision.prompt.includes('HUMANIZER'));
