@@ -20,11 +20,15 @@ function detectLongMode(userText) {
   return /(подробно|очень подробно|развернуто|развёрнуто|во всех деталях|полный разбор|объясни пошагово|расскажи подробнее|продолжай|расскажи ещё|можешь продолжить|сравни|проанализируй|составь план|пошаговая инструкция|технически объясни|разбери по пунктам)/i.test(text);
 }
 
+function isExplicitFarewellText(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (/(?:до встречи|до завтра|спокойной ночи|доброй ночи|увидимся|до связи|бай|bye)/i.test(text)) return true;
+  return /^(?:(?:ну|ладно)[, ]+)?(?:(?:всё|все)[, ]+)?пока[.!…)]*$/i.test(text);
+}
+
 function detectConversationState(history = []) {
   const last = [...history].reverse().find(item => item?.role === 'user');
-  return /(пока|до встречи|до завтра|спокойной ночи|доброй ночи|увидимся|до связи|бай|bye)/i.test(String(last?.content || ''))
-    ? 'ending'
-    : last ? 'ongoing' : 'new';
+  return isExplicitFarewellText(last?.content) ? 'ending' : last ? 'ongoing' : 'new';
 }
 
 function clamp(value, fallback = 50) {
@@ -83,6 +87,8 @@ function formatPromptProfile(profile = {}) {
     japan.avoid?.length ? `Не делать: ${japan.avoid.join('; ')}.` : '',
     voice.description,
     voice.principles?.length ? `Манера речи: ${voice.principles.join('; ')}.` : '',
+    voice.support_limits?.length ? `Ограничения поддержки:
+- ${voice.support_limits.join('\n- ')}` : '',
     voice.anti_patterns?.length ? `Не использовать как шаблоны: ${voice.anti_patterns.map(item => `«${item}»`).join(', ')}.` : '',
     promptProfile.guardrails?.length ? `Канонические ограничения:\n- ${promptProfile.guardrails.join('\n- ')}` : ''
   ];
@@ -177,6 +183,10 @@ function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversat
   const stateRule = conversationState === 'ending'
     ? 'Кирилл завершает разговор: тепло попрощайся, не открывай новую тему и не задавай вопрос.'
     : 'Разговор продолжается: не прощайся и не завершай его первой.';
+  const factualAccuracy = `ФАКТИЧЕСКАЯ ТОЧНОСТЬ — ВЫСОКИЙ ПРИОРИТЕТ
+- Не создавай конкретное название книги, автора, событие, родственника, место, привычку или биографический факт Рин, если этого нет в каноне, памяти, тематическом контексте или недавнем диалоге.
+- Если Кирилл спрашивает о неизвестной личной детали, ответь неопределённо и честно: «ещё не выбрала», «пока не решила», «название не упоминала» — вместо правдоподобной выдумки.
+- После исправления Кирилла сразу перестрой фактическое понимание и не продолжай прежнюю трактовку.`;
 
   const text = [
     stable,
@@ -188,9 +198,10 @@ function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversat
     formatMood(memory),
     conversationBrainInstruction(conversationBrain),
     coreDecision?.prompt,
+    factualAccuracy,
     voice,
     stateRule,
-    'ФИНАЛЬНЫЙ ПРИОРИТЕТ: сначала выполни смысловое обязательство Conversation Brain, затем форму Personality Core. Не добавляй вопрос, образ, инициативу или объяснение, если текущий план их не требует. Закончив выбранную мысль, остановись.'
+    'ФИНАЛЬНЫЙ ПРИОРИТЕТ: сначала выполни смысловое обязательство Conversation Brain, затем форму Personality Core и правила фактической точности. Не повторяй недавний совет другими словами. Не добавляй вопрос, образ, инициативу или объяснение, если текущий план их не требует. Закончив выбранную мысль, остановись.'
   ].filter(Boolean).join('\n\n');
   return { text, voiceMode };
 }
@@ -253,7 +264,7 @@ export default async function handler(req, res) {
     const clean = polishRinReply(completion.content, coreDecision);
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'project-wide-compact-v1',
+      promptVersion: 'project-wide-compact-v1.1-rest-loop-fix',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item?.content || '').length, 0),
       historyItems: history.length,
@@ -284,6 +295,7 @@ export default async function handler(req, res) {
         humanizer: coreDecision.humanizer,
         recentRhythm: coreDecision.recentRhythm,
         initiative: coreDecision.initiative,
+        adviceGuard: coreDecision.adviceGuard,
         habit: coreDecision.habit,
         reason: coreDecision.reason
       }
