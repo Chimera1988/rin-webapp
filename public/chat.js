@@ -1,10 +1,9 @@
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
-const RIN_BUILD_VERSION = '2026-08-02-local-memory-v3';
+const RIN_BUILD_VERSION = '2026-07-31-conversation-brain-v1';
 
 const STORAGE_KEY    = 'rin-history-v2';
 const DAILY_INIT_KEY = 'rin-init-count';
-const PENDING_INIT_KEY = 'rin-init-pending-v1';
 const THEME_KEY      = 'rin-theme';
 
 /* настройки, что храним в LS */
@@ -23,7 +22,6 @@ const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'
 const chatEl        = document.getElementById('chat');
 const formEl        = document.getElementById('form');
 const inputEl       = document.getElementById('input');
-const sendEl        = document.getElementById('send');
 const peerStatus    = document.getElementById('peerStatus');
 
 const settingsToggle= document.getElementById('settingsToggle');
@@ -225,15 +223,11 @@ const resetApp      = document.getElementById('resetApp');
 /* state */
 let profile = null;         // профиль из persona_ui / rin_memory
 let personaDossierCache = null;
+let mindDossierCache = null;
+let reasoningDossierCache = null;
+let speakingHabitsCache = null;
 let responsePostprocessor = null;
 let loreLib = null;
-let requestInFlight = false;
-
-function setRequestBusy(on) {
-  requestInFlight = Boolean(on);
-  if (sendEl) sendEl.disabled = requestInFlight;
-  if (inputEl) inputEl.disabled = requestInFlight;
-}
 
 async function loadPersonaDossierForChat() {
   if (personaDossierCache) return personaDossierCache;
@@ -257,6 +251,87 @@ async function loadPersonaDossierForChat() {
     return dossier;
   } catch (error) {
     dbg('persona dossier load failed: ' + (error?.message || error));
+    return null;
+  }
+}
+
+async function loadMindDossierForChat() {
+  if (mindDossierCache) return mindDossierCache;
+
+  try {
+    const response = await fetch('/data/rin_mind.json', {
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const mind = await response.json();
+
+    if (!mind || typeof mind !== 'object') {
+      throw new Error('invalid mind dossier');
+    }
+
+    mindDossierCache = mind;
+    return mind;
+  } catch (error) {
+    dbg('mind dossier load failed: ' + (error?.message || error));
+    return null;
+  }
+}
+
+async function loadReasoningDossierForChat() {
+  if (reasoningDossierCache) return reasoningDossierCache;
+
+  try {
+    const response = await fetch('/data/rin_reasoning.json', {
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const reasoning = await response.json();
+
+    if (!reasoning || typeof reasoning !== 'object') {
+      throw new Error('invalid reasoning dossier');
+    }
+
+    reasoningDossierCache = reasoning;
+    return reasoning;
+  } catch (error) {
+    dbg('reasoning dossier load failed: ' + (error?.message || error));
+    return null;
+  }
+}
+
+async function loadSpeakingHabitsForChat() {
+  if (speakingHabitsCache) return speakingHabitsCache;
+
+  try {
+    const response = await fetch('/data/rin_speaking_habits.json', {
+      cache: 'no-store'
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const habits = await response.json();
+
+    if (!habits || typeof habits !== 'object') {
+      throw new Error('invalid speaking habits');
+    }
+
+    speakingHabitsCache = habits;
+    return habits;
+  } catch (error) {
+    dbg(
+      'speaking habits load failed: ' +
+      (error?.message || error)
+    );
     return null;
   }
 }
@@ -314,10 +389,25 @@ async function ensureActiveProfile() {
     profile.persona_dossier ||
     await loadPersonaDossierForChat();
 
+  const mind =
+    profile.mind_dossier ||
+    await loadMindDossierForChat();
+
+  const reasoning =
+    profile.reasoning_dossier ||
+    await loadReasoningDossierForChat();
+
+  const speakingHabits =
+    profile.speaking_habits ||
+    await loadSpeakingHabitsForChat();
+
   profile = {
     ...profile,
     name: profile.name || 'Рин Акихара',
-    ...(dossier ? { persona_dossier: dossier } : {})
+    ...(dossier ? { persona_dossier: dossier } : {}),
+    ...(mind ? { mind_dossier: mind } : {}),
+    ...(reasoning ? { reasoning_dossier: reasoning } : {}),
+    ...(speakingHabits ? { speaking_habits: speakingHabits } : {})
   };
 
   return profile;
@@ -354,18 +444,12 @@ async function ensureMemoryReady() {
  * Формирует компактный пакет памяти для модели.
  * Весь дневник не отправляем, чтобы не раздувать запрос.
  */
-async function buildMemoryPayload(userText = '') {
+async function buildMemoryPayload() {
   try {
     const lib = await ensureMemoryReady();
 
     if (!lib?.loadDiary) {
       return null;
-    }
-
-    if (lib.applyMoodTimeDecay) await lib.applyMoodTimeDecay();
-
-    if (lib.buildRelevantMemory) {
-      return await lib.buildRelevantMemory(userText, history, 3);
     }
 
     const diary = await lib.loadDiary();
@@ -446,16 +530,199 @@ async function buildMemoryPayload(userText = '') {
 /**
  * Сохраняет результат анализа памяти в локальный дневник.
  */
+function sanitizeMoodDelta(userText, moodDelta) {
+  const text = String(userText || '').toLowerCase();
+  const source =
+    moodDelta && typeof moodDelta === 'object'
+      ? moodDelta
+      : {};
+
+  const explicitWarm =
+    /(люблю|соскучил|обнимаю|целую|ты мне нравишься|мне хорошо с тобой|спасибо за поддержку|очень благодарен)/iu.test(text);
+
+  const explicitPlayful =
+    /(шучу|ахаха|хаха|😏|😉|😁|подкол|флирт)/iu.test(text);
+
+  const explicitTrust =
+    /(доверяю|никому не говорил|только тебе|хочу поделиться чем-то важным|мне важно твоё мнение)/iu.test(text);
+
+  const explicitNegative =
+    /(заткнись|отстань|бесишь|ненавижу|глупая|тупая|замолчи)/iu.test(text);
+
+  const ordinaryQuestion =
+    /\?/.test(text) &&
+    !explicitWarm &&
+    !explicitPlayful &&
+    !explicitTrust &&
+    !explicitNegative;
+
+  const neutralReason =
+    /(нейтраль|обычн(?:ый|ого) вопрос|не вызывает|без эмоциональ|значительных эмоциональных изменений)/iu.test(
+      String(source.reason || '')
+    );
+
+  const result = {
+    affection: Number(source.affection) || 0,
+    energy: Number(source.energy) || 0,
+    playfulness: Number(source.playfulness) || 0,
+    trust: Number(source.trust) || 0,
+    reason: String(source.reason || ''),
+    confidence: Number(source.confidence) || 0
+  };
+
+  if (ordinaryQuestion || neutralReason) {
+    result.affection = Math.min(0, result.affection);
+    result.playfulness = Math.min(0, result.playfulness);
+    result.trust = Math.min(0, result.trust);
+
+    if (!explicitNegative) {
+      result.energy = Math.min(0, result.energy);
+    }
+  }
+
+  if (!explicitWarm) result.affection = Math.min(1, result.affection);
+  if (!explicitPlayful) result.playfulness = Math.min(1, result.playfulness);
+  if (!explicitTrust) result.trust = Math.min(1, result.trust);
+
+  // Энергия — отдельная шкала. Теплота, забота и комплименты не должны
+  // автоматически восстанавливать силы Рин.
+  const explicitEnergizing =
+    /(взбодрил|взбодрила|появились силы|отдохнула|выспалась|стало бодрее|зарядил энергией)/iu.test(text);
+
+  if (!explicitEnergizing && result.energy > 0) {
+    result.energy = 0;
+  }
+
+  // Малые модельные колебания не должны создавать постоянный дрейф шкал.
+  for (const key of ['affection', 'energy', 'playfulness', 'trust']) {
+    result[key] = Math.max(-6, Math.min(6, Math.round(result[key])));
+  }
+
+  return result;
+}
+
 async function applyExtractedMemory(extracted, userText = '') {
   try {
     const lib = await ensureMemoryReady();
-    if (!lib?.applyMemoryExtraction) return false;
-    return await lib.applyMemoryExtraction(extracted, userText);
-  } catch (error) {
-    dbg('apply extracted memory failed: ' + (error?.message || error));
-    return false;
+
+    if (!lib) {
+      return;
+    }
+
+    const facts = Array.isArray(extracted?.facts)
+      ? extracted.facts
+      : [];
+
+    const events = Array.isArray(extracted?.events)
+      ? extracted.events
+      : [];
+
+    for (const fact of facts) {
+      const path = String(fact?.path || '').trim();
+      const value = String(fact?.value || '').trim();
+      const confidence = Number(fact?.confidence);
+
+      if (!path.startsWith('user.')) {
+        continue;
+      }
+
+      if (!value) {
+        continue;
+      }
+
+      if (
+        Number.isFinite(confidence) &&
+        confidence < 0.75
+      ) {
+        continue;
+      }
+
+      await lib.upsertFact(path, value);
+
+      dbg(`memory fact saved: ${path}`);
+    }
+
+    for (const event of events) {
+      const text = String(event?.text || '').trim();
+
+      if (!text) {
+        continue;
+      }
+
+      const importance =
+        Number(event?.importance) || 5;
+
+      if (importance < 6) {
+        continue;
+      }
+
+      await lib.addEvent(text, {
+        type: String(event?.type || 'memory'),
+        tags: Array.isArray(event?.tags)
+          ? event.tags.slice(0, 8)
+          : []
+      });
+
+      dbg(
+        `memory event saved: ${text.slice(0, 80)}`
+      );
+    }
+ const moodDelta = sanitizeMoodDelta(userText, extracted?.moodDelta);
+const moodConfidence = Number(
+  moodDelta?.confidence
+);
+
+if (
+  moodDelta &&
+  typeof moodDelta === 'object' &&
+  Number.isFinite(moodConfidence) &&
+  moodConfidence >= 0.55 &&
+  lib?.updateMood
+) {
+  if (lib?.applyMoodTimeDecay) {
+    await lib.applyMoodTimeDecay();
+  }
+
+  const mood = await lib.updateMood({
+    affection:
+      Number(moodDelta.affection) || 0,
+
+    energy:
+      Number(moodDelta.energy) || 0,
+
+    playfulness:
+      Number(moodDelta.playfulness) || 0,
+
+    trust:
+      Number(moodDelta.trust) || 0,
+
+    lastInteractionAt: Date.now()
+  });
+
+  if (mood) {
+  dbg(
+    `AI mood updated: ${mood.label}; ` +
+    `affection=${mood.affection}, ` +
+    `energy=${mood.energy}, ` +
+    `playfulness=${mood.playfulness}, ` +
+    `trust=${mood.trust}; ` +
+    `reason=${moodDelta.reason || 'нет причины'}`
+  );
+
+  return true;
+}
+
+  return false;
+}
+    
+} catch (error) {
+    dbg(
+      'apply extracted memory failed: ' +
+      (error?.message || error)
+    );
   }
 }
+
 /**
  * Отправляет последнюю пару сообщений на скрытый анализ памяти.
  */
@@ -465,7 +732,7 @@ async function analyzeConversationForMemory(
 ) {
   try {
     const existingMemory =
-      await buildMemoryPayload(userText);
+      await buildMemoryPayload();
 
     const res = await fetch('/api/memory', {
       method: 'POST',
@@ -508,6 +775,129 @@ async function analyzeConversationForMemory(
     return false;
   }
 }
+
+/* ============================= */
+/* НАСТРОЕНИЕ РИН */
+/* ============================= */
+
+function analyzeUserMoodImpact(userText = '') {
+  const text = String(userText)
+    .toLowerCase()
+    .trim();
+
+  const delta = {
+    affection: 0,
+    energy: 0,
+    playfulness: 0,
+    trust: 0
+  };
+
+  if (!text) {
+    return delta;
+  }
+
+  const warm =
+    /(спасибо|благодарю|ты милая|ты хорошая|рад тебя видеть|соскучился|обнимаю|целую|люблю тебя|мне приятно с тобой|ты мне нравишься)/i;
+
+  const playful =
+    /(шучу|шутка|хаха|ахаха|😁|😏|😉|подкол|пофлиртуем|флирт)/i;
+
+  const trust =
+    /(хочу рассказать|никому не говорил|только тебе|поделюсь с тобой|мне важно твоё мнение|я доверяю тебе)/i;
+
+  const tired =
+    /(устал|вымотался|тяжёлый день|нет сил|выгорел|хочу спать|очень тяжело)/i;
+
+  const sad =
+    /(мне грустно|плохо на душе|расстроен|одиноко|обидно|печально|не получилось)/i;
+
+  const hostile =
+    /(заткнись|отстань|бесишь|глупая|тупая|ненавижу тебя|замолчи)/i;
+
+  const goodbye =
+    /(пока|до завтра|спокойной ночи|доброй ночи|до встречи|увидимся|бай|bye)/i;
+
+  if (warm.test(text)) {
+    delta.affection += 3;
+    delta.trust += 1;
+  }
+
+  if (playful.test(text)) {
+    delta.playfulness += 4;
+    delta.affection += 1;
+  }
+
+  if (trust.test(text)) {
+    delta.trust += 4;
+    delta.affection += 2;
+  }
+
+  if (tired.test(text)) {
+    delta.energy -= 3;
+    delta.affection += 1;
+    delta.playfulness -= 2;
+  }
+
+  if (sad.test(text)) {
+    delta.energy -= 3;
+    delta.affection += 2;
+    delta.playfulness -= 3;
+  }
+
+  if (hostile.test(text)) {
+    delta.affection -= 8;
+    delta.energy -= 5;
+    delta.playfulness -= 6;
+    delta.trust -= 5;
+  }
+
+  if (goodbye.test(text)) {
+    delta.energy -= 2;
+  }
+
+  return delta;
+}
+
+async function updateRinMoodFromMessage(userText) {
+  try {
+    const lib = await ensureMemoryReady();
+
+    if (
+      !lib?.updateMood ||
+      !lib?.applyMoodTimeDecay
+    ) {
+      return null;
+    }
+
+    await lib.applyMoodTimeDecay();
+
+    const delta =
+      analyzeUserMoodImpact(userText);
+
+    const mood = await lib.updateMood({
+      ...delta,
+      lastInteractionAt: Date.now()
+    });
+
+    dbg(
+      `mood updated: ${mood.label}; ` +
+      `affection=${mood.affection}, ` +
+      `energy=${mood.energy}, ` +
+      `playfulness=${mood.playfulness}, ` +
+      `trust=${mood.trust}`
+    );
+
+    return mood;
+  } catch (error) {
+    dbg(
+      'mood update failed: ' +
+      (error?.message || error)
+    );
+
+    return null;
+  }
+}
+
 /* 🔒 защита от гонок показа стикеров */
 let stickerBusy = false;
 
@@ -735,7 +1125,6 @@ if (resetApp){
     if (!confirm('Сбросить историю чата, настройки и кэш?')) return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(DAILY_INIT_KEY);
-    localStorage.removeItem(PENDING_INIT_KEY);
     [LS_STICKER_PROB,LS_STICKER_MODE,LS_STICKER_LAST_MODE,LS_STICKER_SAFE,LS_STICKER_OPACITY,LS_SPEAK_ENABLED,LS_SPEAK_RATE,LS_WP_DATA,LS_WP_OPACITY,LS_DEBUG_ENABLED].forEach(k=>localStorage.removeItem(k));
     chatEl.innerHTML='';
     history=[];
@@ -953,6 +1342,9 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     // 1) Загружаем профиль и обязательно присоединяем постоянное досье.
     await ensureActiveProfile();
     dbg('persona dossier ready: ' + Boolean(profile?.persona_dossier));
+    dbg('mind dossier ready: ' + Boolean(profile?.mind_dossier));
+    dbg('reasoning dossier ready: ' + Boolean(profile?.reasoning_dossier));
+    dbg('speaking habits ready: ' + Boolean(profile?.speaking_habits));
     await ensureLoreReady();
 
     // 2) stickers v4
@@ -976,9 +1368,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     greet();
   }
 
-  setInterval(()=>{
-    if (!requestInFlight) peerStatus.textContent = Math.random()<0.85?'онлайн':'была недавно';
-  },15000);
+  setInterval(()=>{ peerStatus.textContent = Math.random()<0.85?'онлайн':'была недавно'; },15000);
 
   setInterval(tryInitiateBySchedule, 60_000);
   tryInitiateBySchedule();
@@ -1140,8 +1530,7 @@ async function maybeSticker(userText, replyText){
 
 /* === Автоинициации (используем profile.initiation) — stickers v4 уже работает === */
 async function tryInitiateBySchedule(){
-  if (!profile || requestInFlight) return;
-  if (localStorage.getItem(PENDING_INIT_KEY) === '1') return;
+  if (!profile) return;
 
   const lore = await ensureLoreReady();
   const schedule =
@@ -1203,7 +1592,7 @@ async function tryInitiateBySchedule(){
   if (
     last &&
     last.role === 'assistant' &&
-    Date.now() - Number(last.ts || Date.now()) <
+    d - new Date(last.ts || Date.now()) <
       minimumSilenceMinutes * 60 * 1000
   ) {
     return;
@@ -1231,11 +1620,6 @@ async function tryInitiateBySchedule(){
   const trow = addTyping();
 
   setTimeout(async () => {
-    if (requestInFlight) {
-      trow.remove();
-      peerStatus.textContent = 'онлайн';
-      return;
-    }
     trow.remove();
     peerStatus.textContent = 'онлайн';
 
@@ -1264,7 +1648,6 @@ async function tryInitiateBySchedule(){
 
     saveHistory(history);
     bumpInitCount(dateKey);
-    localStorage.setItem(PENDING_INIT_KEY, '1');
   }, 900 + Math.random() * 900);
 }
 
@@ -1272,13 +1655,8 @@ async function tryInitiateBySchedule(){
 formEl.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  if (requestInFlight) return;
-
   const text = (inputEl.value || '').trim();
   if (!text) return;
-
-  setRequestBusy(true);
-  localStorage.removeItem(PENDING_INIT_KEY);
 
   addBubble(text, 'user');
 
@@ -1381,8 +1759,16 @@ formEl.addEventListener('submit', async (e) => {
 saveHistory(history);
 chainStickerCount++;
 
-// Анализ выполняется один раз; результат атомарно применяется локальной памятью.
-await analyzeConversationForMemory(text, reply);
+// Фоновый анализ для долгосрочной памяти.
+const aiMoodApplied =
+  await analyzeConversationForMemory(
+    text,
+    reply
+  );
+
+if (!aiMoodApplied) {
+  await updateRinMoodFromMessage(text);
+}
   }
 
   // 1. Локальный ответ только на прямой вопрос о времени
@@ -1417,7 +1803,6 @@ await analyzeConversationForMemory(text, reply);
     const reply = `У меня сейчас ${timeStr}. ${tail}`;
 
     await renderAssistantReply(reply);
-    setRequestBusy(false);
     return;
   }
 
@@ -1444,7 +1829,6 @@ await analyzeConversationForMemory(text, reply);
     const reply = `${head} ${weatherPhrase}`.trim();
 
     await renderAssistantReply(reply);
-    setRequestBusy(false);
     return;
   }
 
@@ -1454,7 +1838,7 @@ await analyzeConversationForMemory(text, reply);
   const typingRow = addTyping();
 
   try {
-    const memory = await buildMemoryPayload(text);
+    const memory = await buildMemoryPayload();
     const activeProfile = await ensureActiveProfile();
 
     dbg(`build=${RIN_BUILD_VERSION}`);
@@ -1641,8 +2025,6 @@ await analyzeConversationForMemory(text, reply);
       (message || 'Попробуем ещё раз?'),
       'assistant'
     );
-  } finally {
-    setRequestBusy(false);
   }
 });
 
