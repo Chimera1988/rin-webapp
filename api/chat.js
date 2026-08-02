@@ -264,7 +264,7 @@ export default async function handler(req, res) {
     const clean = polishRinReply(completion.content, coreDecision);
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'project-wide-compact-v1.1-rest-loop-fix',
+      promptVersion: 'project-wide-natural-speech-stickers-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item?.content || '').length, 0),
       historyItems: history.length,
@@ -288,6 +288,7 @@ export default async function handler(req, res) {
         intent: coreDecision.intent,
         mode: coreDecision.mode,
         replyStyle: coreDecision.replyStyle,
+        deliveryStyle: coreDecision.deliveryStyle,
         discourseMode: coreDecision.discourseMode,
         habits: coreDecision.habits,
         character: coreDecision.character,
