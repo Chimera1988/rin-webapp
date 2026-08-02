@@ -1,6 +1,6 @@
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
-const RIN_BUILD_VERSION = '2026-07-31-conversation-brain-v1';
+const RIN_BUILD_VERSION = '2026-08-02-project-wide-prompt-compact-v1';
 
 const STORAGE_KEY    = 'rin-history-v2';
 const DAILY_INIT_KEY = 'rin-init-count';
@@ -250,17 +250,8 @@ async function loadDossierForChat(key, url, invalidMessage) {
   }
 }
 
-const loadPersonaDossierForChat = () =>
-  loadDossierForChat('persona', '/data/rin_persona.json', 'invalid persona dossier');
-
-const loadMindDossierForChat = () =>
-  loadDossierForChat('mind', '/data/rin_mind.json', 'invalid mind dossier');
-
-const loadReasoningDossierForChat = () =>
-  loadDossierForChat('reasoning', '/data/rin_reasoning.json', 'invalid reasoning dossier');
-
-const loadSpeakingHabitsForChat = () =>
-  loadDossierForChat('speaking habits', '/data/rin_speaking_habits.json', 'invalid speaking habits');
+const loadPromptProfileForChat = () =>
+  loadDossierForChat('prompt profile', '/data/rin_prompt_profile.json', 'invalid prompt profile');
 
 async function ensureLoreReady() {
   if (loreLib) return loreLib;
@@ -300,40 +291,26 @@ async function ensureResponsePostprocessor() {
 }
 
 async function ensureActiveProfile() {
-  // persona_ui может завершить загрузку чуть позже chat.js.
+  // persona_ui может обновить пользовательские поля позже chat.js.
   const globalProfile = window.RIN_PROFILE;
+  if (globalProfile && typeof globalProfile === 'object') profile = globalProfile;
+  if (!profile || typeof profile !== 'object') profile = {};
 
-  if (globalProfile && typeof globalProfile === 'object') {
-    profile = globalProfile;
-  }
+  const promptProfile =
+    profile.prompt_profile ||
+    await loadPromptProfileForChat();
 
-  if (!profile || typeof profile !== 'object') {
-    profile = {};
-  }
-
-  const dossier =
-    profile.persona_dossier ||
-    await loadPersonaDossierForChat();
-
-  const mind =
-    profile.mind_dossier ||
-    await loadMindDossierForChat();
-
-  const reasoning =
-    profile.reasoning_dossier ||
-    await loadReasoningDossierForChat();
-
-  const speakingHabits =
-    profile.speaking_habits ||
-    await loadSpeakingHabitsForChat();
-
+  // В API отправляется единый компактный профиль. Полные JSON-досье остаются
+  // источниками UI/lore, но больше не дублируются в каждом запросе модели.
   profile = {
-    ...profile,
     name: profile.name || 'Рин Акихара',
-    ...(dossier ? { persona_dossier: dossier } : {}),
-    ...(mind ? { mind_dossier: mind } : {}),
-    ...(reasoning ? { reasoning_dossier: reasoning } : {}),
-    ...(speakingHabits ? { speaking_habits: speakingHabits } : {})
+    description: profile.description || '',
+    base_rules: profile.base_rules || '',
+    instructions_extra: profile.instructions_extra || '',
+    knowledge: profile.knowledge || '',
+    starters: Array.isArray(profile.starters) ? profile.starters : [],
+    initiation: profile.initiation || null,
+    ...(promptProfile ? { prompt_profile: promptProfile } : {})
   };
 
   return profile;
@@ -1291,10 +1268,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
   try{
     // 1) Загружаем профиль и обязательно присоединяем постоянное досье.
     await ensureActiveProfile();
-    dbg('persona dossier ready: ' + Boolean(profile?.persona_dossier));
-    dbg('mind dossier ready: ' + Boolean(profile?.mind_dossier));
-    dbg('reasoning dossier ready: ' + Boolean(profile?.reasoning_dossier));
-    dbg('speaking habits ready: ' + Boolean(profile?.speaking_habits));
+    dbg('compact prompt profile ready: ' + Boolean(profile?.prompt_profile));
     await ensureLoreReady();
 
     // 2) stickers v4
