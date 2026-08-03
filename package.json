@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check api/chat.js && node --check api/memory.js && node --check lib/core-personality.js && node --check lib/conversation-brain.js && node --check lib/personality/continuity.js && node --check lib/personality/inner-life.js && node --check public/chat.js && node --check public/js/rin_memory.js && node --check lib/personality/relationship.js"
+    "check": "node --check api/chat.js && node --check api/memory.js && node --check lib/core-personality.js && node --check lib/conversation-brain.js && node --check lib/personality/continuity.js && node --check lib/personality/inner-life.js && node --check public/chat.js && node --check public/js/rin_memory.js && node --check lib/personality/relationship.js && node --check public/lib/stickers-v4.js && node --check lib/stickers-v4.js && node tests/stickers-v5.test.js",
+    "test:stickers": "node tests/stickers-v5.test.js"
   }
 }
