@@ -1,6 +1,6 @@
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
-const RIN_BUILD_VERSION = '2026-08-02-project-wide-prompt-compact-v1';
+const RIN_BUILD_VERSION = '2026-08-03-stickers-semantic-v6';
 
 const STORAGE_KEY    = 'rin-history-v2';
 const DAILY_INIT_KEY = 'rin-init-count';
@@ -899,7 +899,7 @@ let stickersLib = null;
 
 async function ensureStickersReady(){
   if (!stickersLib) {
-    try { stickersLib = await import('/lib/stickers-v4.js'); }
+    try { stickersLib = await import('/lib/stickers-v4.js?v=6'); }
     catch(e){ dbg('stickers v5 import failed: '+(e?.message||e)); stickersLib=null; }
   }
   if (stickersLib && !STICKERS_CFG) {
@@ -1534,7 +1534,9 @@ async function maybeSticker(userText, replyText, responseMeta = null, options = 
         userEmotion: responseMeta?.coreDecision?.userEmotion || '',
         deliveryStyle: responseMeta?.coreDecision?.deliveryStyle || '',
         hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || responseMeta?.coreDecision?.conversationBrain?.hiddenIntent?.type || '',
-        intensity: responseMeta?.conversationBrain?.intensity ?? responseMeta?.coreDecision?.conversationBrain?.intensity
+        intensity: responseMeta?.conversationBrain?.intensity ?? responseMeta?.coreDecision?.conversationBrain?.intensity,
+        feltEmotion: responseMeta?.coreDecision?.emotionalResponse?.feltEmotion || '',
+        emotionalResponse: responseMeta?.coreDecision?.emotionalResponse || null
       }
     });
 
