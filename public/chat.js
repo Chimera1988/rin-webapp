@@ -1181,12 +1181,12 @@ function addTyping(){
 
 /* === Стикеры: рендер === */
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function addStickerBubble(src, who='assistant', utterance=null){
+function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
   if (src && typeof src === 'object' && src.src) src = src.src;
 
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
-  const timeStr = fmtTime(new Date());
+  const timeStr = fmtTime(new Date(ts));
 
   const utterHtml = utterance ? `<div class="sticker-utter">${escapeHtml(utterance)}</div>` : '';
 
@@ -1351,7 +1351,10 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
 
   history=loadHistory();
   if (history.length){
-    for (const m of history) addBubble(m.content, m.role==='user'?'user':'assistant', m.ts);
+    for (const m of history) {
+      if (m?.type === 'sticker' && m?.sticker?.src) addStickerBubble(m.sticker.src, m.role==='user'?'user':'assistant', m.sticker.utterance || null, m.ts);
+      else addBubble(m.content, m.role==='user'?'user':'assistant', m.ts);
+    }
   } else {
     greet();
   }
@@ -1423,17 +1426,12 @@ function greet(){
               : 'Привет. Как ты?';
     }
 
+    const stickerDecision = await maybeSticker('', greeting, null, { render: false });
+    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
     addBubble(greeting, 'assistant');
-
-    await maybeSticker('', greeting);
-
-    history.push({
-      role: 'assistant',
-      content: greeting,
-      ts: Date.now()
-    });
-
+    history.push({ role: 'assistant', content: greeting, ts: Date.now() });
     saveHistory(history);
+    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
   })();
 }
 
@@ -1465,53 +1463,93 @@ async function getTTSUrl(text){
 }
 
 /* === stickers v5: решение по смыслу сообщения пользователя и ответа Рин === */
-async function maybeSticker(userText, replyText, responseMeta = null){
-  if (stickerBusy) return;
+function stickerSemanticText(decision) {
+  const action = String(decision?.semanticAction || decision?.sticker?.family || 'эмоциональный жест');
+  const utterance = decision?.utterance ? `, со словами «${decision.utterance}»` : '';
+  return `[Невербальный жест Рин: ${action}${utterance}]`;
+}
+
+async function commitStickerDecision(decision) {
+  if (decision?.action !== 'send' || !decision?.sticker) return false;
+  const ts = Date.now();
+  addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null, ts);
+  stickersLib.markStickerSent(decision.sticker);
+  history.push({
+    role: 'assistant',
+    type: 'sticker',
+    content: stickerSemanticText(decision),
+    sticker: {
+      src: decision.sticker.src,
+      family: decision.sticker.family || null,
+      semanticAction: decision.semanticAction || decision.sticker.family || null,
+      utterance: decision.utterance || null,
+      timing: decision.timing || 'after_reply'
+    },
+    ts
+  });
+  saveHistory(history);
+  try {
+    const lib = await ensureMemoryReady();
+    const semanticAction = decision.semanticAction || decision.sticker.family || 'emotion';
+    await lib?.addEvent?.(stickerSemanticText(decision), {
+      type: 'sticker_gesture',
+      tags: ['sticker', semanticAction],
+      importance: ['kiss', 'hug'].includes(semanticAction) ? 7 : 4,
+      ref: decision.sticker.src
+    });
+    if (decision?.signals?.explicitGesture && Number(decision.confidence || 0) >= 0.6) {
+      await lib?.addSharedMoment?.({ text: stickerSemanticText(decision), importance: 7 });
+    }
+  } catch (error) {
+    dbg('sticker memory event failed: ' + (error?.message || error));
+  }
+  chainStickerCount = 0;
+  dbg(`stickers v5 decision: mode=${decision.mode}; timing=${decision.timing}; sticker=${decision.sticker.src}; confidence=${Number(decision.confidence || 0).toFixed(2)}; reason=${decision.reason}`);
+  return true;
+}
+
+/* === stickers v5: решение по смыслу сообщения пользователя и ответа Рин === */
+async function maybeSticker(userText, replyText, responseMeta = null, options = {}){
+  if (stickerBusy) return null;
   stickerBusy = true;
   try {
     await ensureStickersReady();
-    if (!stickersLib || !STICKERS_CFG) { dbg('stickers v5 unavailable'); return; }
-
+    if (!stickersLib || !STICKERS_CFG) { dbg('stickers v5 unavailable'); return null; }
     const mode = lsStickerMode();
-    if (mode === 'off') { dbg('stickers v5 none: reason=mode_off'); return; }
+    if (mode === 'off') { dbg('stickers v5 none: reason=mode_off'); return null; }
 
-    const NEG = /(тяжел|тяжёл|груст|больно|тревог|сложно|проблем|помоги|помощ|совет|паник|плач|плохо)/i;
-    if (lsStickerSafe() && userText && NEG.test(String(userText || ''))) {
-      dbg('stickers v5 none: reason=safe_blocked');
-      return;
-    }
-
-    let mood = {};
-    try { mood = (await buildMemoryPayload())?.mood || {}; } catch {}
-
+    let memory = {};
+    try { memory = (await buildMemoryPayload()) || {}; } catch {}
     const decision = stickersLib.decideSticker(STICKERS_CFG, {
       userText: userText || '',
       replyText: replyText || '',
-      mood,
+      mood: memory.mood || {},
+      relationship: memory.relationship || {},
       mode: mode === 'always' ? 'always' : 'smart',
       baseProbability: lsStickerProb(),
       context: {
+        safeMode: lsStickerSafe(),
         scene: responseMeta?.conversationBrain?.activeScene?.type || responseMeta?.coreDecision?.conversationBrain?.activeScene?.type || '',
         intent: responseMeta?.coreDecision?.intent || '',
         userEmotion: responseMeta?.coreDecision?.userEmotion || '',
         deliveryStyle: responseMeta?.coreDecision?.deliveryStyle || '',
-        hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || responseMeta?.coreDecision?.conversationBrain?.hiddenIntent?.type || ''
+        hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || responseMeta?.coreDecision?.conversationBrain?.hiddenIntent?.type || '',
+        intensity: responseMeta?.conversationBrain?.intensity ?? responseMeta?.coreDecision?.conversationBrain?.intensity
       }
     });
 
     if (decision?.action !== 'send' || !decision?.sticker) {
       const top = Array.isArray(decision?.top) ? decision.top.map(x => `${x.src}:${x.score}`).join(', ') : '';
       dbg(`stickers v5 none: reason=${decision?.reason || 'unknown'}${Number.isFinite(decision?.probability) ? `; probability=${decision.probability}` : ''}${decision?.candidate ? `; candidate=${decision.candidate}` : ''}${decision?.probabilityReason ? `; probabilityReason=${decision.probabilityReason}` : ''}${top ? `; top=[${top}]` : ''}`);
-      return;
+      return decision || null;
     }
 
     dbg(`stickers v5 decision: sticker=${decision.sticker.src}; probability=${decision.probability ?? 100}; probabilityReason=${decision.probabilityReason || 'always'}; ${decision.reason || ''}`);
-    addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
-    stickersLib.markStickerSent(decision.sticker);
-    chainStickerCount = 0;
-    dbg(`stickers v5 decision: mode=${decision.mode}; timing=${decision.timing}; sticker=${decision.sticker.src}; confidence=${Number(decision.confidence || 0).toFixed(2)}; reason=${decision.reason}`);
+    if (options.render !== false) await commitStickerDecision(decision);
+    return decision;
   } catch (e) {
     dbg('stickers v5 error: ' + (e?.message || e));
+    return null;
   } finally {
     stickerBusy = false;
   }
@@ -1612,30 +1650,18 @@ async function tryInitiateBySchedule(){
     trow.remove();
     peerStatus.textContent = 'онлайн';
 
-    let voiced = false;
+    const stickerDecision = await maybeSticker('', text, null, { render: false });
+    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
+    let voiced = false;
     if (shouldVoiceFor(text)) {
       const url = await getTTSUrl(text);
-
-      if (url) {
-        addVoiceBubble(url, text, 'assistant');
-        voiced = true;
-      }
+      if (url) { addVoiceBubble(url, text, 'assistant'); voiced = true; }
     }
-
-    if (!voiced) {
-      addBubble(text, 'assistant');
-    }
-
-    await maybeSticker('', text);
-
-    history.push({
-      role: 'assistant',
-      content: text,
-      ts: Date.now()
-    });
-
+    if (!voiced) addBubble(text, 'assistant');
+    history.push({ role: 'assistant', content: text, ts: Date.now() });
     saveHistory(history);
+    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
     bumpInitCount(dateKey);
   }, 900 + Math.random() * 900);
 }
@@ -1722,30 +1748,19 @@ formEl.addEventListener('submit', async (e) => {
   }
 
   async function renderAssistantReply(reply, responseMeta = null) {
-    let voiced = false;
+    const stickerDecision = await maybeSticker(text, reply, responseMeta, { render: false });
+    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
+    let voiced = false;
     if (shouldVoiceFor(reply)) {
       const url = await getTTSUrl(reply);
-
-      if (url) {
-        addVoiceBubble(url, reply, 'assistant');
-        voiced = true;
-      }
+      if (url) { addVoiceBubble(url, reply, 'assistant'); voiced = true; }
     }
+    if (!voiced) addBubble(reply, 'assistant');
 
-    if (!voiced) {
-      addBubble(reply, 'assistant');
-    }
-
-    await maybeSticker(text, reply, responseMeta);
-
-    history.push({
-  role: 'assistant',
-  content: reply,
-  ts: Date.now()
-});
-
-saveHistory(history);
+    history.push({ role: 'assistant', content: reply, ts: Date.now() });
+    saveHistory(history);
+    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
 chainStickerCount++;
 
 if (responseMeta?.coreDecision?.initiative?.mode === 'small_observation') {
