@@ -3,6 +3,7 @@ import { polishRinReply } from '../lib/personality/anti-gpt.js';
 import { analyzeConversation, conversationBrainInstruction } from '../lib/conversation-brain.js';
 import { buildContinuitySnapshot, continuityInstruction, selectRelevantMemory } from '../lib/personality/continuity.js';
 import { buildInnerLifeSnapshot, innerLifeInstruction } from '../lib/personality/inner-life.js';
+import { relationshipInstruction } from '../lib/personality/relationship.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ACCESS_PIN = process.env.ACCESS_PIN || '';
@@ -168,7 +169,7 @@ function formatLore(lore) {
   return lines.length ? `ТЕМАТИЧЕСКИЙ КОНТЕКСТ (использовать только по смыслу, не цитировать дословно):\n- ${lines.join('\n- ')}` : '';
 }
 
-function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain, history, userText }) {
+function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain, history, userText, client }) {
   const voiceMode = chooseVoiceMode(profile);
   const stable = formatPromptProfile(profile);
   const custom = [
@@ -198,6 +199,7 @@ function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversat
     formatMemory(memory, userText, history),
     continuityInstruction(buildContinuitySnapshot(history, userText)),
     formatMood(memory),
+    relationshipInstruction(memory, client),
     innerLifeInstruction(buildInnerLifeSnapshot(memory, env, userText, history)),
     conversationBrainInstruction(conversationBrain),
     coreDecision?.prompt,
@@ -250,7 +252,7 @@ export default async function handler(req, res) {
     const isLong = Boolean(body?.client?.forceLong) || detectLongMode(userTurn);
     const conversationBrain = analyzeConversation({ userText: userTurn, history, conversationState });
     const coreDecision = buildCoreDecision({ userText: userTurn, history, memory, conversationState, isLong, conversationBrain });
-    const prompt = buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain, history, userText: userTurn });
+    const prompt = buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain, history, userText: userTurn, client: body?.client || {} });
 
     const messages = [
       { role: 'system', content: prompt.text },

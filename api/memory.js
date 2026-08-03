@@ -34,7 +34,11 @@ function createEmptyMemoryResult() {
   return {
     facts: [],
     events: [],
-    moodDelta: createEmptyMoodDelta()
+    moodDelta: createEmptyMoodDelta(),
+    relationshipDelta: { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0, reason: '', confidence: 0 },
+    openLoops: [],
+    resolvedLoops: [],
+    sharedMoments: []
   };
 }
 
@@ -168,6 +172,36 @@ function sanitizeMemoryResult(value) {
     };
   }
 
+
+  const relationship = value?.relationshipDelta;
+  if (relationship && typeof relationship === 'object') {
+    const delta = input => {
+      const number = Number(input);
+      return Number.isFinite(number) ? Math.max(-4, Math.min(4, Math.round(number))) : 0;
+    };
+    const confidence = Number(relationship.confidence);
+    result.relationshipDelta = {
+      trust: delta(relationship.trust), closeness: delta(relationship.closeness),
+      comfort: delta(relationship.comfort), respect: delta(relationship.respect),
+      playfulness: delta(relationship.playfulness),
+      reason: normalizeText(relationship.reason, 300),
+      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0
+    };
+  }
+
+  for (const item of safeArray(value?.openLoops, 4)) {
+    const text = normalizeText(item?.text, 400);
+    if (text) result.openLoops.push({ text, type: normalizeText(item?.type, 30) || 'topic', importance: Math.max(1, Math.min(10, Number(item?.importance) || 5)) });
+  }
+  for (const item of safeArray(value?.resolvedLoops, 4)) {
+    const text = normalizeText(item?.text, 400);
+    if (text) result.resolvedLoops.push({ text });
+  }
+  for (const item of safeArray(value?.sharedMoments, 3)) {
+    const text = normalizeText(item?.text, 500);
+    if (text) result.sharedMoments.push({ text, importance: Math.max(1, Math.min(10, Number(item?.importance) || 6)) });
+  }
+
   return result;
 }
 
@@ -183,10 +217,12 @@ async function extractMemory({
 Не сохраняй приветствия, прощания, обычные вопросы, шутки, команды приложению, предположения модели, сведения только из ответа ассистента, секреты/ключи/платёжные данные, точные адреса и лишние чувствительные данные.
 Пути фактов начинаются только с user.; один факт — один короткий путь. Упоминание Рин Акихары по умолчанию относится к ассистенту, не к третьему лицу.
 
-Всегда верни moodDelta. Оцени влияние прежде всего последней реплики пользователя: affection, energy, playfulness, trust — целые числа от -10 до 10; для нейтрального сообщения нули. Обычная забота или комплимент сами по себе не повышают energy. reason — кратко, confidence — 0..1. Не придумывай сильную реакцию без причины.
+Всегда верни moodDelta и relationshipDelta. Отношения меняются медленно: обычный вопрос даёт нули; откровенность, выполненное обещание, уважение границ или совместно пройденное событие могут дать небольшие изменения от -4 до 4. Оцени влияние прежде всего последней реплики пользователя: affection, energy, playfulness, trust — целые числа от -10 до 10; для нейтрального сообщения нули. Обычная забота или комплимент сами по себе не повышают energy. reason — кратко, confidence — 0..1. Не придумывай сильную реакцию без причины.
+
+Также выделяй openLoops — обещания, планы и темы, к которым явно нужно вернуться; resolvedLoops — ранее открытые линии, которые явно завершились; sharedMoments — редкие значимые совместные эпизоды, сформулированные как пережитая общая история, а не сухой факт.
 
 Формат:
-{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"moodDelta":{"affection":0,"energy":0,"playfulness":0,"trust":0,"reason":"","confidence":0}}
+{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"moodDelta":{"affection":0,"energy":0,"playfulness":0,"trust":0,"reason":"","confidence":0},"relationshipDelta":{"trust":0,"closeness":0,"comfort":0,"respect":0,"playfulness":0,"reason":"","confidence":0},"openLoops":[],"resolvedLoops":[],"sharedMoments":[]}
 `.trim();
 
   const userPrompt = `
