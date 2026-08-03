@@ -1,4 +1,5 @@
 {
+  "_schema": "rin-schedule-v1",
   "timezone": "Asia/Tokyo",
   "windows": [
     {
