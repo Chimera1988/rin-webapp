@@ -418,6 +418,21 @@ async function buildMemoryPayload() {
               diary.mood.lastInteractionAt
             ) || null
         }
+      : null,
+
+  innerLife:
+    diary.innerLife && typeof diary.innerLife === 'object'
+      ? {
+          activity: String(diary.innerLife.activity || '').slice(0, 180),
+          trace: String(diary.innerLife.trace || '').slice(0, 220),
+          focus: String(diary.innerLife.focus || '').slice(0, 220),
+          privateThought: String(diary.innerLife.privateThought || '').slice(0, 260),
+          part: String(diary.innerLife.part || '').slice(0, 20),
+          startedAt: Number(diary.innerLife.startedAt) || null,
+          expiresAt: Number(diary.innerLife.expiresAt) || null,
+          lastSpontaneousAt: Number(diary.innerLife.lastSpontaneousAt) || null,
+          interactionCount: Number(diary.innerLife.interactionCount) || 0
+        }
       : null
 };
   } catch (error) {
@@ -1684,6 +1699,15 @@ formEl.addEventListener('submit', async (e) => {
 saveHistory(history);
 chainStickerCount++;
 
+if (responseMeta?.coreDecision?.initiative?.mode === 'small_observation') {
+  try {
+    const lib = await ensureMemoryReady();
+    await lib?.markInnerLifeSpontaneous?.();
+  } catch (error) {
+    dbg('inner life mark failed: ' + (error?.message || error));
+  }
+}
+
 // Фоновый анализ для долгосрочной памяти.
 const aiMoodApplied =
   await analyzeConversationForMemory(
@@ -1763,6 +1787,8 @@ if (!aiMoodApplied) {
   const typingRow = addTyping();
 
   try {
+    const memoryModule = await ensureMemoryReady();
+    await memoryModule?.advanceInnerLife?.(currentEnv || {}, text);
     const memory = await buildMemoryPayload();
     const activeProfile = await ensureActiveProfile();
 
