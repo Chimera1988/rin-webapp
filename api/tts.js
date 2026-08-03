@@ -1,70 +1,50 @@
-// /api/tts.js — озвучка коротких реплик Рин (ElevenLabs TTS, голос Rin)
-const ELEVEN_KEY   = process.env.ELEVENLABS_API_KEY;
-const VOICE_ID_DEF = process.env.ELEVENLABS_VOICE_ID || 'NxfO5zydfqwpYnWQJ7jJ'; // Rin
-const MODEL_ID_DEF = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
+import { fetchWithTimeout, publicError, readJsonBody, requirePin } from '../lib/server/http.js';
+
+const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
+const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'NxfO5zydfqwpYnWQJ7jJ';
+const MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
+const MAX_CHARS = 180;
 
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
       res.setHeader('Allow', 'POST');
-      return res.status(405).json({ error: 'Method Not Allowed' });
+      return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
     }
-    if (!ELEVEN_KEY) {
-      return res.status(500).json({ error: 'Missing ELEVENLABS_API_KEY' });
-    }
+    const body = await readJsonBody(req);
+    if (!requirePin(req, res, body)) return;
+    if (!ELEVEN_KEY) return res.status(503).json({ error: 'TTS is not configured', code: 'TTS_NOT_CONFIGURED' });
 
-    const { text, voice, model } = await safeJson(req);
-    const cleanText = (typeof text === 'string' ? text : '').trim();
-    if (!cleanText) return res.status(400).json({ error: 'Text is required' });
+    const cleanText = typeof body.text === 'string' ? body.text.trim() : '';
+    if (!cleanText) return res.status(400).json({ error: 'Text is required', code: 'INVALID_TEXT' });
+    const ttsInput = cleanText.length > MAX_CHARS ? `${cleanText.slice(0, MAX_CHARS)}…` : cleanText;
 
-    // Ограничим длину — авто‑плей в браузере и экономия токенов
-    const MAX_CHARS = 180;
-    const ttsInput = cleanText.length > MAX_CHARS
-      ? cleanText.slice(0, MAX_CHARS) + '…'
-      : cleanText;
-
-    const voiceId = (typeof voice === 'string' && voice.trim()) || VOICE_ID_DEF;
-    const modelId = (typeof model === 'string' && model.trim()) || MODEL_ID_DEF;
-
-    // ElevenLabs: POST /v1/text-to-speech/{voice_id}
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`;
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': ELEVEN_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'audio/mpeg'
+    const upstream = await fetchWithTimeout(
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(VOICE_ID)}`,
+      {
+        method: 'POST',
+        headers: {
+          'xi-api-key': ELEVEN_KEY,
+          'Content-Type': 'application/json',
+          Accept: 'audio/mpeg'
+        },
+        body: JSON.stringify({ model_id: MODEL_ID, text: ttsInput })
       },
-      body: JSON.stringify({
-        model_id: modelId,
-        text: ttsInput,
-        // Можно тонко настраивать голос через voice_settings, оставим дефолты
-        // voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-      })
-    });
+      20_000
+    );
 
-    if (!r.ok) {
-      const errText = await r.text().catch(() => '');
-      return res.status(r.status).json({ error: 'ElevenLabs TTS failed', detail: errText });
+    if (!upstream.ok) {
+      console.error('TTS upstream failed', upstream.status, (await upstream.text().catch(() => '')).slice(0, 500));
+      return res.status(502).json({ error: 'TTS upstream failed', code: 'TTS_UPSTREAM_ERROR' });
     }
 
-    const buf = Buffer.from(await r.arrayBuffer());
+    const buf = Buffer.from(await upstream.arrayBuffer());
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).send(buf);
-  } catch (err) {
-    console.error('TTS error', err);
-    return res.status(500).json({ error: 'TTS internal error' });
-  }
-}
-
-// ——— helpers ———
-async function safeJson(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-  } catch {
-    return {};
+  } catch (error) {
+    console.error('TTS error', error);
+    const mapped = publicError(error, 'TTS internal error');
+    return res.status(mapped.status).json(mapped.body);
   }
 }

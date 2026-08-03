@@ -1,371 +1,151 @@
+import { contentKey } from '../lib/chat-contract.js';
+import { fetchWithTimeout, readJsonBody, requirePin } from '../lib/server/http.js';
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const ACCESS_PIN = process.env.ACCESS_PIN || '';
+const MEMORY_MODEL = process.env.OPENAI_MEMORY_MODEL || process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
 
-const MEMORY_MODEL =
-  process.env.OPENAI_MEMORY_MODEL ||
-  process.env.OPENAI_SHORT_MODEL ||
-  'gpt-4o-mini';
+const clean = (value, max = 1000) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+const list = (value, max = 10) => Array.isArray(value) ? value.slice(0, max) : [];
+const clamp = (value, min, max, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
+};
+const confidence = value => {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
+};
 
-function normalizeText(value, maxLength = 1000) {
-  return String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLength);
-}
-
-function safeArray(value, maxLength = 10) {
-  return Array.isArray(value)
-    ? value.slice(0, maxLength)
-    : [];
-}
-
-function createEmptyMoodDelta() {
+export function createEmptyMemoryResult() {
   return {
-    affection: 0,
-    energy: 0,
-    playfulness: 0,
-    trust: 0,
-    reason: '',
-    confidence: 0
-  };
-}
-
-function createEmptyMemoryResult() {
-  return {
+    schemaVersion: 3,
     facts: [],
     events: [],
-    moodDelta: createEmptyMoodDelta(),
-    relationshipDelta: { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0, reason: '', confidence: 0 },
     openLoops: [],
     resolvedLoops: [],
     sharedMoments: []
   };
 }
 
-function sanitizeMemoryResult(value) {
+export function sanitizeMemoryResult(value) {
   const result = createEmptyMemoryResult();
 
-  for (const item of safeArray(value?.facts, 5)) {
-    const path = normalizeText(item?.path, 100);
-    const memoryValue = normalizeText(
-      item?.value,
-      500
-    );
-    const confidence = Number(
-      item?.confidence
-    );
-
-    if (
-      !/^user\.[a-zA-Z0-9_.-]+$/.test(path)
-    ) {
-      continue;
+  for (const item of list(value?.facts, 5)) {
+    const path = clean(item?.path, 100);
+    const memoryValue = clean(item?.value, 500);
+    if (/^user\.[a-zA-Z0-9_.-]+$/.test(path) && memoryValue) {
+      result.facts.push({ path, value: memoryValue, confidence: confidence(item?.confidence) || 0.7 });
     }
-
-    if (!memoryValue) {
-      continue;
-    }
-
-    result.facts.push({
-      path,
-      value: memoryValue,
-
-      confidence:
-        Number.isFinite(confidence)
-          ? Math.max(
-              0,
-              Math.min(1, confidence)
-            )
-          : 0.7
-    });
   }
 
-  for (
-    const item of safeArray(value?.events, 5)
-  ) {
-    const text = normalizeText(
-      item?.text,
-      500
-    );
-
-    if (!text) {
-      continue;
-    }
-
+  for (const item of list(value?.events, 5)) {
+    const text = clean(item?.text, 500);
+    if (!text) continue;
     result.events.push({
+      id: clean(item?.id, 100) || contentKey(`event:${text}`),
+      key: contentKey(`event:${text}`),
       text,
-
-      type:
-        normalizeText(item?.type, 30) ||
-        'memory',
-
-      tags: safeArray(item?.tags, 8)
-        .map(tag =>
-          normalizeText(tag, 40)
-        )
-        .filter(Boolean),
-
-      importance: Math.max(
-        1,
-        Math.min(
-          10,
-          Number(item?.importance) || 5
-        )
-      )
+      type: clean(item?.type, 30) || 'memory',
+      tags: list(item?.tags, 8).map(tag => clean(tag, 40)).filter(Boolean),
+      importance: clamp(item?.importance, 1, 10, 5)
     });
   }
 
-  const moodDelta = value?.moodDelta;
-
-  if (
-    moodDelta &&
-    typeof moodDelta === 'object'
-  ) {
-    const clampDelta = input => {
-      const number = Number(input);
-
-      if (!Number.isFinite(number)) {
-        return 0;
-      }
-
-      return Math.max(
-        -10,
-        Math.min(
-          10,
-          Math.round(number)
-        )
-      );
-    };
-
-    const confidence = Number(
-      moodDelta.confidence
-    );
-
-    result.moodDelta = {
-      affection: clampDelta(
-        moodDelta.affection
-      ),
-
-      energy: clampDelta(
-        moodDelta.energy
-      ),
-
-      playfulness: clampDelta(
-        moodDelta.playfulness
-      ),
-
-      trust: clampDelta(
-        moodDelta.trust
-      ),
-
-      reason: normalizeText(
-        moodDelta.reason,
-        300
-      ),
-
-      confidence:
-        Number.isFinite(confidence)
-          ? Math.max(
-              0,
-              Math.min(1, confidence)
-            )
-          : 0
-    };
+  for (const item of list(value?.openLoops, 4)) {
+    const text = clean(item?.text, 400);
+    if (!text) continue;
+    result.openLoops.push({
+      id: clean(item?.id, 100) || contentKey(`loop:${text}`),
+      key: contentKey(`loop:${text}`),
+      text,
+      type: clean(item?.type, 30) || 'topic',
+      importance: clamp(item?.importance, 1, 10, 5)
+    });
   }
-
-
-  const relationship = value?.relationshipDelta;
-  if (relationship && typeof relationship === 'object') {
-    const delta = input => {
-      const number = Number(input);
-      return Number.isFinite(number) ? Math.max(-4, Math.min(4, Math.round(number))) : 0;
-    };
-    const confidence = Number(relationship.confidence);
-    result.relationshipDelta = {
-      trust: delta(relationship.trust), closeness: delta(relationship.closeness),
-      comfort: delta(relationship.comfort), respect: delta(relationship.respect),
-      playfulness: delta(relationship.playfulness),
-      reason: normalizeText(relationship.reason, 300),
-      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0
-    };
+  for (const item of list(value?.resolvedLoops, 4)) {
+    const id = clean(item?.id, 100);
+    const text = clean(item?.text, 400);
+    if (id || text) result.resolvedLoops.push({ id: id || null, text: text || null });
   }
-
-  for (const item of safeArray(value?.openLoops, 4)) {
-    const text = normalizeText(item?.text, 400);
-    if (text) result.openLoops.push({ text, type: normalizeText(item?.type, 30) || 'topic', importance: Math.max(1, Math.min(10, Number(item?.importance) || 5)) });
+  for (const item of list(value?.sharedMoments, 3)) {
+    const text = clean(item?.text, 500);
+    if (!text) continue;
+    result.sharedMoments.push({
+      id: clean(item?.id, 100) || contentKey(`moment:${text}`),
+      key: contentKey(`moment:${text}`),
+      text,
+      importance: clamp(item?.importance, 1, 10, 6)
+    });
   }
-  for (const item of safeArray(value?.resolvedLoops, 4)) {
-    const text = normalizeText(item?.text, 400);
-    if (text) result.resolvedLoops.push({ text });
-  }
-  for (const item of safeArray(value?.sharedMoments, 3)) {
-    const text = normalizeText(item?.text, 500);
-    if (text) result.sharedMoments.push({ text, importance: Math.max(1, Math.min(10, Number(item?.importance) || 6)) });
-  }
-
   return result;
 }
 
-async function extractMemory({
-  userText,
-  assistantText,
-  existingMemory
-}) {
+async function extractMemory({ userText, assistantText, existingMemory }) {
   const systemPrompt = `
 Ты — анализатор долговременной памяти AI-компаньона. Не отвечай пользователю; верни только JSON.
 
-Сохраняй только явно сообщённые пользователем устойчивые факты (имя, место, работа, близкие, предпочтения, привычки, долгосрочные проекты) и значимые события, к которым позже уместно вернуться (встреча, поездка, решение, обещание, достижение, важный разговор).
-Не сохраняй приветствия, прощания, обычные вопросы, шутки, команды приложению, предположения модели, сведения только из ответа ассистента, секреты/ключи/платёжные данные, точные адреса и лишние чувствительные данные.
-Пути фактов начинаются только с user.; один факт — один короткий путь. Упоминание Рин Акихары по умолчанию относится к ассистенту, не к третьему лицу.
+Сохраняй только явно сообщённые пользователем устойчивые факты и значимые события. Не сохраняй приветствия, прощания, обычные вопросы, команды приложению, предположения модели, секреты, платёжные данные, точные адреса и сведения только из ответа ассистента. Пути фактов начинаются только с user.
 
-Всегда верни moodDelta и relationshipDelta. Отношения меняются медленно: обычный вопрос даёт нули; откровенность, выполненное обещание, уважение границ или совместно пройденное событие могут дать небольшие изменения от -4 до 4. Оцени влияние прежде всего последней реплики пользователя: affection, energy, playfulness, trust — целые числа от -10 до 10; для нейтрального сообщения нули. Обычная забота или комплимент сами по себе не повышают energy. reason — кратко, confidence — 0..1. Не придумывай сильную реакцию без причины.
+Эмоциональное состояние и отношения здесь не анализируй: они обновляются отдельным единым детерминированным контуром на клиенте.
 
-Также выделяй openLoops — обещания, планы и темы, к которым явно нужно вернуться; resolvedLoops — ранее открытые линии, которые явно завершились; sharedMoments — редкие значимые совместные эпизоды, сформулированные как пережитая общая история, а не сухой факт.
+Для openLoops переиспользуй id существующей линии, если она уже есть. Для resolvedLoops возвращай прежде всего стабильный id существующей линии; text используй только если id отсутствует. sharedMoments должны быть редкими и значимыми.
 
 Формат:
-{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"moodDelta":{"affection":0,"energy":0,"playfulness":0,"trust":0,"reason":"","confidence":0},"relationshipDelta":{"trust":0,"closeness":0,"comfort":0,"respect":0,"playfulness":0,"reason":"","confidence":0},"openLoops":[],"resolvedLoops":[],"sharedMoments":[]}
+{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"openLoops":[{"id":"existing-id-or-empty","text":"...","type":"plan","importance":7}],"resolvedLoops":[{"id":"existing-id","text":""}],"sharedMoments":[]}
 `.trim();
 
   const userPrompt = `
 СУЩЕСТВУЮЩАЯ ПАМЯТЬ:
-${JSON.stringify(
-  existingMemory || {},
-  null,
-  0
-).slice(0, 2800)}
+${JSON.stringify(existingMemory || {}).slice(0, 3600)}
 
 НОВАЯ РЕПЛИКА ПОЛЬЗОВАТЕЛЯ:
-${normalizeText(userText, 1400)}
+${clean(userText, 1600)}
 
 ОТВЕТ АССИСТЕНТА:
-${normalizeText(assistantText, 1200)}
+${clean(assistantText, 1400)}
 
-Проанализируй диалог и верни только JSON.
+Верни только JSON.
 `.trim();
 
-  const response = await fetch(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      method: 'POST',
-
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`
-      },
-
-      body: JSON.stringify({
-        model: MEMORY_MODEL,
-        temperature: 0.1,
-        max_tokens: 360,
-
-        response_format: {
-          type: 'json_object'
-        },
-
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
-        ]
-      })
-    }
-  );
+  const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: MEMORY_MODEL,
+      temperature: 0.1,
+      max_tokens: 420,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ]
+    })
+  }, 20_000);
 
   const rawText = await response.text();
-
-  if (!response.ok) {
-    throw new Error(
-      `OpenAI memory error ${response.status}: ` +
-      rawText.slice(0, 500)
-    );
-  }
-
+  if (!response.ok) throw new Error(`OpenAI memory ${response.status}: ${rawText.slice(0, 300)}`);
   const data = JSON.parse(rawText);
-
-  const content =
-    data?.choices?.[0]?.message?.content ||
-    '{}';
-
-  let parsed;
-
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    parsed = createEmptyMemoryResult();
-  }
-
-  return sanitizeMemoryResult(parsed);
+  const content = data?.choices?.[0]?.message?.content || '{}';
+  try { return sanitizeMemoryResult(JSON.parse(content)); } catch { return createEmptyMemoryResult(); }
 }
 
-export default async function handler(
-  req,
-  res
-) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({
-      error: 'Method not allowed'
-    });
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
   }
+  const body = await readJsonBody(req);
+  if (!requirePin(req, res, body)) return;
+  if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Memory service is not configured', code: 'MEMORY_NOT_CONFIGURED' });
 
-  if (!OPENAI_API_KEY) {
-    return res.status(500).json({
-      error:
-        'OPENAI_API_KEY is not configured'
-    });
-  }
-
-  const body = req.body || {};
-
-  if (
-    ACCESS_PIN &&
-    String(body.pin || '') !==
-      String(ACCESS_PIN)
-  ) {
-    return res.status(401).json({
-      error: 'Unauthorized'
-    });
-  }
-
-  const userText = normalizeText(
-    body.userText,
-    2000
-  );
-
-  const assistantText = normalizeText(
-    body.assistantText,
-    2000
-  );
-
-  if (!userText || !assistantText) {
-    return res
-      .status(200)
-      .json(createEmptyMemoryResult());
-  }
+  const userText = clean(body.userText, 2000);
+  const assistantText = clean(body.assistantText, 2000);
+  if (!userText || !assistantText) return res.status(200).json(createEmptyMemoryResult());
 
   try {
-    const memory = await extractMemory({
-      userText,
-      assistantText,
-      existingMemory:
-        body.existingMemory || null
-    });
-
+    const memory = await extractMemory({ userText, assistantText, existingMemory: body.existingMemory || null });
     return res.status(200).json(memory);
   } catch (error) {
-    console.error(
-      'Memory extraction failed:',
-      error
-    );
-
-    // Ошибка памяти не должна показываться
-    // в основном чате.
-    return res.status(200).json({
-      ...createEmptyMemoryResult(),
-      warning: 'memory_extraction_failed'
-    });
+    console.error('Memory extraction failed', error);
+    return res.status(200).json({ ...createEmptyMemoryResult(), warning: 'memory_extraction_failed' });
   }
-};
+}

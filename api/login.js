@@ -1,12 +1,12 @@
-export default function handler(req, res){
-  if(req.method !== 'POST') return res.status(405).end();
+import { readJsonBody, requirePin } from '../lib/server/http.js';
 
-  const { pin } = req.body || {};
-  const need = process.env.ACCESS_PIN;
-
-  if(!need) return res.status(500).json({error:'ACCESS_PIN is not set'});
-  if(pin && pin === need){
-    return res.status(200).json({ok:true});
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
   }
-  return res.status(401).json({error:'bad pin'});
+  const body = await readJsonBody(req);
+  if (!requirePin(req, res, body)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).json({ ok: true });
 }

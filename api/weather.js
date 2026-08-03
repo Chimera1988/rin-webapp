@@ -1,62 +1,63 @@
-// /api/weather.js
+import { fetchWithTimeout, publicError, requirePin } from '../lib/server/http.js';
+
 const OPENWEATHER_KEY = process.env.OPENWEATHER_API_KEY;
+const ALLOWED_UNITS = new Set(['metric']);
+const ALLOWED_LANGS = new Set(['ru']);
+
+function finiteCoordinate(value, min, max) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max ? String(number) : null;
+}
 
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') {
       res.setHeader('Allow', 'GET');
-      return res.status(405).json({ error: 'Method Not Allowed' });
+      return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
     }
-    if (!OPENWEATHER_KEY) {
-      return res.status(500).json({ error: 'Missing OPENWEATHER_API_KEY' });
-    }
+    if (!requirePin(req, res, {})) return;
+    if (!OPENWEATHER_KEY) return res.status(503).json({ error: 'Weather is not configured', code: 'WEATHER_NOT_CONFIGURED' });
 
-    const { lat, lon, q, units = 'metric', lang = 'ru' } = req.query || {};
+    const query = req.query || {};
+    const units = ALLOWED_UNITS.has(String(query.units)) ? String(query.units) : 'metric';
+    const lang = ALLOWED_LANGS.has(String(query.lang)) ? String(query.lang) : 'ru';
+    const lat = finiteCoordinate(query.lat, -90, 90);
+    const lon = finiteCoordinate(query.lon, -180, 180);
+    const q = String(query.q || '').replace(/[\r\n]/g, ' ').trim().slice(0, 100);
 
-    // По умолчанию — Канадзава
-    const params = new URLSearchParams({
-      appid: OPENWEATHER_KEY,
-      units,
-      lang
-    });
-
+    const params = new URLSearchParams({ appid: OPENWEATHER_KEY, units, lang });
     if (lat && lon) {
       params.set('lat', lat);
       params.set('lon', lon);
     } else if (q) {
       params.set('q', q);
     } else {
-      // Канадзава (36.5613, 136.6562)
       params.set('lat', '36.5613');
       params.set('lon', '136.6562');
     }
 
-    // Текущая погода + “ощущается как”
-    const url = `https://api.openweathermap.org/data/2.5/weather?${params.toString()}`;
-    const r = await fetch(url);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      return res.status(r.status).json({ error: 'Upstream error', detail: txt });
+    const upstream = await fetchWithTimeout(`https://api.openweathermap.org/data/2.5/weather?${params}`, {}, 10_000);
+    if (!upstream.ok) {
+      console.error('Weather upstream failed', upstream.status, (await upstream.text().catch(() => '')).slice(0, 500));
+      return res.status(502).json({ error: 'Weather upstream failed', code: 'WEATHER_UPSTREAM_ERROR' });
     }
-    const data = await r.json();
-
-    // Можно слегка нормализовать поля под фронт
+    const data = await upstream.json();
     const out = {
-      name: data.name,
-      dt: data.dt,
-      tz: data.timezone,          // секундный оффсет для локального вычисления
+      name: data.name || '',
+      dt: Number(data.dt) || null,
+      tz: Number(data.timezone) || 0,
       weather: data.weather?.[0]?.description || '',
       icon: data.weather?.[0]?.icon || '',
-      temp: data.main?.temp,
-      feels_like: data.main?.feels_like,
-      humidity: data.main?.humidity,
-      wind: data.wind?.speed
+      temp: Number.isFinite(data.main?.temp) ? data.main.temp : null,
+      feels_like: Number.isFinite(data.main?.feels_like) ? data.main.feels_like : null,
+      humidity: Number.isFinite(data.main?.humidity) ? data.main.humidity : null,
+      wind: Number.isFinite(data.wind?.speed) ? data.wind.speed : null
     };
-
-    // кэш на минуту, чтобы не палить квоту
-    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=60');
+    res.setHeader('Cache-Control', 'private, max-age=60');
     return res.status(200).json(out);
-  } catch (e) {
-    return res.status(500).json({ error: 'Weather proxy error', detail: String(e?.message || e) });
+  } catch (error) {
+    console.error('Weather proxy error', error);
+    const mapped = publicError(error, 'Weather proxy error');
+    return res.status(mapped.status).json(mapped.body);
   }
 }
