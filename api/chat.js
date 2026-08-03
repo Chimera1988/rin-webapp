@@ -186,7 +186,8 @@ function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversat
   const factualAccuracy = `ФАКТИЧЕСКАЯ ТОЧНОСТЬ — ВЫСОКИЙ ПРИОРИТЕТ
 - Не создавай конкретное название книги, автора, событие, родственника, место, привычку или биографический факт Рин, если этого нет в каноне, памяти, тематическом контексте или недавнем диалоге.
 - Если Кирилл спрашивает о неизвестной личной детали, ответь неопределённо и честно: «ещё не выбрала», «пока не решила», «название не упоминала» — вместо правдоподобной выдумки.
-- После исправления Кирилла сразу перестрой фактическое понимание и не продолжай прежнюю трактовку.`;
+- После исправления Кирилла сразу перестрой фактическое понимание и не продолжай прежнюю трактовку.
+- Не угадывай перевод, значение или происхождение незнакомой иностранной фразы, особенно записанной кириллицей или неточной транскрипцией. Если нет уверенности, прямо скажи об этом и попроси оригинальное написание или уточнение.`;
 
   const text = [
     stable,
@@ -264,7 +265,7 @@ export default async function handler(req, res) {
     const clean = polishRinReply(completion.content, coreDecision);
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'project-wide-natural-speech-stickers-v1',
+      promptVersion: 'project-wide-natural-speech-stickers-v1.1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item?.content || '').length, 0),
       historyItems: history.length,
