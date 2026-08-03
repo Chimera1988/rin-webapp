@@ -1,0 +1,9 @@
+{
+  "name": "rin-webapp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/continuity.test.mjs",
+    "check": "node --check api/chat.js && node --check lib/core-personality.js && node --check lib/conversation-brain.js && node --check lib/personality/continuity.js && npm test"
+  }
+}
