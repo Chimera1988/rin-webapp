@@ -2,6 +2,7 @@ import { buildCoreDecision } from '../lib/core-personality.js';
 import { polishRinReply } from '../lib/personality/anti-gpt.js';
 import { analyzeConversation, conversationBrainInstruction } from '../lib/conversation-brain.js';
 import { buildContinuitySnapshot, continuityInstruction, selectRelevantMemory } from '../lib/personality/continuity.js';
+import { buildInnerLifeSnapshot, innerLifeInstruction } from '../lib/personality/inner-life.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ACCESS_PIN = process.env.ACCESS_PIN || '';
@@ -197,6 +198,7 @@ function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversat
     formatMemory(memory, userText, history),
     continuityInstruction(buildContinuitySnapshot(history, userText)),
     formatMood(memory),
+    innerLifeInstruction(buildInnerLifeSnapshot(memory, env, userText, history)),
     conversationBrainInstruction(conversationBrain),
     coreDecision?.prompt,
     factualAccuracy,
@@ -265,7 +267,7 @@ export default async function handler(req, res) {
     const clean = polishRinReply(completion.content, coreDecision);
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'continuity-memory-personhood-v2.0',
+      promptVersion: 'rin-v2-inner-life-v3.0',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item?.content || '').length, 0),
       historyItems: history.length,
