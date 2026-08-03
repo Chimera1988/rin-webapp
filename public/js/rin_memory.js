@@ -210,6 +210,22 @@ function _defaultMood() {
   };
 }
 
+function _defaultInnerLife() {
+  return {
+    activity: '',
+    trace: '',
+    focus: '',
+    privateThought: '',
+    part: '',
+    startedAt: 0,
+    expiresAt: 0,
+    lastSpontaneousAt: 0,
+    lastUserAt: 0,
+    interactionCount: 0,
+    recentActivities: []
+  };
+}
+
 function _emptyDiary() {
   return {
     facts: {
@@ -224,6 +240,8 @@ function _emptyDiary() {
 
     mood: _defaultMood(),
 
+    innerLife: _defaultInnerLife(),
+
     _updated_at: Date.now()
   };
 }
@@ -237,6 +255,13 @@ export async function loadDiary() {
     if (!Array.isArray(obj.events)) obj.events = [];
     if (!obj.anchors) {
   obj.anchors = {};
+}
+
+if (!obj.innerLife || typeof obj.innerLife !== 'object') {
+  obj.innerLife = _defaultInnerLife();
+} else {
+  obj.innerLife = { ..._defaultInnerLife(), ...obj.innerLife };
+  if (!Array.isArray(obj.innerLife.recentActivities)) obj.innerLife.recentActivities = [];
 }
 
 if (!obj.mood || typeof obj.mood !== 'object') {
@@ -287,6 +312,107 @@ export async function getRecentEvents(limit = 20, filterFn = null) {
     arr = arr.filter(filterFn);
   }
   return arr;
+}
+
+
+
+/* ------------------------- inner life / ongoing existence ------------------------- */
+
+const INNER_LIFE_POOLS = {
+  morning: [
+    { activity: 'просматривает рабочие заметки за чаем', trace: 'на столе лежит открытый блокнот', focus: 'спокойно войти в рабочий ритм' },
+    { activity: 'собирается начать работу', trace: 'проверяет заметки перед первым текстом', focus: 'не распыляться с самого утра' },
+    { activity: 'приводит в порядок рабочий стол', trace: 'переставила чашку подальше от ноутбука', focus: 'освободить место для работы' }
+  ],
+  day: [
+    { activity: 'редактирует перевод', trace: 'задержалась на одной формулировке', focus: 'сохранить естественный ритм текста' },
+    { activity: 'работает с текстом за ноутбуком', trace: 'несколько раз перечитала один абзац', focus: 'найти точное, но не тяжёлое слово' },
+    { activity: 'сделала короткую паузу между задачами', trace: 'чай рядом уже немного остыл', focus: 'дать голове переключиться' }
+  ],
+  evening: [
+    { activity: 'заваривает чай после работы', trace: 'слушает, как за окном стихает город', focus: 'отпустить рабочий день' },
+    { activity: 'читает несколько страниц книги', trace: 'иногда возвращается к одной строке', focus: 'никуда не торопиться' },
+    { activity: 'разбирает заметки на рабочем столе', trace: 'нашла старую запись и на секунду задумалась', focus: 'закончить мелкие дела' }
+  ],
+  night: [
+    { activity: 'готовится ко сну', trace: 'оставила только мягкий свет', focus: 'успокоить мысли' },
+    { activity: 'сидит в тишине с остывающим чаем', trace: 'день ещё не совсем отпустил', focus: 'не затягивать ночь' },
+    { activity: 'дочитывает страницу перед сном', trace: 'уже начинает уставать', focus: 'остановиться на хорошем месте' }
+  ]
+};
+
+function innerLifePart(env = {}) {
+  const value = String(env?.partOfDay || '').toLowerCase();
+  if (/утр|morning/.test(value)) return 'morning';
+  if (/веч|evening/.test(value)) return 'evening';
+  if (/ноч|night/.test(value)) return 'night';
+  if (/день|day/.test(value)) return 'day';
+  const hour = Number(String(env?.rinHuman || '').match(/\b(\d{1,2}):\d{2}\b/)?.[1]);
+  if (Number.isFinite(hour)) {
+    if (hour < 6 || hour >= 23) return 'night';
+    if (hour < 11) return 'morning';
+    if (hour < 18) return 'day';
+    return 'evening';
+  }
+  return 'day';
+}
+
+function innerLifeHash(value = '') {
+  let out = 2166136261;
+  for (const char of String(value)) {
+    out ^= char.charCodeAt(0);
+    out = Math.imul(out, 16777619);
+  }
+  return out >>> 0;
+}
+
+export async function advanceInnerLife(env = {}, userText = '') {
+  const diary = await loadDiary();
+  const current = { ..._defaultInnerLife(), ...(diary.innerLife || {}) };
+  const now = Date.now();
+  const part = innerLifePart(env);
+  const expired = !current.activity || !current.expiresAt || now >= current.expiresAt || current.part !== part;
+
+  if (expired) {
+    const pool = INNER_LIFE_POOLS[part] || INNER_LIFE_POOLS.day;
+    const recent = new Set((current.recentActivities || []).slice(-2));
+    let index = innerLifeHash(`${env?.rinHuman || ''}|${part}|${current.interactionCount}`) % pool.length;
+    for (let i = 0; i < pool.length && recent.has(pool[index].activity); i += 1) index = (index + 1) % pool.length;
+    const selected = pool[index];
+    current.activity = selected.activity;
+    current.trace = selected.trace;
+    current.focus = selected.focus;
+    current.privateThought = '';
+    current.part = part;
+    current.startedAt = now;
+    current.expiresAt = now + (35 + (innerLifeHash(selected.activity) % 70)) * 60000;
+    current.recentActivities = [...(current.recentActivities || []), selected.activity].slice(-6);
+  }
+
+  current.lastUserAt = now;
+  current.interactionCount = (Number(current.interactionCount) || 0) + 1;
+
+  const text = String(userText || '').toLowerCase();
+  if (/(перевод|текст|работ|книг|чай|дожд|вечер|устал)/iu.test(text)) {
+    current.privateThought = text.includes('чай')
+      ? 'разговор неожиданно сделал обычный чай чуть уютнее'
+      : text.includes('книг')
+        ? 'хочется запомнить, к какой мысли они вернутся позже'
+        : text.includes('работ') || text.includes('текст') || text.includes('перевод')
+          ? 'интересно, замечает ли Кирилл, как по-разному звучат простые слова'
+          : 'иногда маленькая деталь меняет настроение сильнее большого события';
+  }
+
+  diary.innerLife = current;
+  await saveDiary(diary);
+  return current;
+}
+
+export async function markInnerLifeSpontaneous() {
+  const diary = await loadDiary();
+  diary.innerLife = { ..._defaultInnerLife(), ...(diary.innerLife || {}), lastSpontaneousAt: Date.now() };
+  await saveDiary(diary);
+  return diary.innerLife;
 }
 
 /* ---------------------------- mood ---------------------------- */
