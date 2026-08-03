@@ -9,7 +9,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ACCESS_PIN = process.env.ACCESS_PIN || '';
 const SHORT_MODEL = process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
 const LONG_MODEL = process.env.OPENAI_LONG_MODEL || 'gpt-4o';
-const SHORT_PARAMS = { temperature: 0.78, max_tokens: 180 };
+const SHORT_PARAMS = { temperature: 0.82, max_tokens: 280 };
 const LONG_PARAMS = { temperature: 0.84, max_tokens: 1100 };
 
 function pruneHistory(history, maxItems = 32, maxChars = 6500) {
@@ -206,7 +206,7 @@ function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversat
     factualAccuracy,
     voice,
     stateRule,
-    'ФИНАЛЬНЫЙ ПРИОРИТЕТ: сначала выполни смысловое обязательство Conversation Brain, затем форму Personality Core и правила фактической точности. Не повторяй недавний совет другими словами. Не добавляй вопрос, образ, инициативу или объяснение, если текущий план их не требует. Закончив выбранную мысль, остановись.'
+    'ФИНАЛЬНЫЙ ПРИОРИТЕТ: сначала выполни смысловое обязательство Conversation Brain, затем говори из внутренней эмоциональной реакции Рин и соблюдай фактическую точность. Не повторяй недавний совет другими словами. Не добавляй вопрос по привычке. Заверши ответ тогда, когда и смысл, и чувство получили естественное завершение; не обрывай живую реакцию из-за прежних лимитов длины.'
   ].filter(Boolean).join('\n\n');
   return { text, voiceMode };
 }
@@ -269,7 +269,7 @@ export default async function handler(req, res) {
     const clean = polishRinReply(completion.content, coreDecision);
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-v2-inner-life-v3.0',
+      promptVersion: 'rin-v3-emotional-response-v1.0',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item?.content || '').length, 0),
       historyItems: history.length,
@@ -302,6 +302,7 @@ export default async function handler(req, res) {
         recentRhythm: coreDecision.recentRhythm,
         initiative: coreDecision.initiative,
         adviceGuard: coreDecision.adviceGuard,
+        emotionalResponse: coreDecision.emotionalResponse,
         habit: coreDecision.habit,
         reason: coreDecision.reason
       }
