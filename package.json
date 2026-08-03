@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check api/chat.js && node --check api/memory.js && node --check lib/core-personality.js && node --check lib/conversation-brain.js && node --check lib/personality/continuity.js && node --check lib/personality/inner-life.js && node --check public/chat.js && node --check public/js/rin_memory.js"
+    "check": "node --check api/chat.js && node --check api/memory.js && node --check lib/core-personality.js && node --check lib/conversation-brain.js && node --check lib/personality/continuity.js && node --check lib/personality/inner-life.js && node --check public/chat.js && node --check public/js/rin_memory.js && node --check lib/personality/relationship.js"
   }
 }
