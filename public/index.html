@@ -29,7 +29,7 @@
   </script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-08-03-unified-conversation-v1" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-03-presence-status-v4" />
 </head>
 <body>
 
@@ -45,7 +45,7 @@
       <img id="avatarTop" class="avatar" src="/avatar.jpg" alt="Рин" />
       <div class="peer-meta">
         <div class="peer-name">Рин Акихара</div>
-        <div id="peerStatus" class="peer-status">готова к диалогу</div>
+        <div id="peerStatus" class="peer-status">онлайн</div>
       </div>
     </div>
 
@@ -367,7 +367,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-03-unified-conversation-v1"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-03-presence-status-v4"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

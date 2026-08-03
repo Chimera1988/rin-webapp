@@ -1018,15 +1018,36 @@ function newRequestId() {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function setPeerStatus(mode = 'idle') {
-  const labels = {
-    idle: 'готова к диалогу',
-    typing: 'печатает…',
-    long: '📖 формирует ответ…'
-  };
-  peerStatus.textContent = labels[mode] || labels.idle;
-  peerStatus.dataset.mode = mode;
+const PEER_STATUS_LABELS = Object.freeze({
+  offline: 'офлайн',
+  online: 'онлайн',
+  typing: 'печатает…'
+});
+
+function setPeerStatus(mode = 'online') {
+  const normalizedMode = Object.hasOwn(PEER_STATUS_LABELS, mode) ? mode : 'online';
+  peerStatus.textContent = PEER_STATUS_LABELS[normalizedMode];
+  peerStatus.dataset.mode = normalizedMode;
 }
+
+function setIdlePeerStatus() {
+  setPeerStatus(navigator.onLine === false ? 'offline' : 'online');
+}
+
+function setTypingPeerStatus() {
+  setPeerStatus(navigator.onLine === false ? 'offline' : 'typing');
+}
+
+function syncPeerStatus() {
+  if (activeRequests > 0) {
+    setTypingPeerStatus();
+    return;
+  }
+  setIdlePeerStatus();
+}
+
+window.addEventListener('online', syncPeerStatus);
+window.addEventListener('offline', syncPeerStatus);
 
 function inWindow(local, from, to) {
   if (!from || !to) return false;
@@ -1053,7 +1074,7 @@ function renderStoredMessage(message) {
 }
 
 (async function init(){
-  setPeerStatus('idle');
+  syncPeerStatus();
   try {
     await ensureActiveProfile();
     await ensureLoreReady();
@@ -1209,7 +1230,7 @@ async function tryInitiateBySchedule() {
 
   await new Promise(resolve => setTimeout(resolve, 450));
   if (!canAutoInitiate({ profile, history, greetingActive, activeRequests })) return false;
-  setPeerStatus('typing');
+  setTypingPeerStatus();
   const typing = addTyping();
   await new Promise(resolve => setTimeout(resolve, 500));
   typing.remove();
@@ -1222,7 +1243,7 @@ async function tryInitiateBySchedule() {
   saveHistory(history);
   if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
   bumpInitCount(dateKey);
-  setPeerStatus('idle');
+  setIdlePeerStatus();
   return true;
 }
 
@@ -1291,7 +1312,7 @@ async function processUserMessage(messageId) {
   updateMessage(history, messageId, { status: 'sent' });
   saveHistory(history);
   activeRequests += 1;
-  setPeerStatus('typing');
+  syncPeerStatus();
   const typingRow = addTyping();
 
   try {
@@ -1349,7 +1370,7 @@ async function processUserMessage(messageId) {
     }
 
     typingRow.remove();
-    setPeerStatus(data.long ? 'long' : 'idle');
+    setIdlePeerStatus();
     const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
     if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
@@ -1391,7 +1412,7 @@ async function processUserMessage(messageId) {
     dbg(`chat request failed: code=${code}`);
   } finally {
     activeRequests = Math.max(0, activeRequests - 1);
-    setPeerStatus('idle');
+    syncPeerStatus();
   }
 }
 
