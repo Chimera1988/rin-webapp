@@ -13,7 +13,8 @@
   <script>
     (function(){
       const K='rin-theme';
-      let t=localStorage.getItem(K);
+      let t=null;
+      try{t=localStorage.getItem(K)}catch{}
       if(!t){
         const prefersDark=window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         t = prefersDark ? 'theme-dark' : 'theme-light';
@@ -22,19 +23,13 @@
       window.__rinSetTheme = function(next){
         document.documentElement.classList.remove('theme-dark','theme-light');
         document.documentElement.classList.add(next);
-        localStorage.setItem(K, next);
+        try{localStorage.setItem(K, next)}catch{}
       }
     })();
   </script>
 
-  <!-- Автологин по PIN -->
-  <script>
-    if (!localStorage.getItem('rin-pin')) {
-      window.location.replace('/login.html');
-    }
-  </script>
-
-  <link rel="stylesheet" href="/style.css?v=2026-07-30-settings-v2" />
+  <style>html:not(.auth-ready) body{visibility:hidden}</style>
+  <link rel="stylesheet" href="/style.css?v=2026-08-03-unified-conversation-v1" />
 </head>
 <body>
 
@@ -50,7 +45,7 @@
       <img id="avatarTop" class="avatar" src="/avatar.jpg" alt="Рин" />
       <div class="peer-meta">
         <div class="peer-name">Рин Акихара</div>
-        <div id="peerStatus" class="peer-status">онлайн</div>
+        <div id="peerStatus" class="peer-status">готова к диалогу</div>
       </div>
     </div>
 
@@ -300,7 +295,7 @@
         <p class="settings-intro">Управление локальной перепиской и персональными настройками.</p>
         <div class="settings-detail-card">
           <div class="settings-control-row">
-            <div><strong>Сбросить данные</strong><small>Удалить историю чата, настройки и кэш на этом устройстве</small></div>
+            <div><strong>Сбросить данные</strong><small>Удалить историю, память, профиль, настройки, счётчики инициатив, стикеров и локальные кэши на этом устройстве. PIN входа останется сохранён</small></div>
           </div>
           <div class="settings-divider"></div>
           <button id="resetApp" class="settings-reset-button" type="button">Сбросить данные</button>
@@ -371,10 +366,8 @@
     </div>
   </div>
 
-  <!-- Скрипты -->
-  <script src="/chat.js?v=2026-07-30-settings-v2" defer></script>
-  <!-- Модуль UI персонажа (импортирует /js/rin_memory.js) -->
-  <script type="module" src="/js/persona_ui.js?v=2026-07-30-v4-clean-fix1"></script>
+  <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-03-unified-conversation-v1"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

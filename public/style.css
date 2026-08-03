@@ -1117,3 +1117,39 @@ body.settings-open {
     padding-top: 22px;
   }
 }
+
+/* Message lifecycle and authentication states */
+.message-row[data-status="pending"] .bubble,
+.message-row[data-status="sent"] .bubble {
+  opacity: .78;
+}
+
+.message-row[data-status="failed"] .bubble {
+  border: 1px solid rgba(218, 72, 88, .55);
+}
+
+.message-retry {
+  display: block;
+  margin-top: 8px;
+  padding: 5px 9px;
+  border: 1px solid currentColor;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.login-error {
+  margin: 10px 0 0;
+  color: #c53b50;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.login-screen button:disabled,
+.login-screen input:disabled {
+  opacity: .62;
+  cursor: wait;
+}

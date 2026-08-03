@@ -4,27 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Вход — Рин</title>
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-03-unified-conversation-v1" />
 </head>
 <body>
   <main class="login-screen">
     <h1>Добро пожаловать 🌸</h1>
-    <form id="loginForm">
-      <input id="pinInput" type="password" placeholder="Введите PIN" required />
+    <form id="loginForm" novalidate>
+      <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Введите PIN" required />
       <button type="submit">Войти</button>
+      <p id="loginError" class="login-error" role="alert" hidden></p>
     </form>
   </main>
-
-  <script>
-    const form = document.getElementById('loginForm');
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const pin = document.getElementById('pinInput').value.trim();
-      if (pin) {
-        localStorage.setItem('rin-pin', pin);
-        window.location.href = '/index.html'; // сразу в чат
-      }
-    });
-  </script>
+  <script type="module" src="/js/login.js?v=2026-08-03-unified-conversation-v1"></script>
 </body>
 </html>

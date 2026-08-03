@@ -1,8 +1,22 @@
+import {
+  createChatMessage,
+  createSerialQueue,
+  loadChatHistory,
+  resetApplicationStorage,
+  saveChatHistory,
+  toApiHistory,
+  updateMessage
+} from './js/chat_store.js';
+import { RIN_RELEASE_ID } from './js/release.js';
+import { createMemoryJobRunner, enqueueMemoryJob } from './js/memory_job_queue.js';
+import { canAutoInitiate, canGreet, chooseConfiguredStarter, resolveInitiationPolicy } from './js/conversation_policy.js';
+import { shouldRefreshEnvironment } from './js/environment_intent.js';
+import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
+
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
-const RIN_BUILD_VERSION = '2026-08-03-stickers-semantic-v6';
+const RIN_BUILD_VERSION = RIN_RELEASE_ID;
 
-const STORAGE_KEY    = 'rin-history-v2';
 const DAILY_INIT_KEY = 'rin-init-count';
 const THEME_KEY      = 'rin-theme';
 
@@ -17,6 +31,43 @@ const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
 const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
 const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'
+
+function safeLocalGet(key, fallback = '') {
+  try {
+    const value = localStorage.getItem(key);
+    return value == null ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeLocalRemove(key) {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeLocalSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.error(`[Rin storage] Не удалось сохранить ${key}`, error);
+    return false;
+  }
+}
+
+function safeLocalJson(key, fallback = {}) {
+  try {
+    const parsed = JSON.parse(safeLocalGet(key, 'null'));
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /* DOM */
 const chatEl        = document.getElementById('chat');
@@ -127,7 +178,7 @@ function hoursDiffWithRin(){
 async function fetchRinWeather(){
   try{
     const u = `/api/weather?q=${encodeURIComponent(RIN_CITY)},${RIN_COUNTRY}&units=metric&lang=ru`;
-    const r = await fetch(u);
+    const r = await fetchWithTimeout(u, { headers: authenticatedHeaders() }, 12_000);
     if (!r.ok) return null;
     const w = await r.json();
     if (w && w.weather){
@@ -150,48 +201,8 @@ async function fetchRinWeather(){
   }catch{ return null; }
 }
 
-/* — форматирование и естественная фраза о погоде — */
-function fmtC(n){
-  if (typeof n !== 'number' || !isFinite(n)) return null;
-  const s = Math.round(n);
-  const sign = s > 0 ? '+' : (s < 0 ? '−' : '');
-  return `${sign}${Math.abs(s)}°C`;
-}
-function pickWeatherEmoji(desc=''){
-  const t = (desc||'').toLowerCase();
-  if (/гроза|thunder|storm/.test(t)) return '⛈️';
-  if (/дожд|rain/.test(t))          return '🌧️';
-  if (/снег|snow/.test(t))          return '❄️';
-  if (/туман|mist|fog/.test(t))     return '🌫️';
-  if (/пасмур|облач|cloud/.test(t)) return '☁️';
-  if (/ясн|солнеч|clear|sun/.test(t)) return '☀️';
-  return '🌤️';
-}
-function buildWeatherPhrase(env){
-  const city = 'Канадзаве';
-  const pod  = env?.partOfDay || 'сейчас';
-  const w = env?.weather || null;
-
-  if (w){
-    const desc = (w.desc || '').replace(/^\w/u, c=>c.toLowerCase());
-    const t    = fmtC(w.temp);
-    const f    = fmtC(w.feels);
-    const emo  = pickWeatherEmoji(w.desc);
-
-    let main = `Сейчас в ${city} ${desc}${t?`, ${t}`:''}${f && f!==t?` (ощущается как ${f})`:''}.`;
-    let tail = '';
-    if (pod==='утро')  tail = ' Хорошее время начать день спокойно.';
-    if (pod==='день')  tail = ' В такой день приятно немного пройтись.';
-    if (pod==='вечер') tail = ' Вечером город становится уютнее, хочется чая.';
-    if (pod==='ночь')  tail = ' Ночью тихо — люблю слушать город за окном.';
-
-    return `${main} ${emo}${tail}`.trim();
-  }
-  return '';
-}
-
 /* === Debug helpers (в панели настроек) === */
-let _debugOn = localStorage.getItem(LS_DEBUG_ENABLED) === '1';
+let _debugOn = safeLocalGet(LS_DEBUG_ENABLED) === '1';
 function dbg(line){
   if (!_debugOn) return;
   try{
@@ -211,7 +222,7 @@ if (debugToggle){
   debugToggle.checked = _debugOn;
   debugToggle.onchange = () => {
     _debugOn = debugToggle.checked;
-    localStorage.setItem(LS_DEBUG_ENABLED, _debugOn ? '1' : '0');
+    safeLocalSet(LS_DEBUG_ENABLED, _debugOn ? '1' : '0');
     if (!_debugOn && debugLogEl) debugLogEl.innerHTML='';
     dbg('debug enabled');
   };
@@ -223,7 +234,6 @@ const resetApp      = document.getElementById('resetApp');
 /* state */
 let profile = null;         // профиль из persona_ui / rin_memory
 const dossierCaches = new Map();
-let responsePostprocessor = null;
 let loreLib = null;
 
 /**
@@ -234,7 +244,7 @@ async function loadDossierForChat(key, url, invalidMessage) {
   if (dossierCaches.has(key)) return dossierCaches.get(key);
 
   try {
-    const response = await fetch(url, { cache: 'no-store' });
+    const response = await fetchWithTimeout(url, { cache: 'no-store' }, 12_000);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const value = await response.json();
@@ -257,7 +267,7 @@ async function ensureLoreReady() {
   if (loreLib) return loreLib;
 
   try {
-    loreLib = await import('/js/rin_lore.js');
+    loreLib = await import(`/js/rin_lore.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`);
     await loreLib.loadLoreData();
     dbg('lore data ready');
     return loreLib;
@@ -266,26 +276,6 @@ async function ensureLoreReady() {
       'lore data load failed: ' +
       (error?.message || error)
     );
-    return null;
-  }
-}
-
-async function ensureResponsePostprocessor() {
-  if (responsePostprocessor) {
-    return responsePostprocessor;
-  }
-
-  try {
-    responsePostprocessor =
-      await import('/js/response_postprocessor.js');
-
-    return responsePostprocessor;
-  } catch (error) {
-    dbg(
-      'response postprocessor load failed: ' +
-      (error?.message || error)
-    );
-
     return null;
   }
 }
@@ -300,8 +290,8 @@ async function ensureActiveProfile() {
     profile.prompt_profile ||
     await loadPromptProfileForChat();
 
-  // В API отправляется единый компактный профиль. Полные JSON-досье остаются
-  // источниками UI/lore, но больше не дублируются в каждом запросе модели.
+  // В API отправляется единый компактный профиль. Канон модели приходит только
+  // из rin_prompt_profile.json, пользовательский профиль содержит лишь overrides.
   profile = {
     name: profile.name || 'Рин Акихара',
     description: profile.description || '',
@@ -317,20 +307,19 @@ async function ensureActiveProfile() {
 }
 
 let history=[];
-let chainStickerCount=0;
 /* === Долгосрочная память Рин === */
 
 let memoryLib = null;
 
 /**
  * Загружает библиотеку памяти только при первом обращении.
- * chat.js остаётся обычным скриптом — переводить весь файл в module не нужно.
+ * Модуль загружается лениво, чтобы не блокировать старт интерфейса.
  */
 async function ensureMemoryReady() {
   if (memoryLib) return memoryLib;
 
   try {
-    memoryLib = await import('/js/rin_memory.js');
+    memoryLib = await import(`/js/rin_memory.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`);
     dbg('memory module loaded');
     return memoryLib;
   } catch (error) {
@@ -348,123 +337,94 @@ async function ensureMemoryReady() {
  * Весь дневник не отправляем, чтобы не раздувать запрос.
  */
 async function buildMemoryPayload() {
+  const numberOr = (value, fallback = null) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
+
   try {
     const lib = await ensureMemoryReady();
-
-    if (!lib?.loadDiary) {
-      return null;
-    }
-
+    if (!lib?.loadDiary) return null;
     const diary = await lib.loadDiary();
-
-    if (!diary || typeof diary !== 'object') {
-      return null;
-    }
-
-    const recentEvents = Array.isArray(diary.events)
-      ? diary.events
-          .slice(-12)
-          .map(event => ({
-            ts: Number(event?.ts) || null,
-            type: String(event?.type || 'note').slice(0, 30),
-            text: String(event?.text || '')
-              .trim()
-              .slice(0, 500),
-            tags: Array.isArray(event?.tags)
-              ? event.tags
-                  .slice(0, 8)
-                  .map(tag => String(tag).slice(0, 40))
-              : []
-          }))
-          .filter(event => event.text)
-      : [];
+    if (!diary || typeof diary !== 'object') return null;
 
     return {
-  facts:
-    diary.facts &&
-    typeof diary.facts === 'object'
-      ? diary.facts
-      : {
-          self: {},
-          user: {},
-          world: {}
-        },
-
-  recentEvents,
-
-  mood:
-    diary.mood &&
-    typeof diary.mood === 'object'
-      ? {
-          affection:
-            Number(diary.mood.affection) || 50,
-
-          energy:
-            Number(diary.mood.energy) || 50,
-
-          playfulness:
-            Number(diary.mood.playfulness) || 50,
-
-          trust:
-            Number(diary.mood.trust) || 50,
-
-          label:
-            String(
-              diary.mood.label || 'спокойная'
-            ).slice(0, 30),
-
-          lastInteractionAt:
-            Number(
-              diary.mood.lastInteractionAt
-            ) || null
-        }
-      : null,
-
-  relationship:
-    diary.relationship && typeof diary.relationship === 'object'
-      ? {
-          trust: Number(diary.relationship.trust) || 50,
-          closeness: Number(diary.relationship.closeness) || 40,
-          comfort: Number(diary.relationship.comfort) || 50,
-          respect: Number(diary.relationship.respect) || 60,
-          playfulness: Number(diary.relationship.playfulness) || 40,
-          stage: String(diary.relationship.stage || '').slice(0, 60),
-          lastInteractionAt: Number(diary.relationship.lastInteractionAt) || null,
-          sharedMoments: Array.isArray(diary.relationship.sharedMoments)
-            ? diary.relationship.sharedMoments.slice(-6).map(item => ({ text: String(item?.text || '').slice(0, 400), importance: Number(item?.importance) || 6, ts: Number(item?.ts) || null }))
-            : []
-        }
-      : null,
-
-  openLoops: Array.isArray(diary.openLoops)
-    ? diary.openLoops.slice(-8).map(item => ({ text: String(item?.text || '').slice(0, 400), type: String(item?.type || 'topic').slice(0, 30), importance: Number(item?.importance) || 5, createdAt: Number(item?.createdAt) || null }))
-    : [],
-
-  summaries: Array.isArray(diary.summaries)
-    ? diary.summaries.slice(-3).map(item => ({ text: String(item?.text || '').slice(0, 1200), ts: Number(item?.ts) || null }))
-    : [],
-
-  innerLife:
-    diary.innerLife && typeof diary.innerLife === 'object'
-      ? {
-          activity: String(diary.innerLife.activity || '').slice(0, 180),
-          trace: String(diary.innerLife.trace || '').slice(0, 220),
-          focus: String(diary.innerLife.focus || '').slice(0, 220),
-          privateThought: String(diary.innerLife.privateThought || '').slice(0, 260),
-          part: String(diary.innerLife.part || '').slice(0, 20),
-          startedAt: Number(diary.innerLife.startedAt) || null,
-          expiresAt: Number(diary.innerLife.expiresAt) || null,
-          lastSpontaneousAt: Number(diary.innerLife.lastSpontaneousAt) || null,
-          interactionCount: Number(diary.innerLife.interactionCount) || 0
-        }
-      : null
-};
+      schemaVersion: 2,
+      facts: diary.facts && typeof diary.facts === 'object'
+        ? diary.facts
+        : { self: {}, user: {}, world: {} },
+      recentEvents: Array.isArray(diary.events)
+        ? diary.events.slice(-12).map(event => ({
+            id: String(event?.id || '').slice(0, 100) || null,
+            key: String(event?.key || '').slice(0, 100) || null,
+            ts: numberOr(event?.ts),
+            type: String(event?.type || 'note').slice(0, 30),
+            text: String(event?.text || '').trim().slice(0, 500),
+            importance: numberOr(event?.importance, 5),
+            tags: Array.isArray(event?.tags) ? event.tags.slice(0, 8).map(tag => String(tag).slice(0, 40)) : []
+          })).filter(event => event.text)
+        : [],
+      mood: diary.mood && typeof diary.mood === 'object'
+        ? {
+            affection: numberOr(diary.mood.affection, 65),
+            energy: numberOr(diary.mood.energy, 65),
+            label: String(diary.mood.label || 'спокойная').slice(0, 30),
+            lastInteractionAt: numberOr(diary.mood.lastInteractionAt)
+          }
+        : null,
+      relationship: diary.relationship && typeof diary.relationship === 'object'
+        ? {
+            trust: numberOr(diary.relationship.trust, 55),
+            closeness: numberOr(diary.relationship.closeness, 42),
+            comfort: numberOr(diary.relationship.comfort, 52),
+            respect: numberOr(diary.relationship.respect, 68),
+            playfulness: numberOr(diary.relationship.playfulness, 45),
+            stage: String(diary.relationship.stage || '').slice(0, 60),
+            lastInteractionAt: numberOr(diary.relationship.lastInteractionAt),
+            sharedMoments: Array.isArray(diary.relationship.sharedMoments)
+              ? diary.relationship.sharedMoments.slice(-6).map(item => ({
+                  id: String(item?.id || '').slice(0, 100) || null,
+                  key: String(item?.key || '').slice(0, 100) || null,
+                  text: String(item?.text || '').slice(0, 400),
+                  importance: numberOr(item?.importance, 6),
+                  ts: numberOr(item?.ts)
+                }))
+              : []
+          }
+        : null,
+      openLoops: Array.isArray(diary.openLoops)
+        ? diary.openLoops.slice(-8).map(item => ({
+            id: String(item?.id || '').slice(0, 100) || null,
+            key: String(item?.key || '').slice(0, 100) || null,
+            text: String(item?.text || '').slice(0, 400),
+            type: String(item?.type || 'topic').slice(0, 30),
+            importance: numberOr(item?.importance, 5),
+            createdAt: numberOr(item?.createdAt)
+          }))
+        : [],
+      summaries: Array.isArray(diary.summaries)
+        ? diary.summaries.slice(-4).map(item => ({
+            id: String(item?.id || '').slice(0, 100) || null,
+            text: String(item?.text || '').slice(0, 1400),
+            ts: numberOr(item?.ts)
+          })).filter(item => item.text)
+        : [],
+      innerLife: diary.innerLife && typeof diary.innerLife === 'object'
+        ? {
+            activity: String(diary.innerLife.activity || '').slice(0, 180),
+            trace: String(diary.innerLife.trace || '').slice(0, 220),
+            focus: String(diary.innerLife.focus || '').slice(0, 220),
+            privateThought: String(diary.innerLife.privateThought || '').slice(0, 260),
+            part: String(diary.innerLife.part || '').slice(0, 20),
+            startedAt: numberOr(diary.innerLife.startedAt),
+            expiresAt: numberOr(diary.innerLife.expiresAt),
+            lastSpontaneousAt: numberOr(diary.innerLife.lastSpontaneousAt),
+            interactionCount: numberOr(diary.innerLife.interactionCount, 0)
+          }
+        : null
+    };
   } catch (error) {
-    dbg(
-      'memory payload failed: ' +
-      (error?.message || error)
-    );
-
+    dbg('memory payload failed: ' + (error?.message || error));
     return null;
   }
 }
@@ -472,439 +432,153 @@ async function buildMemoryPayload() {
 /**
  * Сохраняет результат анализа памяти в локальный дневник.
  */
-function sanitizeMoodDelta(userText, moodDelta) {
-  const text = String(userText || '').toLowerCase();
-  const source =
-    moodDelta && typeof moodDelta === 'object'
-      ? moodDelta
-      : {};
-
-  const explicitWarm =
-    /(люблю|соскучил|обнимаю|целую|ты мне нравишься|мне хорошо с тобой|спасибо за поддержку|очень благодарен)/iu.test(text);
-
-  const explicitPlayful =
-    /(шучу|ахаха|хаха|😏|😉|😁|подкол|флирт)/iu.test(text);
-
-  const explicitTrust =
-    /(доверяю|никому не говорил|только тебе|хочу поделиться чем-то важным|мне важно твоё мнение)/iu.test(text);
-
-  const explicitNegative =
-    /(заткнись|отстань|бесишь|ненавижу|глупая|тупая|замолчи)/iu.test(text);
-
-  const ordinaryQuestion =
-    /\?/.test(text) &&
-    !explicitWarm &&
-    !explicitPlayful &&
-    !explicitTrust &&
-    !explicitNegative;
-
-  const neutralReason =
-    /(нейтраль|обычн(?:ый|ого) вопрос|не вызывает|без эмоциональ|значительных эмоциональных изменений)/iu.test(
-      String(source.reason || '')
-    );
-
-  const result = {
-    affection: Number(source.affection) || 0,
-    energy: Number(source.energy) || 0,
-    playfulness: Number(source.playfulness) || 0,
-    trust: Number(source.trust) || 0,
-    reason: String(source.reason || ''),
-    confidence: Number(source.confidence) || 0
-  };
-
-  if (ordinaryQuestion || neutralReason) {
-    result.affection = Math.min(0, result.affection);
-    result.playfulness = Math.min(0, result.playfulness);
-    result.trust = Math.min(0, result.trust);
-
-    if (!explicitNegative) {
-      result.energy = Math.min(0, result.energy);
-    }
-  }
-
-  if (!explicitWarm) result.affection = Math.min(1, result.affection);
-  if (!explicitPlayful) result.playfulness = Math.min(1, result.playfulness);
-  if (!explicitTrust) result.trust = Math.min(1, result.trust);
-
-  // Энергия — отдельная шкала. Теплота, забота и комплименты не должны
-  // автоматически восстанавливать силы Рин.
-  const explicitEnergizing =
-    /(взбодрил|взбодрила|появились силы|отдохнула|выспалась|стало бодрее|зарядил энергией)/iu.test(text);
-
-  if (!explicitEnergizing && result.energy > 0) {
-    result.energy = 0;
-  }
-
-  // Малые модельные колебания не должны создавать постоянный дрейф шкал.
-  for (const key of ['affection', 'energy', 'playfulness', 'trust']) {
-    result[key] = Math.max(-6, Math.min(6, Math.round(result[key])));
-  }
-
-  return result;
-}
-
 async function applyExtractedMemory(extracted, userText = '') {
   try {
     const lib = await ensureMemoryReady();
+    if (!lib) return false;
 
-    if (!lib) {
-      return;
-    }
-
-    const facts = Array.isArray(extracted?.facts)
-      ? extracted.facts
-      : [];
-
-    const events = Array.isArray(extracted?.events)
-      ? extracted.events
-      : [];
-
-    for (const fact of facts) {
+    for (const fact of Array.isArray(extracted?.facts) ? extracted.facts : []) {
       const path = String(fact?.path || '').trim();
       const value = String(fact?.value || '').trim();
       const confidence = Number(fact?.confidence);
-
-      if (!path.startsWith('user.')) {
-        continue;
-      }
-
-      if (!value) {
-        continue;
-      }
-
-      if (
-        Number.isFinite(confidence) &&
-        confidence < 0.75
-      ) {
-        continue;
-      }
-
+      if (!path.startsWith('user.') || !value || (Number.isFinite(confidence) && confidence < 0.75)) continue;
       await lib.upsertFact(path, value);
-
       dbg(`memory fact saved: ${path}`);
     }
 
-    for (const event of events) {
+    for (const event of Array.isArray(extracted?.events) ? extracted.events : []) {
       const text = String(event?.text || '').trim();
-
-      if (!text) {
-        continue;
-      }
-
-      const importance =
-        Number(event?.importance) || 5;
-
-      if (importance < 6) {
-        continue;
-      }
-
+      const importance = Number.isFinite(Number(event?.importance)) ? Number(event.importance) : 5;
+      if (!text || importance < 6) continue;
       await lib.addEvent(text, {
+        id: event?.id || null,
+        key: event?.key || null,
         type: String(event?.type || 'memory'),
-        tags: Array.isArray(event?.tags)
-          ? event.tags.slice(0, 8)
-          : [],
+        tags: Array.isArray(event?.tags) ? event.tags.slice(0, 8) : [],
         importance
       });
-
-      dbg(
-        `memory event saved: ${text.slice(0, 80)}`
-      );
-    }
-    const relationshipDelta = extracted?.relationshipDelta;
-    if (relationshipDelta && Number(relationshipDelta.confidence) >= 0.6 && lib?.updateRelationship) {
-      await lib.updateRelationship({
-        trust: Number(relationshipDelta.trust) || 0,
-        closeness: Number(relationshipDelta.closeness) || 0,
-        comfort: Number(relationshipDelta.comfort) || 0,
-        respect: Number(relationshipDelta.respect) || 0,
-        playfulness: Number(relationshipDelta.playfulness) || 0,
-        lastInteractionAt: Date.now()
-      });
-      dbg(`relationship updated: ${relationshipDelta.reason || 'без причины'}`);
     }
 
-    for (const loop of Array.isArray(extracted?.openLoops) ? extracted.openLoops : []) {
-      await lib?.addOpenLoop?.(loop);
-    }
-    for (const loop of Array.isArray(extracted?.resolvedLoops) ? extracted.resolvedLoops : []) {
-      await lib?.resolveOpenLoop?.(loop?.text || '');
-    }
+    for (const loop of Array.isArray(extracted?.openLoops) ? extracted.openLoops : []) await lib.addOpenLoop?.(loop);
+    for (const loop of Array.isArray(extracted?.resolvedLoops) ? extracted.resolvedLoops : []) await lib.resolveOpenLoop?.(loop);
     for (const moment of Array.isArray(extracted?.sharedMoments) ? extracted.sharedMoments : []) {
-      if ((Number(moment?.importance) || 0) >= 7) await lib?.addSharedMoment?.(moment);
+      if ((Number(moment?.importance) || 0) >= 7) await lib.addSharedMoment?.(moment);
     }
-    await lib?.consolidateDiary?.();
+    await lib.consolidateDiary?.();
 
- const moodDelta = sanitizeMoodDelta(userText, extracted?.moodDelta);
-const moodConfidence = Number(
-  moodDelta?.confidence
-);
-
-if (
-  moodDelta &&
-  typeof moodDelta === 'object' &&
-  Number.isFinite(moodConfidence) &&
-  moodConfidence >= 0.55 &&
-  lib?.updateMood
-) {
-  if (lib?.applyMoodTimeDecay) {
-    await lib.applyMoodTimeDecay();
-  }
-
-  const mood = await lib.updateMood({
-    affection:
-      Number(moodDelta.affection) || 0,
-
-    energy:
-      Number(moodDelta.energy) || 0,
-
-    playfulness:
-      Number(moodDelta.playfulness) || 0,
-
-    trust:
-      Number(moodDelta.trust) || 0,
-
-    lastInteractionAt: Date.now()
-  });
-
-  if (mood) {
-  dbg(
-    `AI mood updated: ${mood.label}; ` +
-    `affection=${mood.affection}, ` +
-    `energy=${mood.energy}, ` +
-    `playfulness=${mood.playfulness}, ` +
-    `trust=${mood.trust}; ` +
-    `reason=${moodDelta.reason || 'нет причины'}`
-  );
-
-  return true;
-}
-
-  return false;
-}
-    
-} catch (error) {
-    dbg(
-      'apply extracted memory failed: ' +
-      (error?.message || error)
-    );
+    return true;
+  } catch (error) {
+    dbg('apply extracted memory failed: ' + (error?.message || error));
+    return false;
   }
 }
-
-const LS_MEMORY_TURN = 'rin-memory-analysis-turn';
 
 function shouldAnalyzeConversationForMemory(userText = '') {
   const text = String(userText || '').replace(/\s+/g, ' ').trim();
   if (!text) return false;
-
-  const turn = (Number(localStorage.getItem(LS_MEMORY_TURN)) || 0) + 1;
-  localStorage.setItem(LS_MEMORY_TURN, String(turn));
-
-  // Явные устойчивые факты, планы, предпочтения и эмоционально значимые признания.
+  const completedUserTurns = history.filter(item => item?.role === 'user' && item?.status === 'complete' && ['text', 'voice'].includes(item?.kind || 'text')).length;
   const meaningful = /(меня зовут|мне \d{1,3} (?:лет|года|год)|мой день рождения|я живу|я работаю|моя работа|мой проект|я разрабатываю|я люблю|мне нравится|я предпочитаю|обычно я|кажд(?:ый|ую) (?:день|неделю)|завтра|послезавтра|на следующей неделе|собеседован|встреча|поездк|обещаю|решил|решила|планирую|хочу рассказать|только тебе|доверяю тебе|важно для меня)/iu.test(text);
   const substantial = text.length >= 220;
-  const periodicCatchUp = turn % 8 === 0 && text.length >= 45;
-
-  const trivial = /^(?:привет|доброе утро|добрый день|добрый вечер|пока|до завтра|спокойной ночи|спасибо|ага|да|нет|ок(?:ей)?|хорошо|понятно|мм+|ха+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s.!?]+)$/iu.test(text);
-
+  const periodicCatchUp = completedUserTurns > 0 && completedUserTurns % 8 === 0 && text.length >= 45;
+  const trivial = /^(?:привет|доброе утро|добрый день|добрый вечер|ну пока|до завтра|спокойной ночи|спасибо|ага|да|нет|ок(?:ей)?|хорошо|понятно|мм+|ха+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s.!?]+)$/iu.test(text);
   return !trivial && (meaningful || substantial || periodicCatchUp);
 }
 
-/**
- * Отправляет значимую пару сообщений на скрытый анализ памяти.
- * Обычные короткие ходы не создают второй платный запрос.
- */
-async function analyzeConversationForMemory(
-  userText,
-  assistantText
-) {
-  if (!shouldAnalyzeConversationForMemory(userText)) {
-    dbg('memory analysis skipped: no durable signal');
-    return false;
-  }
-
+async function analyzeConversationForMemory(userText, assistantText) {
   try {
-    const existingMemory =
-      await buildMemoryPayload();
-
-    const res = await fetch('/api/memory', {
+    const existingMemory = await buildMemoryPayload();
+    const res = await fetchWithTimeout('/api/memory', {
       method: 'POST',
-
-      headers: {
-        'Content-Type': 'application/json'
-      },
-
-      body: JSON.stringify({
-        pin: localStorage.getItem('rin-pin'),
-        userText,
-        assistantText,
-        existingMemory:
-          existingMemory || undefined
-      })
-    });
-
-    if (res.status === 401) {
-      dbg('memory API unauthorized');
-      return false;
-    }
-
-    if (!res.ok) {
-      dbg(`memory API failed: HTTP ${res.status}`);
-      return false;
-    }
-
+      headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ userText, assistantText, existingMemory: existingMemory || undefined })
+    }, 25_000);
+    if (res.status === 401) return { ok: false, code: 'UNAUTHORIZED' };
+    if (!res.ok) return { ok: false, code: 'MEMORY_HTTP_ERROR' };
     const extracted = await res.json();
-
-    if (extracted?.warning) {
-      dbg(`memory API warning: ${extracted.warning}`);
-    }
-
-    return await applyExtractedMemory(extracted, userText);
+    if (extracted?.warning) return { ok: false, code: extracted.warning };
+    const applied = await applyExtractedMemory(extracted, userText);
+    return { ok: applied, code: applied ? null : 'MEMORY_APPLY_FAILED' };
   } catch (error) {
-    dbg(
-      'memory analysis failed: ' +
-      (error?.message || error)
-    );
-    return false;
+    dbg('memory analysis failed: ' + (error?.message || error));
+    return { ok: false, code: error?.name === 'AbortError' ? 'MEMORY_TIMEOUT' : 'MEMORY_REQUEST_FAILED' };
   }
 }
+
+const memoryJobRunner = createMemoryJobRunner(
+  job => analyzeConversationForMemory(job.userText, job.assistantText),
+  { storage: localStorage }
+);
+setTimeout(() => { void memoryJobRunner.drain(); }, 0);
+setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
 
 /* ============================= */
 /* НАСТРОЕНИЕ РИН */
 /* ============================= */
 
 function analyzeUserMoodImpact(userText = '') {
-  const text = String(userText)
-    .toLowerCase()
-    .trim();
+  const text = String(userText || '').toLowerCase().trim();
+  const mood = { affection: 0, energy: 0 };
+  const relationship = { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0 };
+  if (!text) return { mood, relationship };
 
-  const delta = {
-    affection: 0,
-    energy: 0,
-    playfulness: 0,
-    trust: 0
-  };
-
-  if (!text) {
-    return delta;
+  if (/(спасибо|благодарю|ты милая|ты хорошая|рад тебя видеть|соскучился|обнимаю|целую|люблю тебя|мне приятно с тобой|ты мне нравишься)/i.test(text)) {
+    mood.affection += 3;
+    relationship.trust += 1;
+    relationship.closeness += 1;
   }
-
-  const warm =
-    /(спасибо|благодарю|ты милая|ты хорошая|рад тебя видеть|соскучился|обнимаю|целую|люблю тебя|мне приятно с тобой|ты мне нравишься)/i;
-
-  const playful =
-    /(шучу|шутка|хаха|ахаха|😁|😏|😉|подкол|пофлиртуем|флирт)/i;
-
-  const trust =
-    /(хочу рассказать|никому не говорил|только тебе|поделюсь с тобой|мне важно твоё мнение|я доверяю тебе)/i;
-
-  const tired =
-    /(устал|вымотался|тяжёлый день|нет сил|выгорел|хочу спать|очень тяжело)/i;
-
-  const sad =
-    /(мне грустно|плохо на душе|расстроен|одиноко|обидно|печально|не получилось)/i;
-
-  const hostile =
-    /(заткнись|отстань|бесишь|глупая|тупая|ненавижу тебя|замолчи)/i;
-
-  const goodbye =
-    /(пока|до завтра|спокойной ночи|доброй ночи|до встречи|увидимся|бай|bye)/i;
-
-  if (warm.test(text)) {
-    delta.affection += 3;
-    delta.trust += 1;
+  if (/(шучу|шутка|хаха|ахаха|😁|😏|😉|подкол|пофлиртуем|флирт)/i.test(text)) {
+    mood.affection += 1;
+    relationship.playfulness += 3;
   }
-
-  if (playful.test(text)) {
-    delta.playfulness += 4;
-    delta.affection += 1;
+  if (/(хочу рассказать|никому не говорил|только тебе|поделюсь с тобой|мне важно твоё мнение|я доверяю тебе)/i.test(text)) {
+    mood.affection += 2;
+    relationship.trust += 3;
+    relationship.closeness += 1;
   }
-
-  if (trust.test(text)) {
-    delta.trust += 4;
-    delta.affection += 2;
+  if (/(устал|вымотался|тяжёлый день|нет сил|выгорел|хочу спать|очень тяжело|мне грустно|плохо на душе|расстроен|одиноко|обидно|печально|не получилось)/i.test(text)) {
+    mood.energy -= 3;
+    mood.affection += 1;
+    relationship.playfulness -= 2;
   }
-
-  if (tired.test(text)) {
-    delta.energy -= 3;
-    delta.affection += 1;
-    delta.playfulness -= 2;
+  if (/(заткнись|отстань|бесишь|глупая|тупая|ненавижу тебя|замолчи)/i.test(text)) {
+    mood.affection -= 8;
+    mood.energy -= 5;
+    relationship.playfulness -= 4;
+    relationship.trust -= 4;
+    relationship.respect -= 3;
   }
-
-  if (sad.test(text)) {
-    delta.energy -= 3;
-    delta.affection += 2;
-    delta.playfulness -= 3;
-  }
-
-  if (hostile.test(text)) {
-    delta.affection -= 8;
-    delta.energy -= 5;
-    delta.playfulness -= 6;
-    delta.trust -= 5;
-  }
-
-  if (goodbye.test(text)) {
-    delta.energy -= 2;
-  }
-
-  return delta;
+  return { mood, relationship };
 }
 
 async function updateRinMoodFromMessage(userText) {
   try {
     const lib = await ensureMemoryReady();
-
-    if (
-      !lib?.updateMood ||
-      !lib?.applyMoodTimeDecay
-    ) {
-      return null;
-    }
-
+    if (!lib?.updateMood || !lib?.applyMoodTimeDecay) return null;
     await lib.applyMoodTimeDecay();
-
-    const delta =
-      analyzeUserMoodImpact(userText);
-
-    const mood = await lib.updateMood({
-      ...delta,
-      lastInteractionAt: Date.now()
-    });
-
-    dbg(
-      `mood updated: ${mood.label}; ` +
-      `affection=${mood.affection}, ` +
-      `energy=${mood.energy}, ` +
-      `playfulness=${mood.playfulness}, ` +
-      `trust=${mood.trust}`
-    );
-
+    const delta = analyzeUserMoodImpact(userText);
+    const mood = await lib.updateMood({ ...delta.mood, lastInteractionAt: Date.now() });
+    await lib.updateRelationship?.({ ...delta.relationship, lastInteractionAt: Date.now() });
+    if (mood) dbg(`mood updated: ${mood.label}; affection=${mood.affection}; energy=${mood.energy}`);
     return mood;
   } catch (error) {
-    dbg(
-      'mood update failed: ' +
-      (error?.message || error)
-    );
-
+    dbg('mood update failed: ' + (error?.message || error));
     return null;
   }
 }
 
-/* 🔒 защита от гонок показа стикеров */
-let stickerBusy = false;
-
-/* === stickers v5: смысловая двухканальная система === */
+/* Стикеры вызываются внутри сериализованного диалогового потока. */
+/* === stickers v6: смысловая двухканальная система === */
 let STICKERS_CFG = null;
 let stickersLib = null;
 
 async function ensureStickersReady(){
   if (!stickersLib) {
-    try { stickersLib = await import('/lib/stickers-v4.js?v=6'); }
-    catch(e){ dbg('stickers v5 import failed: '+(e?.message||e)); stickersLib=null; }
+    try { stickersLib = await import(`/lib/stickers-v6.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`); }
+    catch(e){ dbg('stickers v6 import failed: '+(e?.message||e)); stickersLib=null; }
   }
   if (stickersLib && !STICKERS_CFG) {
-    try { STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers-v4.json'); dbg('stickers v5 loaded'); }
-    catch(e){ dbg('stickers v5 load failed: '+(e?.message||e)); STICKERS_CFG=null; }
+    try { STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers-v6.json'); dbg('stickers v6 loaded'); }
+    catch(e){ dbg('stickers v6 load failed: '+(e?.message||e)); STICKERS_CFG=null; }
   }
 }
 
@@ -913,20 +587,21 @@ const fmtDateKey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStar
 const fmtTime = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 function loadHistory(){
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
-  catch { return []; }
+  return loadChatHistory(localStorage);
 }
 function saveHistory(h){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(h.slice(-60)));
+  const ok = saveChatHistory(h, localStorage);
+  if (!ok) dbg('history save failed: storage quota or unavailable');
+  return ok;
 }
 function getInitCountFor(k){
-  const m = JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}');
+  const m = safeLocalJson(DAILY_INIT_KEY, {});
   return m[k] || 0;
 }
 function bumpInitCount(k){
-  const m = JSON.parse(localStorage.getItem(DAILY_INIT_KEY) || '{}');
+  const m = safeLocalJson(DAILY_INIT_KEY, {});
   m[k] = (m[k] || 0) + 1;
-  localStorage.setItem(DAILY_INIT_KEY, JSON.stringify(m));
+  safeLocalSet(DAILY_INIT_KEY, JSON.stringify(m));
 }
 
 /* === UI: SETTINGS === */
@@ -973,14 +648,14 @@ if (themeToggle){
     const next = isDark ? 'theme-light' : 'theme-dark';
     document.documentElement.classList.remove('theme-dark', 'theme-light');
     document.documentElement.classList.add(next);
-    localStorage.setItem(THEME_KEY, next);
+    safeLocalSet(THEME_KEY, next);
   };
 }
 
 /* — Обои — */
 function applyWallpaper(){
-  const data = localStorage.getItem(LS_WP_DATA) || '';
-  const op   = +(localStorage.getItem(LS_WP_OPACITY) || '90') / 100;
+  const data = safeLocalGet(LS_WP_DATA) || '';
+  const op   = +(safeLocalGet(LS_WP_OPACITY) || '90') / 100;
 
   document.documentElement.style.setProperty('--wallpaper-url', data ? `url("${data}")` : 'none');
   document.documentElement.style.setProperty('--wallpaper-opacity', String(op));
@@ -994,9 +669,17 @@ if (wpFile){
   wpFile.addEventListener('change', (e)=>{
     const f = e.target.files?.[0];
     if (!f) return;
+    if (f.size > 2_000_000) {
+      alert('Файл обоев слишком большой. Используй изображение до 2 МБ.');
+      wpFile.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
-      localStorage.setItem(LS_WP_DATA, reader.result);
+      if (!safeLocalSet(LS_WP_DATA, reader.result)) {
+        alert('Не удалось сохранить обои: локальное хранилище заполнено.');
+        return;
+      }
       applyWallpaper();
     };
     reader.readAsDataURL(f);
@@ -1004,27 +687,27 @@ if (wpFile){
 }
 if (wpClear){
   wpClear.onclick=()=>{
-    localStorage.removeItem(LS_WP_DATA);
+    safeLocalRemove(LS_WP_DATA);
     applyWallpaper();
   };
 }
 if (wpOpacity){
   wpOpacity.oninput=()=>{
-    localStorage.setItem(LS_WP_OPACITY, String(wpOpacity.value));
+    safeLocalSet(LS_WP_OPACITY, String(wpOpacity.value));
     applyWallpaper();
   };
 }
 
 /* — Стикеры: настройки UI — */
-function lsStickerProb(){ return +(localStorage.getItem(LS_STICKER_PROB) || '30'); } // %
+function lsStickerProb(){ return +(safeLocalGet(LS_STICKER_PROB) || '30'); } // %
 function lsStickerMode(){
-  const raw = localStorage.getItem(LS_STICKER_MODE) || 'smart';
+  const raw = safeLocalGet(LS_STICKER_MODE) || 'smart';
   if (raw === 'keywords') return 'smart';
   return ['smart','always','off'].includes(raw) ? raw : 'smart';
 }
-function lsStickerSafe(){ return localStorage.getItem(LS_STICKER_SAFE)==='1'; }
+function lsStickerSafe(){ return safeLocalGet(LS_STICKER_SAFE)==='1'; }
 function lsStickerOpacity(){
-  return Math.max(20, Math.min(100, +(localStorage.getItem(LS_STICKER_OPACITY) || '100')));
+  return Math.max(20, Math.min(100, +(safeLocalGet(LS_STICKER_OPACITY) || '100')));
 }
 
 function applyStickerOpacity(){
@@ -1048,8 +731,8 @@ function updateStickerModeUI(mode=lsStickerMode()){
 
 function setStickerMode(mode){
   const next = ['smart','always','off'].includes(mode) ? mode : 'smart';
-  if (next !== 'off') localStorage.setItem(LS_STICKER_LAST_MODE, next);
-  localStorage.setItem(LS_STICKER_MODE, next);
+  if (next !== 'off') safeLocalSet(LS_STICKER_LAST_MODE, next);
+  safeLocalSet(LS_STICKER_MODE, next);
   updateStickerModeUI(next);
 }
 
@@ -1057,14 +740,14 @@ if (stickerProb){
   stickerProb.value = String(lsStickerProb());
   if (stickerProbVal) stickerProbVal.textContent = `${stickerProb.value}%`;
   stickerProb.oninput = () => {
-    localStorage.setItem(LS_STICKER_PROB, String(stickerProb.value));
+    safeLocalSet(LS_STICKER_PROB, String(stickerProb.value));
     if (stickerProbVal) stickerProbVal.textContent = `${stickerProb.value}%`;
   };
 }
 if (stickerMode){
   const mode = lsStickerMode();
-  if (mode !== (localStorage.getItem(LS_STICKER_MODE) || 'smart')) {
-    localStorage.setItem(LS_STICKER_MODE, mode);
+  if (mode !== (safeLocalGet(LS_STICKER_MODE) || 'smart')) {
+    safeLocalSet(LS_STICKER_MODE, mode);
   }
   stickerMode.onchange = ()=>setStickerMode(stickerMode.value);
 }
@@ -1077,17 +760,17 @@ if (stickerEnabled){
       setStickerMode('off');
       return;
     }
-    const lastMode = localStorage.getItem(LS_STICKER_LAST_MODE);
+    const lastMode = safeLocalGet(LS_STICKER_LAST_MODE);
     setStickerMode(['smart','always'].includes(lastMode) ? lastMode : 'smart');
   };
 }
 if (stickerSafe){
   stickerSafe.checked = lsStickerSafe();
-  stickerSafe.onchange = ()=>localStorage.setItem(LS_STICKER_SAFE, stickerSafe.checked?'1':'0');
+  stickerSafe.onchange = ()=>safeLocalSet(LS_STICKER_SAFE, stickerSafe.checked?'1':'0');
 }
 if (stickerOpacity){
   stickerOpacity.oninput = () => {
-    localStorage.setItem(LS_STICKER_OPACITY, String(stickerOpacity.value));
+    safeLocalSet(LS_STICKER_OPACITY, String(stickerOpacity.value));
     applyStickerOpacity();
   };
 }
@@ -1095,17 +778,17 @@ updateStickerModeUI();
 applyStickerOpacity();
 
 /* — Голос — */
-function lsSpeakEnabled(){ return localStorage.getItem(LS_SPEAK_ENABLED) === '1'; }
-function lsSpeakRate(){ return +(localStorage.getItem(LS_SPEAK_RATE) || '20'); } // %
+function lsSpeakEnabled(){ return safeLocalGet(LS_SPEAK_ENABLED) === '1'; }
+function lsSpeakRate(){ return +(safeLocalGet(LS_SPEAK_RATE) || '20'); } // %
 if (voiceEnabled){
   voiceEnabled.checked = lsSpeakEnabled();
-  voiceEnabled.onchange = ()=>localStorage.setItem(LS_SPEAK_ENABLED, voiceEnabled.checked?'1':'0');
+  voiceEnabled.onchange = ()=>safeLocalSet(LS_SPEAK_ENABLED, voiceEnabled.checked?'1':'0');
 }
 if (voiceRate){
   voiceRate.value = String(lsSpeakRate());
   if (voiceRateVal) voiceRateVal.textContent = `${voiceRate.value}%`;
   voiceRate.oninput = ()=>{
-    localStorage.setItem(LS_SPEAK_RATE, String(voiceRate.value));
+    safeLocalSet(LS_SPEAK_RATE, String(voiceRate.value));
     if (voiceRateVal) voiceRateVal.textContent = `${voiceRate.value}%`;
   };
 }
@@ -1113,34 +796,22 @@ if (voiceRate){
 /* — Сброс — */
 if (resetApp){
   resetApp.onclick=()=>{
-    if (!confirm('Сбросить историю чата, настройки и кэш?')) return;
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(DAILY_INIT_KEY);
-    [LS_STICKER_PROB,LS_STICKER_MODE,LS_STICKER_LAST_MODE,LS_STICKER_SAFE,LS_STICKER_OPACITY,LS_SPEAK_ENABLED,LS_SPEAK_RATE,LS_WP_DATA,LS_WP_OPACITY,LS_DEBUG_ENABLED].forEach(k=>localStorage.removeItem(k));
-    chatEl.innerHTML='';
-    history=[];
-    applyWallpaper();
-    applyStickerOpacity();
-    updateStickerModeUI('smart');
-    if (stickerProb) stickerProb.value = '30';
-    if (stickerProbVal) stickerProbVal.textContent = '30%';
-    if (stickerSafe) stickerSafe.checked = false;
-    if (voiceEnabled) voiceEnabled.checked = false;
-    if (voiceRate) voiceRate.value = '20';
-    if (voiceRateVal) voiceRateVal.textContent = '20%';
-    if (debugToggle) debugToggle.checked = false;
-    _debugOn = false;
-    if (debugLogEl) debugLogEl.innerHTML='';
-    greet();
-    closeSettingsPanel();
+    if (!confirm('Удалить локальную историю, память, профиль, настройки и кэш приложения на этом устройстве? PIN входа будет сохранён.')) return;
+    resetApplicationStorage(localStorage, { preservePin: true });
+    try { loreLib?.resetLoreCache?.(); } catch {}
+    try { stickersLib?.resetStickerState?.(); } catch {}
+    dossierCaches.clear();
+    window.location.reload();
   };
 }
 
 /* === Рендер сообщений === */
-function addBubble(text, who='assistant', ts=Date.now()){
+function addBubble(text, who='assistant', ts=Date.now(), options={}){
   const d = new Date(ts);
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
+  if (options.messageId) row.dataset.messageId = options.messageId;
+  if (options.status) row.dataset.status = options.status;
 
   if (who !== 'user'){
     const ava=document.createElement('img');
@@ -1155,18 +826,27 @@ function addBubble(text, who='assistant', ts=Date.now()){
 
   const wrap=document.createElement('div');
   wrap.className='bubble ' + (who==='user'?'me':'her');
-
   const msg=document.createElement('span');
   msg.textContent=text;
-
   const time=document.createElement('span');
   time.className='bubble-time';
   time.textContent=fmtTime(d);
+  wrap.appendChild(msg);
+  wrap.appendChild(time);
 
-  wrap.appendChild(msg); wrap.appendChild(time);
+  if (options.retry) {
+    const retry=document.createElement('button');
+    retry.type='button';
+    retry.className='message-retry';
+    retry.textContent='Повторить';
+    retry.addEventListener('click', options.retry);
+    wrap.appendChild(retry);
+  }
+
   row.appendChild(wrap);
   chatEl.appendChild(row);
   chatEl.scrollTop=chatEl.scrollHeight;
+  return row;
 }
 
 function addTyping(){
@@ -1208,7 +888,7 @@ function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
   const stickerImg = row.querySelector('img.sticker');
   if (stickerImg) {
     stickerImg.onerror = () => {
-      dbg(`stickers v5 asset missing: ${src}`);
+      dbg(`stickers v6 asset missing: ${src}`);
       row.remove();
     };
   }
@@ -1219,11 +899,13 @@ function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
 }
 
 /* === Voice bubble === */
-function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
+function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options={}){
   const d = new Date(ts);
 
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
+  if (options.messageId) row.dataset.messageId = options.messageId;
+  if (options.status) row.dataset.status = options.status;
 
   if (who !== 'user'){
     const ava=document.createElement('img');
@@ -1325,144 +1007,127 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now()){
     tr.textContent=text;
     wrap.appendChild(tr);
   };
+  return row;
 }
 
-/* === INIT === */
+/* === ЕДИНЫЙ КОНТРОЛЛЕР ДИАЛОГА === */
+let activeRequests = 0;
+let greetingActive = false;
+
+function newRequestId() {
+  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function setPeerStatus(mode = 'idle') {
+  const labels = {
+    idle: 'готова к диалогу',
+    typing: 'печатает…',
+    long: '📖 формирует ответ…'
+  };
+  peerStatus.textContent = labels[mode] || labels.idle;
+  peerStatus.dataset.mode = mode;
+}
+
+function inWindow(local, from, to) {
+  if (!from || !to) return false;
+  const [fh, fm] = from.split(':').map(Number);
+  const [th, tm] = to.split(':').map(Number);
+  if (![fh, fm, th, tm].every(Number.isFinite)) return false;
+  const minute = local.getHours() * 60 + local.getMinutes();
+  return minute >= fh * 60 + fm && minute <= th * 60 + tm;
+}
+
+
+function renderStoredMessage(message) {
+  if (message.kind === 'sticker' && message.sticker?.src) {
+    return addStickerBubble(message.sticker.src, message.role, message.sticker.utterance || null, message.ts);
+  }
+  const prefix = message.kind === 'voice' ? '🎙️ ' : '';
+  return addBubble(prefix + message.content, message.role, message.ts, {
+    messageId: message.id,
+    status: message.status,
+    retry: message.role === 'user' && message.status === 'failed'
+      ? () => retryMessage(message.id)
+      : null
+  });
+}
+
 (async function init(){
-  try{
-    // 1) Загружаем профиль и обязательно присоединяем постоянное досье.
+  setPeerStatus('idle');
+  try {
     await ensureActiveProfile();
-    dbg('compact prompt profile ready: ' + Boolean(profile?.prompt_profile));
     await ensureLoreReady();
-
-    // 2) stickers v5
     await ensureStickersReady();
-
-    // 3) окружение
     await refreshRinEnv();
-    setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
-  }catch(e){ dbg('init error: '+(e?.message||e)); }
+  } catch (error) {
+    dbg('init error: ' + (error?.message || error));
+  }
 
-  // подхватываем обновления профиля из редактора
-  window.addEventListener('rin:profile-updated', async (ev)=>{
-    profile = ev.detail || profile;
+  window.addEventListener('rin:profile-updated', async event => {
+    profile = event.detail || profile;
     await ensureActiveProfile();
   });
 
-  history=loadHistory();
-  if (history.length){
-    for (const m of history) {
-      if (m?.type === 'sticker' && m?.sticker?.src) addStickerBubble(m.sticker.src, m.role==='user'?'user':'assistant', m.sticker.utterance || null, m.ts);
-      else addBubble(m.content, m.role==='user'?'user':'assistant', m.ts);
-    }
-  } else {
-    greet();
-  }
+  history = loadHistory();
+  history.forEach(renderStoredMessage);
+  if (!history.length) await greet();
 
-  setInterval(()=>{ peerStatus.textContent = Math.random()<0.85?'онлайн':'была недавно'; },15000);
-
-  setInterval(tryInitiateBySchedule, 60_000);
-  tryInitiateBySchedule();
+  setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
+  setInterval(() => { void tryInitiateBySchedule(); }, 60_000);
+  void tryInitiateBySchedule();
 })();
 
-/* — приветствие на основе профиля — */
-function greet(){
-  // пул по времени суток
-  let pool = 'day';
-  if (currentEnv && currentEnv.partOfDay){
-    const p = currentEnv.partOfDay;
-    if (p === 'утро') pool = 'morning';
-    else if (p === 'день') pool = 'day';
-    else if (p === 'вечер') pool = 'evening';
-    else pool = 'night';
-  } else {
-    const h = new Date().getHours();
-    if (h >= 5 && h < 12) pool = 'morning';
-    else if (h >= 12 && h < 18) pool = 'day';
-    else if (h >= 18 && h < 23) pool = 'evening';
-    else pool = 'night';
-  }
-
-  (async () => {
+async function greet() {
+  if (!canGreet({ history, greetingActive, activeRequests })) return false;
+  greetingActive = true;
+  try {
+    const part = currentEnv?.partOfDay;
+    const pool = part === 'утро' ? 'morning' : part === 'вечер' ? 'evening' : part === 'ночь' ? 'night' : 'day';
     let greeting = null;
-
     try {
       const lore = await ensureLoreReady();
-      greeting = await lore?.pickGreeting(
-        pool,
-        nowInTz(RIN_TZ)
-      );
+      greeting = chooseConfiguredStarter(profile);
+      if (!greeting) greeting = await lore?.pickGreeting?.(pool, nowInTz(RIN_TZ));
     } catch (error) {
-      dbg(
-        'greeting phrase failed: ' +
-        (error?.message || error)
-      );
+      dbg('greeting phrase failed: ' + (error?.message || error));
     }
-
-    if (!greeting) {
-      const starters =
-        Array.isArray(profile?.starters)
-          ? profile.starters
-          : [];
-
-      if (starters.length) {
-        greeting =
-          starters[
-            Math.floor(Math.random() * starters.length)
-          ];
-      }
-    }
-
-    if (!greeting) {
-      const pod = currentEnv?.partOfDay || 'сейчас';
-
-      greeting =
-        pod === 'утро'
-          ? 'Доброе утро. Как ты?'
-          : pod === 'вечер'
-            ? 'Добрый вечер. Как твой день?'
-            : pod === 'ночь'
-              ? 'Тихая ночь тут… ты как?'
-              : 'Привет. Как ты?';
-    }
+    if (!greeting) greeting = pool === 'morning' ? 'Доброе утро. Как ты?' : pool === 'evening' ? 'Добрый вечер. Как твой день?' : pool === 'night' ? 'Тихая ночь тут… ты как?' : 'Привет. Как ты?';
 
     const stickerDecision = await maybeSticker('', greeting, null, { render: false });
     if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
-    addBubble(greeting, 'assistant');
-    history.push({ role: 'assistant', content: greeting, ts: Date.now() });
+    const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: greeting });
+    addBubble(greeting, 'assistant', message.ts, { messageId: message.id, status: message.status });
+    history.push(message);
     saveHistory(history);
     if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
-  })();
+    return true;
+  } finally {
+    greetingActive = false;
+  }
 }
 
-function inWindow(local,from,to){
-  const [fh,fm]=from.split(':').map(Number);
-  const [th,tm]=to.split(':').map(Number);
-  const min=local.getHours()*60+local.getMinutes();
-  const a=fh*60+fm, b=th*60+tm;
-  return min>=a && min<=b;
-}
-function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-
-/* === Voice-only шанс — без изменений === */
-function shouldVoiceFor(text){
+function shouldVoiceFor(text) {
   if (!lsSpeakEnabled()) return false;
-  const rate = lsSpeakRate()/100; // 0..0.5
-  if (Math.random()>rate) return false;
-  const t=(text||'').replace(/\s+/g,' ').trim();
-  if (!t || t.length>180) return false;
-  return true;
-}
-async function getTTSUrl(text){
-  try{
-    const r = await fetch('/api/tts',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text }) });
-    if (!r.ok) return null;
-    const blob=await r.blob();
-    return URL.createObjectURL(blob);
-  }catch{ return null; }
+  if (Math.random() > lsSpeakRate() / 100) return false;
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  return Boolean(normalized && normalized.length <= 180);
 }
 
-/* === stickers v5: решение по смыслу сообщения пользователя и ответа Рин === */
+async function getTTSUrl(text) {
+  try {
+    const response = await fetchWithTimeout('/api/tts', {
+      method: 'POST',
+      headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ text })
+    }, 25_000);
+    if (response.status === 401) return null;
+    if (!response.ok) return null;
+    return URL.createObjectURL(await response.blob());
+  } catch {
+    return null;
+  }
+}
+
 function stickerSemanticText(decision) {
   const action = String(decision?.semanticAction || decision?.sticker?.family || 'эмоциональный жест');
   const utterance = decision?.utterance ? `, со словами «${decision.utterance}»` : '';
@@ -1471,598 +1136,267 @@ function stickerSemanticText(decision) {
 
 async function commitStickerDecision(decision) {
   if (decision?.action !== 'send' || !decision?.sticker) return false;
-  const ts = Date.now();
-  addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null, ts);
-  stickersLib.markStickerSent(decision.sticker);
-  history.push({
+  const message = createChatMessage({
     role: 'assistant',
-    type: 'sticker',
+    kind: 'sticker',
+    status: 'complete',
     content: stickerSemanticText(decision),
     sticker: {
       src: decision.sticker.src,
-      family: decision.sticker.family || null,
-      semanticAction: decision.semanticAction || decision.sticker.family || null,
-      utterance: decision.utterance || null,
-      timing: decision.timing || 'after_reply'
-    },
-    ts
-  });
-  saveHistory(history);
-  try {
-    const lib = await ensureMemoryReady();
-    const semanticAction = decision.semanticAction || decision.sticker.family || 'emotion';
-    await lib?.addEvent?.(stickerSemanticText(decision), {
-      type: 'sticker_gesture',
-      tags: ['sticker', semanticAction],
-      importance: ['kiss', 'hug'].includes(semanticAction) ? 7 : 4,
-      ref: decision.sticker.src
-    });
-    if (decision?.signals?.explicitGesture && Number(decision.confidence || 0) >= 0.6) {
-      await lib?.addSharedMoment?.({ text: stickerSemanticText(decision), importance: 7 });
+      emotion: decision.semanticAction || decision.sticker.family || null,
+      utterance: decision.utterance || null
     }
-  } catch (error) {
-    dbg('sticker memory event failed: ' + (error?.message || error));
-  }
-  chainStickerCount = 0;
-  dbg(`stickers v5 decision: mode=${decision.mode}; timing=${decision.timing}; sticker=${decision.sticker.src}; confidence=${Number(decision.confidence || 0).toFixed(2)}; reason=${decision.reason}`);
+  });
+  addStickerBubble(message.sticker.src, 'assistant', message.sticker.utterance, message.ts);
+  stickersLib?.markStickerSent?.(decision.sticker);
+  history.push(message);
+  saveHistory(history);
   return true;
 }
 
-/* === stickers v5: решение по смыслу сообщения пользователя и ответа Рин === */
-async function maybeSticker(userText, replyText, responseMeta = null, options = {}){
-  if (stickerBusy) return null;
-  stickerBusy = true;
+async function maybeSticker(userText, replyText, responseMeta = null, options = {}) {
   try {
     await ensureStickersReady();
-    if (!stickersLib || !STICKERS_CFG) { dbg('stickers v5 unavailable'); return null; }
-    const mode = lsStickerMode();
-    if (mode === 'off') { dbg('stickers v5 none: reason=mode_off'); return null; }
-
-    let memory = {};
-    try { memory = (await buildMemoryPayload()) || {}; } catch {}
+    if (!stickersLib || !STICKERS_CFG || lsStickerMode() === 'off') return null;
+    const memory = (await buildMemoryPayload()) || {};
     const decision = stickersLib.decideSticker(STICKERS_CFG, {
       userText: userText || '',
       replyText: replyText || '',
       mood: memory.mood || {},
       relationship: memory.relationship || {},
-      mode: mode === 'always' ? 'always' : 'smart',
+      mode: lsStickerMode() === 'always' ? 'always' : 'smart',
       baseProbability: lsStickerProb(),
       context: {
         safeMode: lsStickerSafe(),
-        scene: responseMeta?.conversationBrain?.activeScene?.type || responseMeta?.coreDecision?.conversationBrain?.activeScene?.type || '',
+        scene: responseMeta?.conversationBrain?.activeScene?.type || '',
         intent: responseMeta?.coreDecision?.intent || '',
         userEmotion: responseMeta?.coreDecision?.userEmotion || '',
         deliveryStyle: responseMeta?.coreDecision?.deliveryStyle || '',
-        hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || responseMeta?.coreDecision?.conversationBrain?.hiddenIntent?.type || '',
-        intensity: responseMeta?.conversationBrain?.intensity ?? responseMeta?.coreDecision?.conversationBrain?.intensity,
+        hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || '',
+        intensity: responseMeta?.conversationBrain?.intensity,
         feltEmotion: responseMeta?.coreDecision?.emotionalResponse?.feltEmotion || '',
         emotionalResponse: responseMeta?.coreDecision?.emotionalResponse || null
       }
     });
-
-    if (decision?.action !== 'send' || !decision?.sticker) {
-      const top = Array.isArray(decision?.top) ? decision.top.map(x => `${x.src}:${x.score}`).join(', ') : '';
-      dbg(`stickers v5 none: reason=${decision?.reason || 'unknown'}${Number.isFinite(decision?.probability) ? `; probability=${decision.probability}` : ''}${decision?.candidate ? `; candidate=${decision.candidate}` : ''}${decision?.probabilityReason ? `; probabilityReason=${decision.probabilityReason}` : ''}${top ? `; top=[${top}]` : ''}`);
-      return decision || null;
-    }
-
-    dbg(`stickers v5 decision: sticker=${decision.sticker.src}; probability=${decision.probability ?? 100}; probabilityReason=${decision.probabilityReason || 'always'}; ${decision.reason || ''}`);
-    if (options.render !== false) await commitStickerDecision(decision);
-    return decision;
-  } catch (e) {
-    dbg('stickers v5 error: ' + (e?.message || e));
-    return null;
-  } finally {
-    stickerBusy = false;
-  }
-}
-
-/* === Автоинициации (используем profile.initiation) — stickers v5 уже работает === */
-async function tryInitiateBySchedule(){
-  if (!profile) return;
-
-  const lore = await ensureLoreReady();
-  const schedule =
-    await lore?.getSchedule?.();
-
-  const d = nowInTz(RIN_TZ);
-  const dateKey = fmtDateKey(d);
-
-  const counts = JSON.parse(
-    localStorage.getItem(DAILY_INIT_KEY) || '{}'
-  );
-
-  const lastKey = Object.keys(counts).pop();
-
-  if (lastKey && lastKey !== dateKey) {
-    localStorage.setItem(
-      DAILY_INIT_KEY,
-      JSON.stringify({})
-    );
-    chainStickerCount = 0;
-  }
-
-  const maxDaily = Math.max(
-    0,
-    Number(
-      schedule?.max_daily_initiations ??
-      profile?.initiation?.max_per_day ??
-      2
-    )
-  );
-
-  if (getInitCountFor(dateKey) >= maxDaily) {
-    return;
-  }
-
-  const windows =
-    Array.isArray(schedule?.windows)
-      ? schedule.windows
-      : Array.isArray(profile?.initiation?.windows)
-        ? profile.initiation.windows
-        : [];
-
-  const win = windows.find(window => {
-    return (
-      inWindow(d, window.from, window.to) &&
-      Math.random() < (window.probability ?? 0.35)
-    );
-  });
-
-  if (!win) return;
-
-  const minimumSilenceMinutes = Math.max(
-    15,
-    Number(schedule?.minimum_silence_minutes || 45)
-  );
-
-  const last = history[history.length - 1];
-
-  if (
-    last &&
-    last.role === 'assistant' &&
-    d - new Date(last.ts || Date.now()) <
-      minimumSilenceMinutes * 60 * 1000
-  ) {
-    return;
-  }
-
-  let text = await lore?.pickInitiationPhrase?.(
-    win.pool || 'day',
-    d
-  );
-
-  if (!text) {
-    const starters =
-      Array.isArray(profile?.starters)
-        ? profile.starters
-        : [];
-
-    if (starters.length) {
-      text = pick(starters);
-    }
-  }
-
-  if (!text) return;
-
-  peerStatus.textContent = 'печатает…';
-  const trow = addTyping();
-
-  setTimeout(async () => {
-    trow.remove();
-    peerStatus.textContent = 'онлайн';
-
-    const stickerDecision = await maybeSticker('', text, null, { render: false });
-    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
-
-    let voiced = false;
-    if (shouldVoiceFor(text)) {
-      const url = await getTTSUrl(text);
-      if (url) { addVoiceBubble(url, text, 'assistant'); voiced = true; }
-    }
-    if (!voiced) addBubble(text, 'assistant');
-    history.push({ role: 'assistant', content: text, ts: Date.now() });
-    saveHistory(history);
-    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
-    bumpInitCount(dateKey);
-  }, 900 + Math.random() * 900);
-}
-
-/* === Отправка: время, погода и запрос к модели === */
-formEl.addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  const text = (inputEl.value || '').trim();
-  if (!text) return;
-
-  addBubble(text, 'user');
-
-  history.push({
-    role: 'user',
-    content: text,
-    ts: Date.now()
-  });
-
-  saveHistory(history);
-
-  inputEl.value = '';
-  inputEl.focus();
-
-  // Увеличиваем счётчик сообщений до следующего стикера
-  chainStickerCount++;
-
-  const t = text.toLowerCase();
-
-  /*
-   * ВАЖНО:
-   * Локальный обработчик smalltalk полностью удалён.
-   *
-   * Фразы:
-   * — «Как дела?»
-   * — «Чем занимаешься?»
-   * — «Что сейчас происходит в твоём городе?»
-   * — «Как настроение?»
-   *
-   * теперь отправляются модели и не заменяются шаблонной
-   * фразой о времени, сезоне и погоде.
-   */
-
-  // Вопросы именно о времени Рин
-  const RE_TIME =
-    /(сколько\s+у\s+тебя\s+сейчас\s+времен(и|я)|сколько\s+у\s+тебя\s+времен(и|я)|который\s+час|время\s+у\s+тебя|что\s+у\s+тебя\s+по\s+времени)/i;
-
-  // Вопросы именно о погоде
-  const RE_WEATHER =
-    /(?:какая[^?]*погода|что там с погодой|как[^?]*погода|сколько[^?]*градус|ид[её]т ли[^?]*(дождь|снег)|(?:холодно|тепло|жарко|дождь|снег)[^?]*у тебя)\s*\??$/i;
-
-  function composeWeatherMood(env) {
-    const w = env?.weather;
-    if (!w) return '';
-
-    const bits = [];
-
-    if (typeof w.temp === 'number') {
-      bits.push(`${w.temp}°C`);
-    }
-
-    if (w.desc) {
-      bits.push(w.desc);
-    }
-
-    return bits.length
-      ? `Сейчас в Канадзаве ${bits.join(', ')}.`
-      : '';
-  }
-
-  function formatRinTime(env) {
-    let d;
-
-    if (env?.rinHuman) {
-      d = new Date(env.rinHuman.replace(' ', 'T') + ':00');
-    } else {
-      d = nowInTz(RIN_TZ);
-    }
-
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-
-    return `${hh}:${mm} по Канадзаве`;
-  }
-
-  async function renderAssistantReply(reply, responseMeta = null) {
-    const stickerDecision = await maybeSticker(text, reply, responseMeta, { render: false });
-    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
-
-    let voiced = false;
-    if (shouldVoiceFor(reply)) {
-      const url = await getTTSUrl(reply);
-      if (url) { addVoiceBubble(url, reply, 'assistant'); voiced = true; }
-    }
-    if (!voiced) addBubble(reply, 'assistant');
-
-    history.push({ role: 'assistant', content: reply, ts: Date.now() });
-    saveHistory(history);
-    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
-chainStickerCount++;
-
-if (responseMeta?.coreDecision?.initiative?.mode === 'small_observation') {
-  try {
-    const lib = await ensureMemoryReady();
-    await lib?.markInnerLifeSpontaneous?.();
+    if (decision?.action === 'send' && decision?.sticker && options.render !== false) await commitStickerDecision(decision);
+    return decision || null;
   } catch (error) {
-    dbg('inner life mark failed: ' + (error?.message || error));
+    dbg('stickers error: ' + (error?.message || error));
+    return null;
   }
 }
 
-// Фоновый анализ для долгосрочной памяти.
-const aiMoodApplied =
-  await analyzeConversationForMemory(
-    text,
-    reply
-  );
+async function tryInitiateBySchedule() {
+  if (!canAutoInitiate({ profile, history, greetingActive, activeRequests })) return false;
+  const lore = await ensureLoreReady();
+  const defaults = await lore?.getSchedule?.();
+  const policy = resolveInitiationPolicy(profile, defaults || {});
+  const date = nowInTz(RIN_TZ);
+  const dateKey = fmtDateKey(date);
+  if (getInitCountFor(dateKey) >= policy.maxPerDay) return false;
 
-if (!aiMoodApplied) {
-  await updateRinMoodFromMessage(text);
+  const windows = policy.windows;
+  const window = windows.find(item => inWindow(date, item.from, item.to) && Math.random() < Number(item.probability ?? 0.35));
+  if (!window) return false;
+
+  const last = [...history].reverse().find(item => ['text', 'voice'].includes(item?.kind || 'text'));
+  const silenceMinutes = policy.minimumSilenceMinutes;
+  if (!last || last.role !== 'assistant' || Date.now() - Number(last.ts || Date.now()) < silenceMinutes * 60_000) return false;
+
+  let text = chooseConfiguredStarter(profile);
+  if (!text) text = await lore?.pickInitiationPhrase?.(window.pool || 'day', date);
+  if (!text) return false;
+
+  await new Promise(resolve => setTimeout(resolve, 450));
+  if (!canAutoInitiate({ profile, history, greetingActive, activeRequests })) return false;
+  setPeerStatus('typing');
+  const typing = addTyping();
+  await new Promise(resolve => setTimeout(resolve, 500));
+  typing.remove();
+
+  const stickerDecision = await maybeSticker('', text, null, { render: false });
+  if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
+  const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: text });
+  addBubble(text, 'assistant', message.ts, { messageId: message.id, status: message.status });
+  history.push(message);
+  saveHistory(history);
+  if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
+  bumpInitCount(dateKey);
+  setPeerStatus('idle');
+  return true;
 }
+
+formEl.addEventListener('submit', event => {
+  event.preventDefault();
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = '';
+
+  const requestId = newRequestId();
+  const message = createChatMessage({ role: 'user', kind: 'text', status: 'pending', content: text, requestId });
+  history.push(message);
+  saveHistory(history);
+  addBubble(text, 'user', message.ts, { messageId: message.id, status: message.status });
+  enqueueMessage(message.id);
+});
+
+const messageQueue = createSerialQueue(processUserMessage);
+
+function enqueueMessage(messageId) {
+  return messageQueue.enqueue(messageId).catch(error => {
+    dbg('message queue error: ' + (error?.message || error));
+  });
+}
+
+function findMessageRow(messageId) {
+  return [...chatEl.querySelectorAll('[data-message-id]')]
+    .find(row => row.dataset.messageId === messageId) || null;
+}
+
+function retryMessage(messageId) {
+  const message = history.find(item => item.id === messageId);
+  if (!message || message.status !== 'failed') return;
+  updateMessage(history, messageId, { status: 'pending', requestId: newRequestId(), errorCode: null });
+  const row = findMessageRow(messageId);
+  if (row) {
+    row.dataset.status = 'pending';
+    row.querySelector('.message-retry')?.remove();
   }
+  saveHistory(history);
+  enqueueMessage(messageId);
+}
 
-  // 1. Локальный ответ только на прямой вопрос о времени
-  if (RE_TIME.test(t)) {
-    try {
-      await refreshRinEnv();
-    } catch (error) {
-      dbg(
-        'time env refresh failed: ' +
-        (error?.message || error)
-      );
-    }
+function renderFailedState(message) {
+  const row = findMessageRow(message.id);
+  if (!row) return;
+  row.dataset.status = 'failed';
+  if (row.querySelector('.message-retry')) return;
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'message-retry';
+  retry.textContent = 'Повторить';
+  retry.addEventListener('click', () => retryMessage(message.id));
+  row.querySelector('.bubble')?.appendChild(retry);
+}
 
-    const env = currentEnv || null;
-    const timeStr = formatRinTime(env);
+function userFacingError(code) {
+  if (code === 'MODEL_RESPONSE_TRUNCATED') return 'Ответ оборвался на стороне модели. Повтори отправку.';
+  if (code === 'UPSTREAM_TIMEOUT') return 'Сервис не успел ответить. Повтори отправку.';
+  return 'Не удалось получить ответ. Сообщение не включено в следующий контекст; его можно повторить.';
+}
 
-    const rinHour = nowInTz(RIN_TZ).getHours();
-
-    const pod =
-      env?.partOfDay ||
-      partOfDayFromHour(rinHour);
-
-    const tail =
-      pod === 'утро'
-        ? 'У меня ещё утро — люблю это спокойствие.'
-        : pod === 'день'
-          ? 'У меня день — в хорошем темпе, но без спешки.'
-          : pod === 'вечер'
-            ? 'У меня вечер — тянет к чаю и тишине.'
-            : 'У меня глубокая ночь — город почти не дышит.';
-
-    const reply = `У меня сейчас ${timeStr}. ${tail}`;
-
-    await renderAssistantReply(reply, data);
-    return;
-  }
-
-  // 2. Локальный ответ только на прямой вопрос о погоде
-  if (RE_WEATHER.test(t)) {
-    try {
-      await refreshRinEnv();
-    } catch (error) {
-      dbg(
-        'weather env refresh failed: ' +
-        (error?.message || error)
-      );
-    }
-
-    const env = currentEnv || null;
-
-    const head = 'Смотрю в окно и на погоду…';
-
-    const weatherPhrase =
-      buildWeatherPhrase(env) ||
-      composeWeatherMood(env) ||
-      'Пока не получилось узнать точную погоду.';
-
-    const reply = `${head} ${weatherPhrase}`.trim();
-
-    await renderAssistantReply(reply, data);
-    return;
-  }
-
-  // 3. Все остальные сообщения отправляются модели
-  peerStatus.textContent = 'печатает…';
-
+async function processUserMessage(messageId) {
+  const userMessage = history.find(item => item.id === messageId);
+  if (!userMessage || !['pending', 'failed'].includes(userMessage.status)) return;
+  updateMessage(history, messageId, { status: 'sent' });
+  saveHistory(history);
+  activeRequests += 1;
+  setPeerStatus('typing');
   const typingRow = addTyping();
 
   try {
+    // Перед новым модельным запросом завершаем уже запущенную память предыдущего хода.
+    // Ошибочные jobs остаются в retry-очереди, но успешные изменения гарантированно входят в следующий context snapshot.
+    await memoryJobRunner.drain();
+    if (shouldRefreshEnvironment(userMessage.content)) await refreshRinEnv();
     const memoryModule = await ensureMemoryReady();
-    await memoryModule?.advanceInnerLife?.(currentEnv || {}, text);
-    const memory = await buildMemoryPayload();
-    const activeProfile = await ensureActiveProfile();
-
-    dbg(`build=${RIN_BUILD_VERSION}`);
-
-    const loreModule = await ensureLoreReady();
-    const lore = await loreModule?.buildLorePayload?.(text);
-
-    if (lore) {
-      const triggerNames =
-        (lore.matchedTriggers || [])
-          .map(item => item.id)
-          .join(', ');
-
-      dbg(
-        'lore selected: ' +
-        `${lore.memories?.length || 0} memories, ` +
-        `${lore.backstory?.length || 0} backstory` +
-        (triggerNames ? `; triggers=${triggerNames}` : '; triggers=none')
-      );
-    } else {
-      dbg('lore unavailable');
-    }
-
-  const res = await fetch('/api/chat', {
+    await memoryModule?.advanceInnerLife?.(currentEnv || {}, userMessage.content);
+    const [memory, activeProfile, loreModule] = await Promise.all([
+      buildMemoryPayload(),
+      ensureActiveProfile(),
+      ensureLoreReady()
+    ]);
+    const lore = await loreModule?.buildLorePayload?.(userMessage.content);
+    const response = await fetchWithTimeout('/api/chat', {
       method: 'POST',
-
-      headers: {
-        'Content-Type': 'application/json'
-      },
-
+      headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        history,
-
-        pin: localStorage.getItem('rin-pin'),
-
+        requestId: userMessage.requestId,
+        history: toApiHistory(history, userMessage.requestId),
         env: currentEnv || undefined,
-
         profile: activeProfile || undefined,
-
         memory: memory || undefined,
-
         lore: lore || undefined,
-
         client: {
-          tz:
-            Intl.DateTimeFormat()
-              .resolvedOptions()
-              .timeZone || null,
-
-          sentAt: Date.now()
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+          sentAt: Date.now(),
+          build: RIN_BUILD_VERSION
         }
       })
-    });
-
-    let data;
-
-    try {
-      data = await res.json();
-    } catch {
-      data = {};
+    }, 45_000);
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (response.status === 401) {
+      removeStoredPin();
+      window.location.replace('/login');
+      return;
+    }
+    if (!response.ok) {
+      const error = new Error(data?.error || `HTTP ${response.status}`);
+      error.code = data?.code || 'CHAT_REQUEST_FAILED';
+      throw error;
+    }
+    if (data.requestId && data.requestId !== userMessage.requestId) {
+      const error = new Error('Mismatched response');
+      error.code = 'MISMATCHED_RESPONSE';
+      throw error;
+    }
+    const reply = typeof data.reply === 'string' ? data.reply.trim() : '';
+    if (!reply) {
+      const error = new Error('Empty response');
+      error.code = 'EMPTY_MODEL_RESPONSE';
+      throw error;
     }
 
     typingRow.remove();
+    setPeerStatus(data.long ? 'long' : 'idle');
+    const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
+    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
-    if (res.status === 401) {
-      try {
-        localStorage.removeItem('rin-pin');
-      } catch {}
+    let kind = 'text';
+    const audioUrl = shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
+    const assistantMessage = createChatMessage({
+      role: 'assistant',
+      kind: audioUrl ? 'voice' : 'text',
+      status: 'complete',
+      content: reply,
+      requestId: userMessage.requestId,
+      inReplyTo: userMessage.id
+    });
+    kind = assistantMessage.kind;
+    if (audioUrl) addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
+    else addBubble(reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
 
-      window.location.href = '/login';
-      return;
+    updateMessage(history, userMessage.id, { status: 'complete' });
+    const userRow = findMessageRow(userMessage.id);
+    if (userRow) userRow.dataset.status = 'complete';
+    history.push(assistantMessage);
+    saveHistory(history);
+    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
+
+    if (data?.coreDecision?.initiative?.mode === 'small_observation') await memoryModule?.markInnerLifeSpontaneous?.();
+    await updateRinMoodFromMessage(userMessage.content);
+    if (shouldAnalyzeConversationForMemory(userMessage.content)) {
+      enqueueMemoryJob({ id: userMessage.id, userText: userMessage.content, assistantText: reply }, localStorage);
+      void memoryJobRunner.drain();
     }
-
-    if (!res.ok) {
-      throw new Error(
-        data?.detail ||
-        data?.error ||
-        `HTTP ${res.status}`
-      );
-    }
-
-    const rawReply =
-      typeof data?.reply === 'string'
-        ? data.reply.trim()
-        : '';
-
-    if (!rawReply) {
-      throw new Error('Сервер вернул пустой ответ');
-    }
-
-    let reply = rawReply;
-
-    const postprocessor =
-      await ensureResponsePostprocessor();
-
-    if (postprocessor?.postProcessRinReply) {
-      reply = postprocessor.postProcessRinReply({
-        userText: text,
-        reply: rawReply,
-        longMode: Boolean(data.long)
-      });
-
-      dbg(
-        `reply normalized: ${rawReply.length} -> ${reply.length}`
-      );
-    }
-
-    if (data.coreDecision) {
-      const core = data.coreDecision;
-      const state = core.state || {};
-      dbg(`core ${core.version || 'unknown'}: userEmotion=${core.userEmotion || 'unknown'}; intent=${core.intent || 'unknown'}; style=${core.replyStyle || 'unknown'}`);
-      dbg(
-        'core state: ' +
-        `tenderness=${state.tenderness ?? '-'}, ` +
-        `curiosity=${state.curiosity ?? '-'}, ` +
-        `thoughtfulness=${state.thoughtfulness ?? '-'}, ` +
-        `fatigue=${state.fatigue ?? '-'}, ` +
-        `desireToTalk=${state.desireToTalk ?? '-'}, ` +
-        `desireToFlirt=${state.desireToFlirt ?? '-'}, ` +
-        `focus=${state.focus ?? '-'}, ` +
-        `emotionality=${state.emotionality ?? '-'}`
-      );
-      if (core.habit) dbg(`core habit: ${core.habit}`);
-      if (core.character) dbg(`core character: move=${core.character.move}; shape=${core.character.shape}`);
-      if (core.deliveryStyle) dbg(`core delivery: ${core.deliveryStyle}`);
-      if (core.reason) dbg(`core reason: ${core.reason}`);
-      const brain = data.conversationBrain || core.conversationBrain;
-      if (brain) {
-        dbg(`brain ${brain.version || 'v1'}: literal=${brain.literalIntent}; hidden=${brain.hiddenIntent?.type || 'none'} (${brain.hiddenIntent?.confidence ?? '-'}%); relation=${brain.relation?.type || 'unknown'}`);
-        dbg(`brain scene: ${brain.activeScene?.type || 'unknown'}; direction=${brain.activeScene?.emotionalDirection || 'unknown'}; topic=${brain.activeScene?.topic || '-'}`);
-        if (brain.responseFocus) dbg(`brain focus: ${brain.responseFocus}`);
-        (brain.obligations || []).forEach(item => dbg(`brain obligation: ${item}`));
-      } else {
-        dbg('conversation brain: missing from API response');
-      }
-    } else {
-      dbg('personality core: missing from API response');
-    }
-
-    if (data.promptMetrics) {
-      const pm = data.promptMetrics;
-      dbg(
-        'tokens: ' +
-        `input=${pm.inputTokens ?? '-'}, output=${pm.outputTokens ?? '-'}, ` +
-        `cached=${pm.cachedInputTokens ?? '-'}; ` +
-        `systemChars=${pm.systemChars ?? '-'}, historyChars=${pm.historyChars ?? '-'}, ` +
-        `historyItems=${pm.historyItems ?? '-'}`
-      );
-    }
-
-    if (data.voiceMode) {
-      dbg(
-        'voice mode: ' +
-        [
-          data.voiceMode.mode,
-          data.voiceMode.opening,
-          data.voiceMode.ending
-        ].filter(Boolean).join(' / ')
-      );
-    } else {
-      dbg('voice mode: missing from API response');
-    }
-
-    if (data.long) {
-      const previousStatus = peerStatus.textContent;
-
-      peerStatus.textContent = '📖 рассказывает…';
-
-      setTimeout(() => {
-        peerStatus.textContent =
-          previousStatus || 'онлайн';
-      }, 2500);
-    } else {
-      peerStatus.textContent = 'онлайн';
-    }
-
-    await renderAssistantReply(reply, data);
-  } catch (err) {
-    if (typingRow?.isConnected) {
-      typingRow.remove();
-    }
-
-    peerStatus.textContent = 'онлайн';
-
-    const message =
-      err && typeof err.message === 'string'
-        ? err.message
-        : typeof err === 'string'
-          ? err
-          : 'Неизвестная ошибка';
-
-    dbg(`chat request failed: ${message}`);
-
-    addBubble(
-      'Ой… связь шалит. ' +
-      (message || 'Попробуем ещё раз?'),
-      'assistant'
-    );
+    dbg(`reply complete: request=${userMessage.requestId}; kind=${kind}; build=${RIN_BUILD_VERSION}`);
+  } catch (error) {
+    if (typingRow.isConnected) typingRow.remove();
+    const code = error?.name === 'AbortError' ? 'UPSTREAM_TIMEOUT' : error?.code || 'CHAT_REQUEST_FAILED';
+    const failed = updateMessage(history, userMessage.id, { status: 'failed', errorCode: code });
+    saveHistory(history);
+    if (failed) renderFailedState(failed);
+    addBubble(userFacingError(code), 'assistant');
+    dbg(`chat request failed: code=${code}`);
+  } finally {
+    activeRequests = Math.max(0, activeRequests - 1);
+    setPeerStatus('idle');
   }
-});
+}
 
-/* совместимость: старый maybeSpeak больше не используется */
-async function maybeSpeak(_text){ return false; }
-
-/* — обновление окружения */
-async function refreshRinEnv(){
-  try{
+async function refreshRinEnv() {
+  try {
     const rin = nowInTz(RIN_TZ);
     const monthIdx = rin.getMonth();
     const env = {
@@ -2075,10 +1409,10 @@ async function refreshRinEnv(){
       userVsRinHoursDiff: hoursDiffWithRin(),
       weather: null
     };
-    const w = await fetchRinWeather();
-    if (w) env.weather = w;
+    const weather = await fetchRinWeather();
+    if (weather) env.weather = weather;
     currentEnv = env;
-  }catch(e){
-    dbg('refresh env failed: '+(e?.message||e));
+  } catch (error) {
+    dbg('refresh env failed: ' + (error?.message || error));
   }
 }
