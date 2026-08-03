@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from './http_client.js';
+
 
 const DATA_URLS = {
   triggers: '/data/rin_triggers.json',
@@ -10,8 +12,13 @@ const DATA_URLS = {
 let cache = null;
 const RECENT_LORE_KEY = 'rin-lore-recent-v1';
 
+export function resetLoreCache() {
+  cache = null;
+  try { localStorage.removeItem(RECENT_LORE_KEY); } catch {}
+}
+
 async function fetchJson(url) {
-  const response = await fetch(url, { cache: 'no-store' });
+  const response = await fetchWithTimeout(url, { cache: 'no-store' }, 12_000);
   if (!response.ok) {
     throw new Error(`${url}: HTTP ${response.status}`);
   }

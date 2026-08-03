@@ -5,7 +5,6 @@ import {
   loadProfile,
   saveProfile,
   getDefaultProfile,
-  loadPersonaDossier,
   BASE_RULES
 } from './rin_memory.js';
 
@@ -193,10 +192,17 @@ btnOpen?.addEventListener('click', async () => {
 
 btnClose?.addEventListener('click', hidePanel);
 
-btnReset?.addEventListener('click', () => {
-  if (!confirm('Сбросить профиль персонажа к настройкам по умолчанию?')) return;
+btnReset?.addEventListener('click', async () => {
+  if (!confirm('Сбросить и сразу сохранить профиль персонажа по умолчанию?')) return;
   const def = getDefaultProfile();
-  render(def);
+  try {
+    const saved = await saveProfile(def);
+    render(saved);
+    window.RIN_PROFILE = saved;
+    window.dispatchEvent(new CustomEvent('rin:profile-updated', { detail: saved }));
+  } catch {
+    alert('Не удалось сбросить профиль. Проверь доступность локального хранилища.');
+  }
 });
 
 btnSave?.addEventListener('click', async () => {
@@ -208,19 +214,13 @@ btnSave?.addEventListener('click', async () => {
     return;
   }
   try {
-    await saveProfile(next);
+    const saved = await saveProfile(next);
 
-next.persona_dossier = await loadPersonaDossier();
+    // доступно глобально другим частям приложения
+    window.RIN_PROFILE = saved;
 
-// доступно глобально другим частям приложения
-window.RIN_PROFILE = next;
-
-// уведомляем слушателей, что профиль изменён
-window.dispatchEvent(
-  new CustomEvent('rin:profile-updated', {
-    detail: next
-  })
-);
+    // уведомляем слушателей, что профиль изменён
+    window.dispatchEvent(new CustomEvent('rin:profile-updated', { detail: saved }));
     hidePanel();
     try { navigator.vibrate && navigator.vibrate(10); } catch {}
   } catch (e) {
