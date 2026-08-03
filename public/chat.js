@@ -1425,28 +1425,23 @@ async function maybeSticker(userText, replyText, responseMeta = null){
       replyText: replyText || '',
       mood,
       mode: mode === 'always' ? 'always' : 'smart',
+      baseProbability: lsStickerProb(),
       context: {
         scene: responseMeta?.conversationBrain?.activeScene?.type || responseMeta?.coreDecision?.conversationBrain?.activeScene?.type || '',
         intent: responseMeta?.coreDecision?.intent || '',
         userEmotion: responseMeta?.coreDecision?.userEmotion || '',
-        deliveryStyle: responseMeta?.coreDecision?.deliveryStyle || ''
+        deliveryStyle: responseMeta?.coreDecision?.deliveryStyle || '',
+        hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || responseMeta?.coreDecision?.conversationBrain?.hiddenIntent?.type || ''
       }
     });
 
     if (decision?.action !== 'send' || !decision?.sticker) {
       const top = Array.isArray(decision?.top) ? decision.top.map(x => `${x.src}:${x.score}`).join(', ') : '';
-      dbg(`stickers v5 none: reason=${decision?.reason || 'unknown'}${top ? `; top=[${top}]` : ''}`);
+      dbg(`stickers v5 none: reason=${decision?.reason || 'unknown'}${Number.isFinite(decision?.probability) ? `; probability=${decision.probability}` : ''}${decision?.candidate ? `; candidate=${decision.candidate}` : ''}${decision?.probabilityReason ? `; probabilityReason=${decision.probabilityReason}` : ''}${top ? `; top=[${top}]` : ''}`);
       return;
     }
 
-    if (mode !== 'always') {
-      const probability = Math.max(0, Math.min(100, lsStickerProb())) / 100;
-      if (Math.random() > probability) {
-        dbg(`stickers v5 skipped: reason=probability_gate; probability=${Math.round(probability * 100)}; sticker=${decision.sticker.src}`);
-        return;
-      }
-    }
-
+    dbg(`stickers v5 decision: sticker=${decision.sticker.src}; probability=${decision.probability ?? 100}; probabilityReason=${decision.probabilityReason || 'always'}; ${decision.reason || ''}`);
     addStickerBubble(decision.sticker.src, 'assistant', decision.utterance || null);
     stickersLib.markStickerSent(decision.sticker);
     chainStickerCount = 0;
