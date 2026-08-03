@@ -4,16 +4,17 @@
     "minGapMessages": 3,
     "maxRatio": 0.26,
     "threshold": 1.35,
-    "sceneChance": {
-      "greeting": 0.18,
-      "everyday": 0.12,
-      "practical_task": 0.08,
-      "reflective": 0.18,
-      "emotional_support": 0.32,
-      "playful_flirt": 0.5,
-      "romance": 0.58,
-      "farewell": 0.42,
-      "conflict_repair": 0.28
+    "explicitGestureMinGap": 1,
+    "sceneFactor": {
+      "greeting": 0.22,
+      "everyday": 0.28,
+      "practical_task": 0.12,
+      "reflective": 0.42,
+      "emotional_support": 0.62,
+      "playful_flirt": 1.05,
+      "romance": 1.12,
+      "farewell": 0.72,
+      "conflict_repair": 0.52
     }
   },
   "stickers": [
@@ -661,18 +662,20 @@
         "greeting",
         "thanks",
         "care",
-        "light_joy"
+        "light_joy",
+        "relationalCloseness"
       ],
       "scenes": [
         "greeting",
         "everyday",
         "farewell",
-        "emotional_support"
+        "emotional_support",
+        "romance"
       ],
       "minIntensity": 1,
       "maxIntensity": 2,
       "minTier": "early",
-      "weight": 1.05,
+      "weight": 1.15,
       "forbidSignals": [
         "strong_joy",
         "angry"
