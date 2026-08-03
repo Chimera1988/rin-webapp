@@ -210,6 +210,20 @@ function _defaultMood() {
   };
 }
 
+function _defaultRelationship() {
+  return {
+    trust: 55,
+    closeness: 42,
+    comfort: 52,
+    respect: 68,
+    playfulness: 45,
+    stage: 'растущее доверие',
+    sharedMoments: [],
+    lastInteractionAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
 function _defaultInnerLife() {
   return {
     activity: '',
@@ -242,6 +256,12 @@ function _emptyDiary() {
 
     innerLife: _defaultInnerLife(),
 
+    relationship: _defaultRelationship(),
+
+    openLoops: [],
+
+    summaries: [],
+
     _updated_at: Date.now()
   };
 }
@@ -256,6 +276,11 @@ export async function loadDiary() {
     if (!obj.anchors) {
   obj.anchors = {};
 }
+
+if (!obj.relationship || typeof obj.relationship !== 'object') obj.relationship = _defaultRelationship();
+else { obj.relationship = { ..._defaultRelationship(), ...obj.relationship }; if (!Array.isArray(obj.relationship.sharedMoments)) obj.relationship.sharedMoments = []; }
+if (!Array.isArray(obj.openLoops)) obj.openLoops = [];
+if (!Array.isArray(obj.summaries)) obj.summaries = [];
 
 if (!obj.innerLife || typeof obj.innerLife !== 'object') {
   obj.innerLife = _defaultInnerLife();
@@ -298,7 +323,8 @@ export async function addEvent(text, opts = {}) {
     type: opts.type || 'note',   // 'note' | 'quote' | 'system'...
     text: String(text).trim(),
     tags: Array.isArray(opts.tags) ? opts.tags.slice(0, 8) : undefined,
-    ref: opts.ref || undefined
+    ref: opts.ref || undefined,
+    importance: Math.max(1, Math.min(10, Number(opts.importance) || 5))
   });
   d._updated_at = Date.now();
   await saveDiary(d);
@@ -759,3 +785,75 @@ export function wipeAllPersona() {
     }
   } catch {}
 })();
+
+
+/* ---------------- relationship / continuity / consolidation ---------------- */
+function relationshipStage(value = {}) {
+  if (value.closeness >= 82 && value.trust >= 80) return 'глубокая устойчивая близость';
+  if (value.closeness >= 66 && value.trust >= 65) return 'сформировавшаяся близость';
+  if (value.closeness >= 48 && value.trust >= 50) return 'растущее доверие';
+  if (value.closeness >= 30) return 'осторожное сближение';
+  return 'начало знакомства';
+}
+
+export async function updateRelationship(delta = {}) {
+  const diary = await loadDiary();
+  const current = { ..._defaultRelationship(), ...(diary.relationship || {}) };
+  const clamp = v => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+  const next = { ...current };
+  for (const key of ['trust', 'closeness', 'comfort', 'respect', 'playfulness']) {
+    next[key] = clamp((Number(current[key]) || 0) + (Number(delta[key]) || 0));
+  }
+  next.stage = relationshipStage(next);
+  next.lastInteractionAt = Number(delta.lastInteractionAt) || Date.now();
+  next.updatedAt = Date.now();
+  diary.relationship = next;
+  await saveDiary(diary);
+  return next;
+}
+
+export async function addOpenLoop(item = {}) {
+  const text = String(item.text || item.content || '').replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+  const diary = await loadDiary();
+  const duplicate = diary.openLoops.some(loop => String(loop.text || '').toLowerCase() === text.toLowerCase());
+  if (!duplicate) diary.openLoops.push({ id: `loop-${Date.now()}-${Math.random().toString(36).slice(2,7)}`, text, type: item.type || 'topic', importance: Number(item.importance) || 5, createdAt: Date.now(), status: 'open' });
+  diary.openLoops = diary.openLoops.slice(-24);
+  await saveDiary(diary);
+  return true;
+}
+
+export async function resolveOpenLoop(text = '') {
+  const needle = String(text).toLowerCase().trim();
+  if (!needle) return false;
+  const diary = await loadDiary();
+  diary.openLoops = diary.openLoops.filter(loop => {
+    const source = String(loop.text || '').toLowerCase();
+    return !(source.includes(needle) || needle.includes(source));
+  });
+  await saveDiary(diary);
+  return true;
+}
+
+export async function addSharedMoment(item = {}) {
+  const text = String(item.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+  const diary = await loadDiary();
+  const relationship = { ..._defaultRelationship(), ...(diary.relationship || {}) };
+  relationship.sharedMoments = [...(relationship.sharedMoments || []), { text, importance: Number(item.importance) || 6, ts: Date.now() }].slice(-20);
+  diary.relationship = relationship;
+  await saveDiary(diary);
+  return true;
+}
+
+export async function consolidateDiary() {
+  const diary = await loadDiary();
+  if (diary.events.length <= 80) return false;
+  const archived = diary.events.slice(0, diary.events.length - 50);
+  const important = archived.filter(e => Number(e.importance || 0) >= 7).slice(-12);
+  if (important.length) diary.summaries.push({ ts: Date.now(), text: important.map(e => e.text).join(' • ').slice(0, 1800), sourceCount: archived.length });
+  diary.summaries = diary.summaries.slice(-12);
+  diary.events = diary.events.slice(-50);
+  await saveDiary(diary);
+  return true;
+}
