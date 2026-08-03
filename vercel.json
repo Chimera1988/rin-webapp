@@ -1,18 +1,88 @@
 {
   "headers": [
     {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/(index.html|login.html)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
       "source": "/data/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(css|js)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(png|jpg|jpeg|webp|ico)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
     }
   ],
   "rewrites": [
-    { "source": "/",             "destination": "/public/index.html" },
-    { "source": "/index.html",   "destination": "/public/index.html" },
-    { "source": "/login",        "destination": "/public/login.html" },
-    { "source": "/login.html",   "destination": "/public/login.html" },
-
-    { "source": "/(.*)\\.(css|js|json|png|jpg|jpeg|webp|ico)", "destination": "/public/$1.$2" },
-    { "source": "/stickers/(.*)", "destination": "/public/stickers/$1" },
-    { "source": "/data/(.*)",     "destination": "/public/data/$1" }
+    {
+      "source": "/",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/index.html",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/public/login.html"
+    },
+    {
+      "source": "/login.html",
+      "destination": "/public/login.html"
+    },
+    {
+      "source": "/(.*)\\.(css|js|json|png|jpg|jpeg|webp|ico)",
+      "destination": "/public/$1.$2"
+    },
+    {
+      "source": "/stickers/(.*)",
+      "destination": "/public/stickers/$1"
+    },
+    {
+      "source": "/data/(.*)",
+      "destination": "/public/data/$1"
+    }
   ]
 }
