@@ -420,6 +420,30 @@ async function buildMemoryPayload() {
         }
       : null,
 
+  relationship:
+    diary.relationship && typeof diary.relationship === 'object'
+      ? {
+          trust: Number(diary.relationship.trust) || 50,
+          closeness: Number(diary.relationship.closeness) || 40,
+          comfort: Number(diary.relationship.comfort) || 50,
+          respect: Number(diary.relationship.respect) || 60,
+          playfulness: Number(diary.relationship.playfulness) || 40,
+          stage: String(diary.relationship.stage || '').slice(0, 60),
+          lastInteractionAt: Number(diary.relationship.lastInteractionAt) || null,
+          sharedMoments: Array.isArray(diary.relationship.sharedMoments)
+            ? diary.relationship.sharedMoments.slice(-6).map(item => ({ text: String(item?.text || '').slice(0, 400), importance: Number(item?.importance) || 6, ts: Number(item?.ts) || null }))
+            : []
+        }
+      : null,
+
+  openLoops: Array.isArray(diary.openLoops)
+    ? diary.openLoops.slice(-8).map(item => ({ text: String(item?.text || '').slice(0, 400), type: String(item?.type || 'topic').slice(0, 30), importance: Number(item?.importance) || 5, createdAt: Number(item?.createdAt) || null }))
+    : [],
+
+  summaries: Array.isArray(diary.summaries)
+    ? diary.summaries.slice(-3).map(item => ({ text: String(item?.text || '').slice(0, 1200), ts: Number(item?.ts) || null }))
+    : [],
+
   innerLife:
     diary.innerLife && typeof diary.innerLife === 'object'
       ? {
@@ -578,13 +602,38 @@ async function applyExtractedMemory(extracted, userText = '') {
         type: String(event?.type || 'memory'),
         tags: Array.isArray(event?.tags)
           ? event.tags.slice(0, 8)
-          : []
+          : [],
+        importance
       });
 
       dbg(
         `memory event saved: ${text.slice(0, 80)}`
       );
     }
+    const relationshipDelta = extracted?.relationshipDelta;
+    if (relationshipDelta && Number(relationshipDelta.confidence) >= 0.6 && lib?.updateRelationship) {
+      await lib.updateRelationship({
+        trust: Number(relationshipDelta.trust) || 0,
+        closeness: Number(relationshipDelta.closeness) || 0,
+        comfort: Number(relationshipDelta.comfort) || 0,
+        respect: Number(relationshipDelta.respect) || 0,
+        playfulness: Number(relationshipDelta.playfulness) || 0,
+        lastInteractionAt: Date.now()
+      });
+      dbg(`relationship updated: ${relationshipDelta.reason || 'без причины'}`);
+    }
+
+    for (const loop of Array.isArray(extracted?.openLoops) ? extracted.openLoops : []) {
+      await lib?.addOpenLoop?.(loop);
+    }
+    for (const loop of Array.isArray(extracted?.resolvedLoops) ? extracted.resolvedLoops : []) {
+      await lib?.resolveOpenLoop?.(loop?.text || '');
+    }
+    for (const moment of Array.isArray(extracted?.sharedMoments) ? extracted.sharedMoments : []) {
+      if ((Number(moment?.importance) || 0) >= 7) await lib?.addSharedMoment?.(moment);
+    }
+    await lib?.consolidateDiary?.();
+
  const moodDelta = sanitizeMoodDelta(userText, extracted?.moodDelta);
 const moodConfidence = Number(
   moodDelta?.confidence
