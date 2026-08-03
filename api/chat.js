@@ -1,6 +1,7 @@
 import { buildCoreDecision } from '../lib/core-personality.js';
 import { polishRinReply } from '../lib/personality/anti-gpt.js';
 import { analyzeConversation, conversationBrainInstruction } from '../lib/conversation-brain.js';
+import { buildContinuitySnapshot, continuityInstruction, selectRelevantMemory } from '../lib/personality/continuity.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ACCESS_PIN = process.env.ACCESS_PIN || '';
@@ -122,18 +123,16 @@ function flattenFacts(value, prefix = '', output = []) {
   return output;
 }
 
-function formatMemory(memory) {
-  if (!memory || typeof memory !== 'object') return '';
-  const facts = flattenFacts(memory.facts || {}).slice(0, 24);
-  const events = Array.isArray(memory.recentEvents)
-    ? memory.recentEvents.slice(-8).map(item => normalize(item?.text, 320)).filter(Boolean)
-    : [];
-  if (!facts.length && !events.length) return '';
+function formatMemory(memory, userText = '', history = []) {
+  const selected = selectRelevantMemory(memory, userText, history);
+  if (!selected.facts.length && !selected.events.length) return '';
   return [
     'РЕЛЕВАНТНАЯ ДОЛГОСРОЧНАЯ ПАМЯТЬ',
-    facts.length ? `Факты:\n- ${facts.join('\n- ')}` : '',
-    events.length ? `Недавние события:\n- ${events.join('\n- ')}` : '',
-    'Используй только относящееся к текущей теме, естественно и без упоминания хранилища. Не выдумывай отсутствующие детали.'
+    selected.facts.length ? `Факты:
+- ${selected.facts.map(item => `${item.path}: ${item.text}`).join('\n- ')}` : '',
+    selected.events.length ? `События:
+- ${selected.events.map(item => item.text).join('\n- ')}` : '',
+    'Используй только относящееся к текущей теме. Не демонстрируй память ради эффекта и не упоминай хранилище. При конфликте свежая явная реплика Кирилла важнее старой записи.'
   ].filter(Boolean).join('\n\n');
 }
 
@@ -168,7 +167,7 @@ function formatLore(lore) {
   return lines.length ? `ТЕМАТИЧЕСКИЙ КОНТЕКСТ (использовать только по смыслу, не цитировать дословно):\n- ${lines.join('\n- ')}` : '';
 }
 
-function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain }) {
+function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain, history, userText }) {
   const voiceMode = chooseVoiceMode(profile);
   const stable = formatPromptProfile(profile);
   const custom = [
@@ -195,7 +194,8 @@ function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversat
     starters,
     formatEnvironment(env),
     formatLore(lore),
-    formatMemory(memory),
+    formatMemory(memory, userText, history),
+    continuityInstruction(buildContinuitySnapshot(history, userText)),
     formatMood(memory),
     conversationBrainInstruction(conversationBrain),
     coreDecision?.prompt,
@@ -248,7 +248,7 @@ export default async function handler(req, res) {
     const isLong = Boolean(body?.client?.forceLong) || detectLongMode(userTurn);
     const conversationBrain = analyzeConversation({ userText: userTurn, history, conversationState });
     const coreDecision = buildCoreDecision({ userText: userTurn, history, memory, conversationState, isLong, conversationBrain });
-    const prompt = buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain });
+    const prompt = buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain, history, userText: userTurn });
 
     const messages = [
       { role: 'system', content: prompt.text },
@@ -265,7 +265,7 @@ export default async function handler(req, res) {
     const clean = polishRinReply(completion.content, coreDecision);
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'project-wide-natural-speech-stickers-v1.1',
+      promptVersion: 'continuity-memory-personhood-v2.0',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item?.content || '').length, 0),
       historyItems: history.length,

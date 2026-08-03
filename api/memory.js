@@ -265,7 +265,7 @@ ${normalizeText(assistantText, 1200)}
   return sanitizeMemoryResult(parsed);
 }
 
-module.exports = async function handler(
+export default async function handler(
   req,
   res
 ) {
