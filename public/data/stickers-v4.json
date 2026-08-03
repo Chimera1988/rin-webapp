@@ -1,18 +1,18 @@
 {
   "_schema": "v5",
   "defaults": {
-    "minGapMessages": 3,
-    "maxRatio": 0.26,
-    "threshold": 1.35,
+    "minGapMessages": 2,
+    "maxRatio": 0.36,
+    "threshold": 1.05,
     "explicitGestureMinGap": 1,
     "sceneFactor": {
-      "greeting": 0.22,
-      "everyday": 0.28,
-      "practical_task": 0.12,
-      "reflective": 0.42,
-      "emotional_support": 0.62,
-      "playful_flirt": 1.05,
-      "romance": 1.12,
+      "greeting": 0.48,
+      "everyday": 0.65,
+      "practical_task": 0.28,
+      "reflective": 0.72,
+      "emotional_support": 0.82,
+      "playful_flirt": 1.15,
+      "romance": 1.22,
       "farewell": 0.72,
       "conflict_repair": 0.52
     }
