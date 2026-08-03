@@ -250,7 +250,7 @@ try {
   })()`);
   assert(lifecycle.allTyped, 'all persisted chat events must use schema v3');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
-  assert(lifecycle.peer === 'готова к диалогу', `unexpected operational status: ${lifecycle.peer}`);
+  assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
 
   console.log(`Browser E2E OK: login, single greeting, memory-before-next-turn, rapid order, failure/retry; ${chatBodies.length} chat requests.`);
 } catch (error) {
