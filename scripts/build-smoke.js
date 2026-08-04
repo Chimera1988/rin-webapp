@@ -1,5 +1,6 @@
 import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const root = process.cwd();
 const read = file => readFile(path.join(root, file), 'utf8');
@@ -26,9 +27,10 @@ if ((index.match(/app_bootstrap\.js/g) || []).length !== 1) fail('Index must loa
 if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js outside the authenticated bootstrap.');
 
 const activeSources = [
-  'package.json', 'vercel.json', 'api/chat.js', 'public/chat.js',
+  'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
+  'lib/server/http.js', 'public/chat.js', 'public/js/login.js',
   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
-  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js'
+  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js'
 ];
 const forbidden = ['stickers-v4', 'stickers-v5.test', 'response_postprocessor', '/data/rin_persona.json', '/data/rin_mind.json', '/data/rin_reasoning.json', '/data/rin_speaking_habits.json'];
 for (const file of activeSources) {
@@ -57,8 +59,28 @@ if ((chat.match(/fetchWithTimeout\('\/api\/chat'/g) || []).length !== 1) fail('C
 if (!chat.includes('shouldRefreshEnvironment')) fail('Environment refresh must feed the unified chat pipeline.');
 if (!chat.includes('await memoryJobRunner.drain();')) fail('The next request must wait for prior semantic-memory work.');
 if (await exists('public/js/response_postprocessor.js')) fail('Legacy response postprocessor must be removed.');
+if (await exists('lib/stickers-v4.js') || await exists('public/lib/stickers-v4.js')) fail('Legacy stickers v4 entrypoint must be removed.');
 if (!await exists('public/data/legacy/README.md')) fail('Legacy canon must be isolated and documented.');
 const memorySource = await read('public/js/rin_memory.js');
 if (!memorySource.includes('navigator?.locks')) fail('Diary writes must use a cross-tab lock when the browser supports Web Locks.');
 
-console.log(`Build smoke OK: release ${release}, authenticated bootstrap, active assets and cache policy verified.`);
+
+const httpModuleUrl = pathToFileURL(path.join(root, 'lib/server/http.js')).href;
+const httpModule = await import(`${httpModuleUrl}?build-smoke=${Date.now()}`);
+for (const name of ['readJsonBody', 'requestPin', 'requirePin', 'fetchWithTimeout', 'publicError']) {
+  if (typeof httpModule[name] !== 'function') fail(`lib/server/http.js must export ${name}().`);
+}
+
+const viewportModuleUrl = pathToFileURL(path.join(root, 'public/js/chat_viewport.js')).href;
+const viewportModule = await import(`${viewportModuleUrl}?build-smoke=${Date.now()}`);
+for (const name of ['resolveViewportHeight', 'isNearChatBottom', 'createChatViewportController']) {
+  if (typeof viewportModule[name] !== 'function') fail(`public/js/chat_viewport.js must export ${name}().`);
+}
+
+for (const apiFile of ['login', 'chat', 'memory', 'tts', 'weather']) {
+  const moduleUrl = pathToFileURL(path.join(root, `api/${apiFile}.js`)).href;
+  const apiModule = await import(`${moduleUrl}?build-smoke=${Date.now()}`);
+  if (typeof apiModule.default !== 'function') fail(`api/${apiFile}.js must export a default handler.`);
+}
+
+console.log(`Build smoke OK: release ${release}, authenticated bootstrap, API entrypoints, active assets and cache policy verified.`);
