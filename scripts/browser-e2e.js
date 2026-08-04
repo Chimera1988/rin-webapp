@@ -217,6 +217,7 @@ try {
     const chat = document.querySelector('#chat');
     const form = document.querySelector('#form');
     const app = document.querySelector('.app');
+    const shell = document.querySelector('#chatViewportShell');
     const temporary = [];
     for (let index = 0; index < 36; index += 1) {
       const row = document.createElement('div');
@@ -226,14 +227,24 @@ try {
       temporary.push(row);
     }
     chat.scrollTop = chat.scrollHeight;
-    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const viewport = window.visualViewport;
+    const viewportHeight = viewport?.height || window.innerHeight;
+    const viewportWidth = viewport?.width || window.innerWidth;
+    const viewportTop = viewport?.offsetTop || 0;
+    const viewportLeft = viewport?.offsetLeft || 0;
     const formRect = form.getBoundingClientRect();
     const appRect = app.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
     const result = {
       chatScrollable: chat.scrollHeight > chat.clientHeight,
-      composerVisible: formRect.top >= appRect.top && formRect.bottom <= viewportHeight + 1,
-      documentLocked: document.documentElement.scrollHeight <= Math.ceil(viewportHeight) + 2,
-      composerBelowMessages: formRect.top >= chat.getBoundingClientRect().bottom - 1
+      composerVisible: formRect.top >= shellRect.top && formRect.bottom <= shellRect.bottom + 1,
+      documentLocked: document.documentElement.scrollHeight <= Math.ceil(window.innerHeight) + 2,
+      composerBelowMessages: formRect.top >= chat.getBoundingClientRect().bottom - 1,
+      shellMatchesVisualViewport:
+        Math.abs(shellRect.top - viewportTop) <= 1 &&
+        Math.abs(shellRect.left - viewportLeft) <= 1 &&
+        Math.abs(shellRect.height - viewportHeight) <= 1 &&
+        Math.abs(shellRect.width - viewportWidth) <= 1
     };
     temporary.forEach(node => node.remove());
     return result;
@@ -242,6 +253,7 @@ try {
   assert(longChatLayout.composerVisible, 'composer must remain inside the visible viewport');
   assert(longChatLayout.documentLocked, 'the document itself must not grow with chat history');
   assert(longChatLayout.composerBelowMessages, 'composer must occupy a separate grid row below messages');
+  assert(longChatLayout.shellMatchesVisualViewport, 'chat shell must match visualViewport size and offsets');
 
   await cdp.evaluate("document.querySelector('#settingsToggle').click(); true");
   await waitFor(cdp, "document.querySelector('[data-settings-page=main]')?.classList.contains('is-active')", 'settings main page');
@@ -310,7 +322,7 @@ try {
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
 
-  console.log(`Browser E2E OK: login, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);

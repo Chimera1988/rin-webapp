@@ -24,6 +24,7 @@ for (const htmlFile of ['public/index.html', 'public/login.html']) {
 
 const index = await read('public/index.html');
 if ((index.match(/app_bootstrap\.js/g) || []).length !== 1) fail('Index must load exactly one application bootstrap.');
+if (!index.includes('id="chatViewportShell"') || !index.includes('class="chat-viewport-shell"')) fail('Index must provide the visual viewport shell.');
 if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js outside the authenticated bootstrap.');
 
 const activeSources = [
@@ -73,7 +74,7 @@ for (const name of ['readJsonBody', 'requestPin', 'requirePin', 'fetchWithTimeou
 
 const viewportModuleUrl = pathToFileURL(path.join(root, 'public/js/chat_viewport.js')).href;
 const viewportModule = await import(`${viewportModuleUrl}?build-smoke=${Date.now()}`);
-for (const name of ['resolveViewportHeight', 'isNearChatBottom', 'createChatViewportController']) {
+for (const name of ['resolveViewportMetrics', 'resolveViewportHeight', 'isNearChatBottom', 'createChatViewportController']) {
   if (typeof viewportModule[name] !== 'function') fail(`public/js/chat_viewport.js must export ${name}().`);
 }
 
