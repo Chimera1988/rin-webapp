@@ -213,6 +213,32 @@ try {
   const initialPeerStatus = await cdp.evaluate("document.querySelector('#peerStatus')?.textContent");
   assert(initialPeerStatus === 'офлайн', `presence must stay offline before the first user message, got ${initialPeerStatus}`);
 
+  await cdp.evaluate("document.querySelector('#settingsToggle').click(); true");
+  await waitFor(cdp, "document.querySelector('[data-settings-page=main]')?.classList.contains('is-active')", 'settings main page');
+  const settingsContract = await cdp.evaluate(`(() => {
+    const main = document.querySelector('[data-settings-page="main"]');
+    const voiceEntry = main?.querySelector('[data-settings-target="voice"]');
+    return {
+      headerIconIsSvg: Boolean(document.querySelector('#settingsToggle svg')),
+      switchInMain: Boolean(main?.querySelector('#voiceEnabled')),
+      voiceChevron: Boolean(voiceEntry?.querySelector('.settings-chevron'))
+    };
+  })()`);
+  assert(settingsContract.headerIconIsSvg, 'settings header action must use an SVG line icon');
+  assert(!settingsContract.switchInMain && settingsContract.voiceChevron, 'voice main row must be a submenu link without a switch');
+
+  await cdp.evaluate("document.querySelector('[data-settings-target=voice]').click(); true");
+  await waitFor(cdp, "document.querySelector('[data-settings-page=voice]')?.classList.contains('is-active')", 'voice settings page');
+  assert(await cdp.evaluate("Boolean(document.querySelector('[data-settings-page=voice] #voiceEnabled'))"), 'voice switch must be inside voice submenu');
+
+  await cdp.evaluate("document.querySelector('[data-settings-page=voice] [data-settings-back]').click(); document.querySelector('[data-settings-target=general]').click(); true");
+  await waitFor(cdp, "document.querySelector('[data-settings-page=general]')?.classList.contains('is-active')", 'general settings page');
+  await cdp.evaluate("document.querySelector('[data-theme-choice=theme-light]').click(); true");
+  assert(await cdp.evaluate("document.documentElement.classList.contains('theme-light') && document.querySelector('[data-theme-choice=theme-light]').classList.contains('is-active')"), 'light theme must apply to the whole app');
+  await cdp.evaluate("document.querySelector('[data-theme-choice=theme-dark]').click(); true");
+  assert(await cdp.evaluate("document.documentElement.classList.contains('theme-dark') && document.querySelector('[data-theme-choice=theme-dark]').classList.contains('is-active')"), 'dark theme must apply to the whole app');
+  await cdp.evaluate("document.querySelector('#closeSettingsBtn').click(); true");
+
   const send = text => cdp.evaluate(`(() => {
     const input = document.querySelector('#input');
     input.value = ${JSON.stringify(text)};
@@ -254,7 +280,7 @@ try {
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
 
-  console.log(`Browser E2E OK: login, single greeting, memory-before-next-turn, rapid order, failure/retry; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);
