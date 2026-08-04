@@ -218,6 +218,9 @@ try {
     const form = document.querySelector('#form');
     const app = document.querySelector('.app');
     const shell = document.querySelector('#chatViewportShell');
+    const wallpaper = document.querySelector('#chatWallpaper');
+    document.documentElement.style.setProperty('--wallpaper-url', 'linear-gradient(135deg, #123 0%, #789 100%)');
+    const wallpaperRectBefore = wallpaper.getBoundingClientRect();
     const temporary = [];
     for (let index = 0; index < 36; index += 1) {
       const row = document.createElement('div');
@@ -227,6 +230,7 @@ try {
       temporary.push(row);
     }
     chat.scrollTop = chat.scrollHeight;
+    const wallpaperRectAfter = wallpaper.getBoundingClientRect();
     const viewport = window.visualViewport;
     const viewportHeight = viewport?.height || window.innerHeight;
     const viewportWidth = viewport?.width || window.innerWidth;
@@ -244,7 +248,13 @@ try {
         Math.abs(shellRect.top - viewportTop) <= 1 &&
         Math.abs(shellRect.left - viewportLeft) <= 1 &&
         Math.abs(shellRect.height - viewportHeight) <= 1 &&
-        Math.abs(shellRect.width - viewportWidth) <= 1
+        Math.abs(shellRect.width - viewportWidth) <= 1,
+      wallpaperOutsideScroller: wallpaper.parentElement === app && !chat.contains(wallpaper),
+      wallpaperStationary:
+        Math.abs(wallpaperRectBefore.top - wallpaperRectAfter.top) <= 1 &&
+        Math.abs(wallpaperRectBefore.left - wallpaperRectAfter.left) <= 1 &&
+        Math.abs(wallpaperRectBefore.width - wallpaperRectAfter.width) <= 1 &&
+        Math.abs(wallpaperRectBefore.height - wallpaperRectAfter.height) <= 1
     };
     temporary.forEach(node => node.remove());
     return result;
@@ -254,6 +264,8 @@ try {
   assert(longChatLayout.documentLocked, 'the document itself must not grow with chat history');
   assert(longChatLayout.composerBelowMessages, 'composer must occupy a separate grid row below messages');
   assert(longChatLayout.shellMatchesVisualViewport, 'chat shell must match visualViewport size and offsets');
+  assert(longChatLayout.wallpaperOutsideScroller, 'wallpaper must be a sibling of the scrolling chat, not its child');
+  assert(longChatLayout.wallpaperStationary, 'wallpaper layer geometry must not change when chat history scrolls');
 
   await cdp.evaluate("document.querySelector('#settingsToggle').click(); true");
   await waitFor(cdp, "document.querySelector('[data-settings-page=main]')?.classList.contains('is-active')", 'settings main page');

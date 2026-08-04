@@ -25,6 +25,7 @@ for (const htmlFile of ['public/index.html', 'public/login.html']) {
 const index = await read('public/index.html');
 if ((index.match(/app_bootstrap\.js/g) || []).length !== 1) fail('Index must load exactly one application bootstrap.');
 if (!index.includes('id="chatViewportShell"') || !index.includes('class="chat-viewport-shell"')) fail('Index must provide the visual viewport shell.');
+if (!index.includes('id="chatWallpaper"') || !index.includes('class="chat-wallpaper"')) fail('Index must provide a fixed wallpaper layer outside the chat scroller.');
 if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js outside the authenticated bootstrap.');
 
 const activeSources = [
