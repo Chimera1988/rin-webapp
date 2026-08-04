@@ -4,20 +4,24 @@ import { readFile } from 'node:fs/promises';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('peer status is restricted to offline, online and typing', async () => {
-  const [html, chat] = await Promise.all([
+test('peer status starts offline and is restricted to offline, online and typing', async () => {
+  const [html, chat, presence] = await Promise.all([
     read('public/index.html'),
-    read('public/chat.js')
+    read('public/chat.js'),
+    read('public/js/presence_controller.js')
   ]);
+  const activeStatusSource = `${html}\n${chat}\n${presence}`;
 
-  assert.match(html, /id="peerStatus"[^>]*>онлайн<\/div>/);
-  assert.match(chat, /offline:\s*'офлайн'/);
-  assert.match(chat, /online:\s*'онлайн'/);
-  assert.match(chat, /typing:\s*'печатает…'/);
-  assert.match(chat, /addEventListener\('online', syncPeerStatus\)/);
-  assert.match(chat, /addEventListener\('offline', syncPeerStatus\)/);
-  assert.doesNotMatch(chat, /рассказывает…|формирует ответ|готова к диалогу|была недавно/);
-  assert.doesNotMatch(chat, /data\.long\s*\?/);
+  assert.match(html, /id="peerStatus"[^>]*data-mode="offline"[^>]*>офлайн<\/div>/);
+  assert.match(chat, /createPresenceController/);
+  assert.match(chat, /addEventListener\('online', syncPeerAvailability\)/);
+  assert.match(chat, /addEventListener\('offline', syncPeerAvailability\)/);
+  assert.match(chat, /addEventListener\('visibilitychange', syncPeerAvailability\)/);
+  assert.match(presence, /offline:\s*'офлайн'/);
+  assert.match(presence, /online:\s*'онлайн'/);
+  assert.match(presence, /typing:\s*'печатает…'/);
+  assert.match(presence, /Возвращение сети или вкладки само по себе не делает Рин онлайн/);
+  assert.doesNotMatch(activeStatusSource, /рассказывает…|формирует ответ|готова к диалогу|была недавно/);
 });
 
 test('all HTML entrypoints reference the current release id', async () => {
