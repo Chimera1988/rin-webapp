@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   createChatViewportController,
   isNearChatBottom,
-  resolveViewportHeight
+  resolveViewportHeight,
+  resolveViewportMetrics
 } from '../public/js/chat_viewport.js';
 
 class FakeTarget {
@@ -45,10 +46,69 @@ function createFrameQueue() {
   };
 }
 
-test('viewport height prefers visualViewport and has a safe fallback', () => {
+function createTimerQueue() {
+  let nextId = 1;
+  const pending = new Map();
+  return {
+    set(callback, delay) {
+      const id = nextId++;
+      pending.set(id, { callback, delay });
+      return id;
+    },
+    clear(id) {
+      pending.delete(id);
+    },
+    flush() {
+      const entries = [...pending.entries()].sort((a, b) => a[1].delay - b[1].delay);
+      pending.clear();
+      for (const [, task] of entries) task.callback();
+    },
+    get size() {
+      return pending.size;
+    }
+  };
+}
+
+function createRoot() {
+  const values = new Map();
+  const classes = new Set();
+  return {
+    values,
+    classes,
+    root: {
+      style: { setProperty: (name, value) => values.set(name, value) },
+      classList: {
+        toggle(name, enabled) {
+          if (enabled) classes.add(name);
+          else classes.delete(name);
+        },
+        remove(name) {
+          classes.delete(name);
+        }
+      }
+    }
+  };
+}
+
+test('viewport metrics include visual viewport size and layout offsets', () => {
+  assert.deepEqual(resolveViewportMetrics({
+    visualViewport: { height: 612.4, width: 389.6, offsetTop: 84.2, offsetLeft: 2.4 },
+    innerHeight: 800,
+    innerWidth: 430
+  }), {
+    height: 612,
+    width: 390,
+    offsetTop: 84,
+    offsetLeft: 2
+  });
+
   assert.equal(resolveViewportHeight({ visualViewport: { height: 612.4 }, innerHeight: 800 }), 612);
-  assert.equal(resolveViewportHeight({ visualViewport: null, innerHeight: 744.6 }), 745);
-  assert.equal(resolveViewportHeight({}), 1);
+  assert.deepEqual(resolveViewportMetrics({ innerHeight: 744.6, innerWidth: 390.2 }), {
+    height: 745,
+    width: 390,
+    offsetTop: 0,
+    offsetLeft: 0
+  });
 });
 
 test('near-bottom detection distinguishes reading history from the active conversation edge', () => {
@@ -58,18 +118,23 @@ test('near-bottom detection distinguishes reading history from the active conver
   assert.equal(isNearChatBottom(chat, 120), false);
 });
 
-test('controller fixes the app height and keeps the composer edge visible after keyboard resize', () => {
+test('controller compensates iOS visual viewport panning while the keyboard is open', () => {
   const frames = createFrameQueue();
-  const rootValues = new Map();
-  const root = { style: { setProperty: (name, value) => rootValues.set(name, value) } };
+  const timers = createTimerQueue();
+  const { root, values, classes } = createRoot();
   const chat = Object.assign(new FakeTarget(), {
     scrollHeight: 1800,
     clientHeight: 560,
     scrollTop: 0
   });
   const input = new FakeTarget();
-  const visualViewport = Object.assign(new FakeTarget(), { height: 760 });
-  const windowRef = Object.assign(new FakeTarget(), { innerHeight: 820, visualViewport });
+  const visualViewport = Object.assign(new FakeTarget(), {
+    height: 760,
+    width: 390,
+    offsetTop: 0,
+    offsetLeft: 0
+  });
+  const windowRef = Object.assign(new FakeTarget(), { innerHeight: 820, innerWidth: 390, visualViewport });
   const documentRef = { activeElement: null };
 
   const controller = createChatViewportController({
@@ -80,34 +145,57 @@ test('controller fixes the app height and keeps the composer edge visible after 
     documentRef,
     visualViewport,
     requestFrame: callback => frames.request(callback),
-    cancelFrame: id => frames.cancel(id)
+    cancelFrame: id => frames.cancel(id),
+    setTimer: (callback, delay) => timers.set(callback, delay),
+    clearTimer: id => timers.clear(id)
   });
 
-  assert.equal(rootValues.get('--rin-viewport-height'), '760px');
+  assert.equal(values.get('--rin-viewport-height'), '760px');
+  assert.equal(values.get('--rin-viewport-offset-top'), '0px');
 
   documentRef.activeElement = input;
+  input.dispatch('focus');
   visualViewport.height = 430;
+  visualViewport.offsetTop = 84;
   visualViewport.dispatch('resize');
+  visualViewport.dispatch('scroll');
   frames.flush();
 
-  assert.equal(rootValues.get('--rin-viewport-height'), '430px');
+  assert.equal(values.get('--rin-viewport-height'), '430px');
+  assert.equal(values.get('--rin-viewport-width'), '390px');
+  assert.equal(values.get('--rin-viewport-offset-top'), '84px');
+  assert.equal(values.get('--rin-viewport-offset-left'), '0px');
   assert.equal(chat.scrollTop, chat.scrollHeight);
+  assert.equal(classes.has('rin-input-active'), true);
+  assert.equal(timers.size, 4);
+
+  visualViewport.height = 425;
+  visualViewport.offsetTop = 88;
+  timers.flush();
+  frames.flush();
+  assert.equal(values.get('--rin-viewport-height'), '425px');
+  assert.equal(values.get('--rin-viewport-offset-top'), '88px');
+
+  documentRef.activeElement = null;
+  input.dispatch('blur');
+  assert.equal(classes.has('rin-input-active'), false);
 
   controller.destroy();
   visualViewport.height = 390;
+  visualViewport.offsetTop = 100;
   visualViewport.dispatch('resize');
-  assert.equal(rootValues.get('--rin-viewport-height'), '430px');
+  assert.equal(values.get('--rin-viewport-height'), '425px');
 });
 
 test('non-forced scroll does not pull a user away from older messages', () => {
   const frames = createFrameQueue();
-  const root = { style: { setProperty() {} } };
+  const { root } = createRoot();
   const chat = Object.assign(new FakeTarget(), {
     scrollHeight: 2000,
     clientHeight: 500,
     scrollTop: 300
   });
-  const windowRef = Object.assign(new FakeTarget(), { innerHeight: 800 });
+  const windowRef = Object.assign(new FakeTarget(), { innerHeight: 800, innerWidth: 390 });
 
   const controller = createChatViewportController({
     root,
