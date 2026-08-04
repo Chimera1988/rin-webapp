@@ -210,6 +210,8 @@ try {
   await sleep(500);
   const initialAssistantCount = await cdp.evaluate("document.querySelectorAll('#chat .row.assistant').length");
   assert(initialAssistantCount === 1, `expected one greeting, got ${initialAssistantCount}`);
+  const initialPeerStatus = await cdp.evaluate("document.querySelector('#peerStatus')?.textContent");
+  assert(initialPeerStatus === 'офлайн', `presence must stay offline before the first user message, got ${initialPeerStatus}`);
 
   const send = text => cdp.evaluate(`(() => {
     const input = document.querySelector('#input');
