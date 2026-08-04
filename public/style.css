@@ -83,15 +83,39 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-body.chat-app {
-  display: grid;
+html.chat-root,
+html.chat-root body.chat-app {
   width: 100%;
-  height: var(--rin-viewport-height, 100dvh);
+  height: 100%;
   min-height: 0;
-  max-height: var(--rin-viewport-height, 100dvh);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.chat-app {
+  position: relative;
+}
+
+.chat-viewport-shell {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  display: grid;
+  width: var(--rin-viewport-width, 100vw);
+  height: var(--rin-viewport-height, 100dvh);
+  min-width: 0;
+  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   overscroll-behavior: none;
+  transform: translate3d(
+    var(--rin-viewport-offset-left, 0px),
+    var(--rin-viewport-offset-top, 0px),
+    0
+  );
+  transform-origin: top left;
+  will-change: width, height, transform;
 }
 
 /* Шапка чата */

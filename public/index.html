@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" class="chat-root">
 <head>
   <meta charset="utf-8" />
   <title>Рин Акихара — твой компаньон</title>
@@ -29,10 +29,11 @@
   </script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-08-05-chat-viewport-v1" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-05-ios-keyboard-v2" />
 </head>
 <body class="chat-app">
 
+  <div id="chatViewportShell" class="chat-viewport-shell">
   <!-- Шапка -->
   <header class="tg-header">
     <button class="tg-ico btn-back" aria-label="Назад" title="Назад" onclick="history.length>1?history.back():null">
@@ -85,6 +86,7 @@
       </button>
     </form>
   </main>
+  </div>
 
   <!-- Настройки -->
   <div id="settingsPanel" class="settings hidden" role="dialog" aria-modal="true" aria-label="Настройки">
@@ -390,7 +392,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-05-chat-viewport-v1"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-05-ios-keyboard-v2"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>
