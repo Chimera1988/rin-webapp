@@ -12,6 +12,7 @@ import { createMemoryJobRunner, enqueueMemoryJob } from './js/memory_job_queue.j
 import { canAutoInitiate, canGreet, chooseConfiguredStarter, resolveInitiationPolicy } from './js/conversation_policy.js';
 import { shouldRefreshEnvironment } from './js/environment_intent.js';
 import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
+import { createPresenceController } from './js/presence_controller.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -1018,36 +1019,23 @@ function newRequestId() {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const PEER_STATUS_LABELS = Object.freeze({
-  offline: 'офлайн',
-  online: 'онлайн',
-  typing: 'печатает…'
+const presence = createPresenceController({
+  render: (mode, label) => {
+    peerStatus.textContent = label;
+    peerStatus.dataset.mode = mode;
+  },
+  isTransportOnline: () => navigator.onLine !== false,
+  isVisible: () => document.visibilityState !== 'hidden'
 });
 
-function setPeerStatus(mode = 'online') {
-  const normalizedMode = Object.hasOwn(PEER_STATUS_LABELS, mode) ? mode : 'online';
-  peerStatus.textContent = PEER_STATUS_LABELS[normalizedMode];
-  peerStatus.dataset.mode = normalizedMode;
+function syncPeerAvailability() {
+  presence.syncAvailability();
 }
 
-function setIdlePeerStatus() {
-  setPeerStatus(navigator.onLine === false ? 'offline' : 'online');
-}
-
-function setTypingPeerStatus() {
-  setPeerStatus(navigator.onLine === false ? 'offline' : 'typing');
-}
-
-function syncPeerStatus() {
-  if (activeRequests > 0) {
-    setTypingPeerStatus();
-    return;
-  }
-  setIdlePeerStatus();
-}
-
-window.addEventListener('online', syncPeerStatus);
-window.addEventListener('offline', syncPeerStatus);
+window.addEventListener('online', syncPeerAvailability);
+window.addEventListener('offline', syncPeerAvailability);
+document.addEventListener('visibilitychange', syncPeerAvailability);
+window.addEventListener('pagehide', () => presence.dispose(), { once: true });
 
 function inWindow(local, from, to) {
   if (!from || !to) return false;
@@ -1074,7 +1062,7 @@ function renderStoredMessage(message) {
 }
 
 (async function init(){
-  syncPeerStatus();
+  syncPeerAvailability();
   try {
     await ensureActiveProfile();
     await ensureLoreReady();
@@ -1230,10 +1218,26 @@ async function tryInitiateBySchedule() {
 
   await new Promise(resolve => setTimeout(resolve, 450));
   if (!canAutoInitiate({ profile, history, greetingActive, activeRequests })) return false;
-  setTypingPeerStatus();
-  const typing = addTyping();
-  await new Promise(resolve => setTimeout(resolve, 500));
-  typing.remove();
+  let typing = null;
+  let resolveTypingStarted;
+  const typingStarted = new Promise(resolve => { resolveTypingStarted = resolve; });
+  const presenceTurn = presence.beginTurn({
+    userInitiated: false,
+    onTyping: () => {
+      if (!typing) typing = addTyping();
+      resolveTypingStarted();
+    }
+  });
+  if (presenceTurn == null) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+  } else {
+    await Promise.race([
+      typingStarted,
+      new Promise(resolve => setTimeout(resolve, 6_500))
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 350));
+  }
+  if (typing?.isConnected) typing.remove();
 
   const stickerDecision = await maybeSticker('', text, null, { render: false });
   if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
@@ -1243,7 +1247,7 @@ async function tryInitiateBySchedule() {
   saveHistory(history);
   if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
   bumpInitCount(dateKey);
-  setIdlePeerStatus();
+  presence.finishTurn(presenceTurn);
   return true;
 }
 
@@ -1312,8 +1316,17 @@ async function processUserMessage(messageId) {
   updateMessage(history, messageId, { status: 'sent' });
   saveHistory(history);
   activeRequests += 1;
-  syncPeerStatus();
-  const typingRow = addTyping();
+  let typingRow = null;
+  let presenceFinished = false;
+  const presenceTurn = presence.beginTurn({
+    userInitiated: true,
+    onTyping: () => { if (!typingRow) typingRow = addTyping(); }
+  });
+  const finishPresence = () => {
+    if (presenceFinished) return;
+    presenceFinished = true;
+    presence.finishTurn(presenceTurn);
+  };
 
   try {
     // Перед новым модельным запросом завершаем уже запущенную память предыдущего хода.
@@ -1369,8 +1382,7 @@ async function processUserMessage(messageId) {
       throw error;
     }
 
-    typingRow.remove();
-    setIdlePeerStatus();
+    if (typingRow?.isConnected) typingRow.remove();
     const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
     if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
@@ -1394,6 +1406,7 @@ async function processUserMessage(messageId) {
     history.push(assistantMessage);
     saveHistory(history);
     if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
+    finishPresence();
 
     if (data?.coreDecision?.initiative?.mode === 'small_observation') await memoryModule?.markInnerLifeSpontaneous?.();
     await updateRinMoodFromMessage(userMessage.content);
@@ -1403,16 +1416,17 @@ async function processUserMessage(messageId) {
     }
     dbg(`reply complete: request=${userMessage.requestId}; kind=${kind}; build=${RIN_BUILD_VERSION}`);
   } catch (error) {
-    if (typingRow.isConnected) typingRow.remove();
+    if (typingRow?.isConnected) typingRow.remove();
     const code = error?.name === 'AbortError' ? 'UPSTREAM_TIMEOUT' : error?.code || 'CHAT_REQUEST_FAILED';
     const failed = updateMessage(history, userMessage.id, { status: 'failed', errorCode: code });
     saveHistory(history);
     if (failed) renderFailedState(failed);
     addBubble(userFacingError(code), 'assistant');
+    finishPresence();
     dbg(`chat request failed: code=${code}`);
   } finally {
     activeRequests = Math.max(0, activeRequests - 1);
-    syncPeerStatus();
+    finishPresence();
   }
 }
 
