@@ -20,18 +20,18 @@
         t = prefersDark ? 'theme-dark' : 'theme-light';
       }
       document.documentElement.classList.add(t);
-      window.__rinSetTheme = function(next){
+      window.__rinSetTheme = function(next, persist=true){
         document.documentElement.classList.remove('theme-dark','theme-light');
         document.documentElement.classList.add(next);
-        try{localStorage.setItem(K, next)}catch{}
+        if(persist){try{localStorage.setItem(K, next)}catch{}}
       }
     })();
   </script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-08-04-human-presence-v5" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-05-chat-settings-unified-v1" />
 </head>
-<body>
+<body class="chat-app">
 
   <!-- Шапка -->
   <header class="tg-header">
@@ -50,7 +50,12 @@
     </div>
 
     <div class="tg-actions">
-      <button id="settingsToggle" class="tg-ico" title="Настройки" aria-haspopup="dialog">⚙️</button>
+      <button id="settingsToggle" class="tg-ico tg-ico--settings" type="button" title="Настройки" aria-label="Открыть настройки" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-2.78 2.78-.06-.06A1.8 1.8 0 0 0 15 19.4a1.8 1.8 0 0 0-1.08 1.65V21h-3.84v-.08A1.8 1.8 0 0 0 9 19.4a1.8 1.8 0 0 0-1.98.36l-.06.06-2.78-2.78.06-.06A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-1.65-1.08H3v-3.84h.08A1.8 1.8 0 0 0 4.6 9a1.8 1.8 0 0 0-.36-1.98l-.06-.06 2.78-2.78.06.06A1.8 1.8 0 0 0 9 4.6a1.8 1.8 0 0 0 1.08-1.65V3h3.84v.08A1.8 1.8 0 0 0 15 4.6a1.8 1.8 0 0 0 1.98-.36l.06-.06 2.78 2.78-.06.06A1.8 1.8 0 0 0 19.4 9a1.8 1.8 0 0 0 1.65 1.08H21v3.84h-.08A1.8 1.8 0 0 0 19.4 15z"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -100,18 +105,13 @@
             <span class="settings-chevron">›</span>
           </button>
 
-          <div class="settings-menu-item">
-            <button class="settings-menu-link" type="button" data-settings-target="voice">
-              <span class="settings-icon">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
-              </span>
-              <span class="settings-menu-copy"><strong>Голосовые сообщения</strong><small>Настройки голоса Рин</small></span>
-            </button>
-            <label class="switch" aria-label="Озвучивать короткие реплики">
-              <input id="voiceEnabled" type="checkbox" />
-              <span></span>
-            </label>
-          </div>
+          <button class="settings-menu-item" type="button" data-settings-target="voice">
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Голосовые сообщения</strong><small>Настройки голоса Рин</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
 
           <button class="settings-menu-item" type="button" data-settings-target="stickers">
             <span class="settings-icon">
@@ -160,9 +160,18 @@
         <p class="settings-intro">Настрой внешний вид приложения и фон переписки.</p>
 
         <div class="settings-detail-card">
-          <div class="settings-control-row">
-            <div><strong>Тема оформления</strong><small>Переключить светлую и тёмную тему</small></div>
-            <button id="themeToggle" class="settings-action" type="button">Переключить</button>
+          <div class="settings-range-block">
+            <div><strong>Тема оформления</strong><small>Выбранная тема применяется к чату и всем разделам настроек</small></div>
+            <div class="settings-segmented settings-segmented--theme" role="group" aria-label="Тема оформления">
+              <button type="button" data-theme-choice="theme-dark" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.2A8 8 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2z"/></svg>
+                <span>Тёмная</span>
+              </button>
+              <button type="button" data-theme-choice="theme-light" aria-pressed="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.41M17.66 6.34l1.41-1.41"/></svg>
+                <span>Светлая</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -258,6 +267,20 @@
         </div>
         <p class="settings-intro">Настрой озвучивание коротких ответов Рин.</p>
         <div class="settings-detail-card">
+          <label class="settings-control-row">
+            <span class="settings-icon settings-icon--large">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/></svg>
+            </span>
+            <span class="settings-control-copy"><strong>Голосовые сообщения</strong><small>Включить озвучивание ответов Рин</small></span>
+            <span class="switch">
+              <input id="voiceEnabled" type="checkbox" aria-label="Включить голосовые сообщения" />
+              <span></span>
+            </span>
+          </label>
+        </div>
+
+        <h3 class="settings-group-title">Частота</h3>
+        <div class="settings-detail-card" id="voiceRateCard">
           <div class="settings-range-block">
             <div class="settings-range-head"><strong>Частота озвучивания</strong><span id="voiceRateVal">20%</span></div>
             <input id="voiceRate" type="range" min="0" max="50" value="20" />
@@ -367,7 +390,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-04-human-presence-v5"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-05-chat-settings-unified-v1"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

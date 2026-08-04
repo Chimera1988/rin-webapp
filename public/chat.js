@@ -84,7 +84,7 @@ const settingsPages    = [...document.querySelectorAll('[data-settings-page]')];
 const settingsTargets  = [...document.querySelectorAll('[data-settings-target]')];
 const settingsBackBtns = [...document.querySelectorAll('[data-settings-back]')];
 
-const themeToggle   = document.getElementById('themeToggle');
+const themeChoices  = [...document.querySelectorAll('[data-theme-choice]')];
 
 /* Обои */
 const wpFile        = document.getElementById('wallpaperFile');
@@ -107,6 +107,7 @@ const stickerSettingsCard = document.getElementById('stickerSettingsCard');
 const voiceEnabled  = document.getElementById('voiceEnabled');
 const voiceRate     = document.getElementById('voiceRate');
 const voiceRateVal  = document.getElementById('voiceRateVal');
+const voiceRateCard = document.getElementById('voiceRateCard');
 
 /* Debug (в настройках) */
 const debugToggle   = document.getElementById('debugToggle');
@@ -642,16 +643,38 @@ document.addEventListener('keydown', event => {
   else closeSettingsPanel();
 });
 
-/* — Тема — */
-if (themeToggle){
-  themeToggle.onclick = () => {
-    const isDark = document.documentElement.classList.contains('theme-dark');
-    const next = isDark ? 'theme-light' : 'theme-dark';
-    document.documentElement.classList.remove('theme-dark', 'theme-light');
-    document.documentElement.classList.add(next);
-    safeLocalSet(THEME_KEY, next);
-  };
+/* — Тема: один выбор управляет чатом и всеми экранами настроек — */
+function normalizeTheme(value){
+  return value === 'theme-light' ? 'theme-light' : 'theme-dark';
 }
+function activeTheme(){
+  return document.documentElement.classList.contains('theme-light') ? 'theme-light' : 'theme-dark';
+}
+function syncThemeChoices(){
+  const current = activeTheme();
+  themeChoices.forEach(button => {
+    const selected = button.dataset.themeChoice === current;
+    button.classList.toggle('is-active', selected);
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+}
+function applyTheme(next, { persist = true } = {}){
+  const normalized = normalizeTheme(next);
+  if (typeof window.__rinSetTheme === 'function') window.__rinSetTheme(normalized, persist);
+  else {
+    document.documentElement.classList.remove('theme-dark', 'theme-light');
+    document.documentElement.classList.add(normalized);
+  }
+  syncThemeChoices();
+}
+themeChoices.forEach(button => {
+  button.addEventListener('click', () => applyTheme(button.dataset.themeChoice));
+});
+window.addEventListener('storage', event => {
+  if (event.key !== THEME_KEY || !event.newValue) return;
+  applyTheme(event.newValue, { persist: false });
+});
+syncThemeChoices();
 
 /* — Обои — */
 function applyWallpaper(){
@@ -778,12 +801,20 @@ if (stickerOpacity){
 updateStickerModeUI();
 applyStickerOpacity();
 
-/* — Голос — */
+/* — Голос: включение и частота живут только внутри голосового подменю — */
 function lsSpeakEnabled(){ return safeLocalGet(LS_SPEAK_ENABLED) === '1'; }
 function lsSpeakRate(){ return +(safeLocalGet(LS_SPEAK_RATE) || '20'); } // %
+function syncVoiceSettings(){
+  const enabled = Boolean(voiceEnabled?.checked);
+  if (voiceRate) voiceRate.disabled = !enabled;
+  if (voiceRateCard) voiceRateCard.classList.toggle('is-disabled', !enabled);
+}
 if (voiceEnabled){
   voiceEnabled.checked = lsSpeakEnabled();
-  voiceEnabled.onchange = ()=>safeLocalSet(LS_SPEAK_ENABLED, voiceEnabled.checked?'1':'0');
+  voiceEnabled.onchange = ()=>{
+    safeLocalSet(LS_SPEAK_ENABLED, voiceEnabled.checked?'1':'0');
+    syncVoiceSettings();
+  };
 }
 if (voiceRate){
   voiceRate.value = String(lsSpeakRate());
@@ -793,6 +824,7 @@ if (voiceRate){
     if (voiceRateVal) voiceRateVal.textContent = `${voiceRate.value}%`;
   };
 }
+syncVoiceSettings();
 
 /* — Сброс — */
 if (resetApp){
