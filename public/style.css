@@ -202,12 +202,43 @@ body.chat-app {
   min-width: 0;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr) auto;
+  position: relative;
   overflow: hidden;
+  isolation: isolate;
   contain: size layout;
+}
+
+.chat-wallpaper {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--app-background);
+}
+.chat-wallpaper::before,
+.chat-wallpaper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.chat-wallpaper::before {
+  background-image: var(--wallpaper-url);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: var(--wallpaper-opacity);
+}
+.chat-wallpaper::after {
+  background:
+    linear-gradient(var(--wallpaper-tint), var(--wallpaper-tint)),
+    radial-gradient(circle at 88% 6%, color-mix(in srgb, var(--accent-soft) 70%, transparent), transparent 30%);
 }
 
 .chat {
   position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
   max-height: 100%;
@@ -215,33 +246,12 @@ body.chat-app {
   overflow-y: auto;
   padding: 14px 14px 10px;
   isolation: isolate;
-  background: var(--app-background);
+  background: transparent;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
   touch-action: pan-y;
 }
-.chat::before,
-.chat::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.chat::before {
-  z-index: -2;
-  background-image: var(--wallpaper-url);
-  background-position: center;
-  background-size: cover;
-  opacity: var(--wallpaper-opacity);
-}
-.chat::after {
-  z-index: -1;
-  background:
-    linear-gradient(var(--wallpaper-tint), var(--wallpaper-tint)),
-    radial-gradient(circle at 88% 6%, color-mix(in srgb, var(--accent-soft) 70%, transparent), transparent 30%);
-}
-
 .row {
   position: relative;
   z-index: 1;
