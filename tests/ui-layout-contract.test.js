@@ -14,11 +14,15 @@ test('chat uses a dedicated visual-viewport shell and only messages scroll', asy
   assert.match(html, /<html[^>]*class="chat-root"/);
   assert.match(html, /interactive-widget=resizes-content/);
   assert.match(html, /id="chatViewportShell"\s+class="chat-viewport-shell"/);
+  assert.match(html, /<main class="app">[\s\S]*id="chatWallpaper"\s+class="chat-wallpaper"[\s\S]*<section id="chat" class="chat"/);
   assert.match(css, /html\.chat-root,[\s\S]*body\.chat-app[\s\S]*overflow:\s*hidden/);
   assert.match(css, /\.chat-viewport-shell\s*\{[\s\S]*position:\s*fixed[\s\S]*width:\s*var\(--rin-viewport-width[\s\S]*height:\s*var\(--rin-viewport-height[\s\S]*translate3d\([\s\S]*--rin-viewport-offset-top/);
   const bodyBlock = css.match(/body\.chat-app\s*\{([^}]*)\}/)?.[1] || '';
   assert.doesNotMatch(bodyBlock, /height:\s*var\(--rin-viewport-height/);
   assert.match(css, /\.app\s*\{[\s\S]*height:\s*100%[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) auto[\s\S]*contain:\s*size layout/);
+  assert.match(css, /\.chat-wallpaper\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0[\s\S]*pointer-events:\s*none/);
+  assert.match(css, /\.chat-wallpaper::before[\s\S]*background-image:\s*var\(--wallpaper-url\)/);
+  assert.doesNotMatch(css, /\.chat::before[\s\S]*--wallpaper-url/);
   assert.match(css, /\.chat\s*\{[\s\S]*overflow-y:\s*auto[\s\S]*touch-action:\s*pan-y/);
   assert.match(css, /\.composer\s*\{[\s\S]*min-width:\s*0/);
 

@@ -16,7 +16,7 @@ test('chat and settings share one dark/light design system', async () => {
   assert.match(css, /\.tg-header[\s\S]*var\(--header-background\)/);
   assert.match(css, /\.bubble\.her[\s\S]*var\(--bubble-her\)/);
   assert.match(css, /\.settings__sheet[\s\S]*background: var\(--app-background\)/);
-  assert.match(css, /\.chat::before[\s\S]*opacity: var\(--wallpaper-opacity\)/);
+  assert.match(css, /\.chat-wallpaper::before[\s\S]*opacity: var\(--wallpaper-opacity\)/);
   assert.doesNotMatch(css, /\.chat::after\s*\{\s*display:\s*none/);
 
   assert.match(html, /data-theme-choice="theme-dark"/);
