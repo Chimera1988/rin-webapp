@@ -13,6 +13,7 @@ import { canAutoInitiate, canGreet, chooseConfiguredStarter, resolveInitiationPo
 import { shouldRefreshEnvironment } from './js/environment_intent.js';
 import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
 import { createPresenceController } from './js/presence_controller.js';
+import { createChatViewportController } from './js/chat_viewport.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -75,6 +76,14 @@ const chatEl        = document.getElementById('chat');
 const formEl        = document.getElementById('form');
 const inputEl       = document.getElementById('input');
 const peerStatus    = document.getElementById('peerStatus');
+
+const chatViewport = createChatViewportController({
+  root: document.documentElement,
+  chat: chatEl,
+  input: inputEl,
+  windowRef: window,
+  documentRef: document
+});
 
 const settingsToggle= document.getElementById('settingsToggle');
 const settingsPanel = document.getElementById('settingsPanel');
@@ -878,7 +887,7 @@ function addBubble(text, who='assistant', ts=Date.now(), options={}){
 
   row.appendChild(wrap);
   chatEl.appendChild(row);
-  chatEl.scrollTop=chatEl.scrollHeight;
+  chatViewport.requestScrollToBottom({ force: true });
   return row;
 }
 
@@ -888,7 +897,7 @@ function addTyping(){
   row.innerHTML=`<img class="avatar small" src="/avatar.jpg" alt="Рин"/>
     <div class="bubble her typing"><span></span><span></span><span></span></div>`;
   chatEl.appendChild(row);
-  chatEl.scrollTop=chatEl.scrollHeight;
+  chatViewport.requestScrollToBottom({ force: true });
   return row;
 }
 
@@ -927,7 +936,7 @@ function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
   }
 
   chatEl.appendChild(row);
-  chatEl.scrollTop = chatEl.scrollHeight;
+  chatViewport.requestScrollToBottom({ force: true });
   return row;
 }
 
@@ -998,7 +1007,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
   wrap.appendChild(meta);
   row.appendChild(wrap);
   chatEl.appendChild(row);
-  chatEl.scrollTop=chatEl.scrollHeight;
+  chatViewport.requestScrollToBottom({ force: true });
 
   const audio=new Audio(audioUrl);
 
