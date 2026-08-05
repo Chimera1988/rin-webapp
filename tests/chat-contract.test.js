@@ -33,7 +33,7 @@ test('model history excludes failed and non-text events and moves retried curren
     { role: 'user', kind: 'text', status: 'complete', id: 'u2', content: 'последующий вопрос' },
     { role: 'assistant', kind: 'text', status: 'complete', id: 'a2', content: 'последующий ответ' }
   ], { includeRequestId: 'retry' });
-  assert.deepEqual(selected.map(item => item.id), ['u2', 'a2', 'old']);
+  assert.deepEqual(selected.map(item => item.id), ['st', 'u2', 'a2', 'old']);
   assert.equal(selected.at(-1).content, 'первый вопрос');
 });
 
