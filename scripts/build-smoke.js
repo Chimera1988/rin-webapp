@@ -63,7 +63,7 @@ if (!chat.includes('shouldRefreshEnvironment')) fail('Environment refresh must f
 if (!chat.includes('await memoryJobRunner.drain();')) fail('The next request must wait for prior semantic-memory work.');
 if (!chat.includes('function selectReplyMessage(') || !chat.includes('replyLinkFromResponsePlan(')) fail('Chat must support manual and planned message replies.');
 const chatStore = await read('public/js/chat_store.js');
-if (!/CHAT_SCHEMA_VERSION\s*=\s*4/.test(chatStore) || !chatStore.includes('replySnapshot')) fail('Chat storage must use schema v4 reply snapshots.');
+if (!/CHAT_SCHEMA_VERSION\s*=\s*5/.test(chatStore) || !chatStore.includes('replySnapshot')) fail('Chat storage must use schema v5 reply snapshots.');
 if (await exists('public/js/response_postprocessor.js')) fail('Legacy response postprocessor must be removed.');
 if (await exists('lib/stickers-v4.js') || await exists('public/lib/stickers-v4.js')) fail('Legacy stickers v4 entrypoint must be removed.');
 if (!await exists('public/data/legacy/README.md')) fail('Legacy canon must be isolated and documented.');
