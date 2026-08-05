@@ -36,5 +36,5 @@ test('client has a final leak barrier and forced sticker recovery', async () => 
   assert.match(chat, /isInternalNonverbalMetaText\(reply\)/);
   assert.match(chat, /responseMeta\?\.delivery\?\.type === 'sticker'/);
   assert.match(chat, /mode:\s*forcedDelivery \? 'always'/);
-  assert.match(chat, /const sent = await commitStickerDecision\(stickerDecision\)/);
+  assert.match(chat, /const sent = await commitStickerDecision\(stickerDecision,\s*plannedReplyLink\)/);
 });
