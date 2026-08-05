@@ -229,6 +229,9 @@ function explicitReplyFromTurn(turn = null, history = []) {
 }
 
 export function modelMessageFromHistory(item = {}) {
+  if (item.kind === 'silence') {
+    return { role: 'system', content: `ВНУТРЕННЕЕ СОБЫТИЕ ДИАЛОГА — НЕ ЦИТИРОВАТЬ. Рин осознанно не ответила на предыдущую реплику: ${normalize(item.silence?.reason || 'микросцена завершилась', 320)}. Это было смысловое молчание, а не ошибка.` };
+  }
   if (item.kind === 'sticker') {
     const meaning = normalize(item.sticker?.meaning || item.sticker?.emotion || 'эмоциональный жест', 240);
     const cause = normalize(item.sticker?.cause, 280);
@@ -398,6 +401,25 @@ export default async function handler(req, res) {
     const cognition = buildCognitiveTurn({ userText: userTurn, history: fullHistory, memory, brain: conversationBrain, conversationState, explicitReply });
     const coreDecision = buildCoreDecision({ userText: userTurn, history: fullHistory, memory, conversationState, isLong, conversationBrain });
     const responsePlan = planResponse({ cognition, brain: conversationBrain, coreDecision, memory, userText: userTurn, history: fullHistory, isLong });
+    if (responsePlan.delivery === 'silence') {
+      const stateTransition = buildStateTransition({ cognition, coreDecision });
+      return res.status(200).json({
+        requestId,
+        reply: '',
+        finishReason: 'intentional_silence',
+        model: null,
+        long: false,
+        voiceMode: null,
+        promptMetrics: { promptVersion: 'rin-v8-directed-agency', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        conversationBrain,
+        cognition: compactCognition(cognition),
+        responsePlan,
+        verification: { version: 'rin-response-verifier-v4', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
+        delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
+        stateTransition,
+        coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, initiative: coreDecision.initiative, reason: coreDecision.reason }
+      });
+    }
     const prompt = buildSystemPrompt({
       profile, env, memory, lore, coreDecision, conversationState, conversationBrain, cognition, responsePlan,
       history: fullHistory, userText: userTurn, client: body.client || {}
@@ -429,7 +451,7 @@ export default async function handler(req, res) {
     });
     const verification = repair.verification;
     const clean = repair.reply;
-    const preferredRecoverySticker = coreDecision.nonverbalAction?.preferredStickerId || verification.nonverbalLeak?.preferredStickerId || null;
+    const preferredRecoverySticker = verification.nonverbalLeak?.preferredStickerId || coreDecision.nonverbalAction?.preferredStickerId || null;
     const delivery = verification.nonverbalLeak?.metaOnly && preferredRecoverySticker ? {
       type: 'sticker',
       preferredStickerId: preferredRecoverySticker,
