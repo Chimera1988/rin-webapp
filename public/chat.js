@@ -1286,6 +1286,7 @@ function inWindow(local, from, to) {
 
 
 async function renderStoredMessage(message) {
+  if (message.kind === 'silence') return null;
   if (message.role === 'assistant' && ['text', 'voice'].includes(message.kind) && isInternalNonverbalMetaText(message.content)) return null;
   if (message.kind === 'sticker' && message.sticker?.src) {
     return addStickerBubble(message.sticker.src, message.role, message.sticker.utterance || null, message.ts, {
@@ -1652,6 +1653,24 @@ async function processUserMessage(messageId) {
       const error = new Error('Mismatched response');
       error.code = 'MISMATCHED_RESPONSE';
       throw error;
+    }
+    const intentionalSilence = data?.delivery?.type === 'silence';
+    if (intentionalSilence) {
+      if (typingRow?.isConnected) typingRow.remove();
+      await updateRinMoodFromMessage(userMessage.content);
+      const silenceMessage = createChatMessage({
+        role: 'assistant', kind: 'silence', status: 'complete', content: '',
+        requestId: userMessage.requestId, inReplyTo: userMessage.id,
+        silence: { reason: data.delivery.reason, scene: data.delivery.scene }
+      });
+      updateMessage(history, userMessage.id, { status: 'complete' });
+      const userRow = findMessageRow(userMessage.id);
+      if (userRow) userRow.dataset.status = 'complete';
+      history.push(silenceMessage);
+      saveHistory(history);
+      finishPresence();
+      dbg(`reply complete: request=${userMessage.requestId}; kind=silence; reason=${data.delivery.reason || 'semantic'}; build=${RIN_BUILD_VERSION}`);
+      return;
     }
     let reply = typeof data.reply === 'string' ? data.reply.trim() : '';
     if (isInternalNonverbalMetaText(reply)) {
