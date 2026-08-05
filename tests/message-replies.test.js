@@ -34,7 +34,7 @@ const memory = {
   openLoops: []
 };
 
-test('reply snapshots survive schema v4 storage and API transport', () => {
+test('reply snapshots survive schema v5 storage and API transport', () => {
   const storage = new MemoryStorage();
   const source = createChatMessage({
     role: 'assistant', kind: 'text', status: 'complete', id: 'a1', content: 'Я застряла на одной фразе.'
@@ -44,7 +44,7 @@ test('reply snapshots survive schema v4 storage and API transport', () => {
     inReplyTo: source.id,
     replySnapshot: createReplySnapshot(source)
   });
-  assert.equal(CLIENT_SCHEMA, 4);
+  assert.equal(CLIENT_SCHEMA, 5);
   assert.equal(saveChatHistory([source, reply], storage), true);
   const loaded = loadChatHistory(storage);
   assert.equal(loaded[1].inReplyTo, 'a1');
@@ -70,7 +70,7 @@ test('sticker reply snapshot stays visual and does not expose semantic cause', (
 });
 
 test('server preserves explicit reply metadata through model history selection', () => {
-  assert.equal(SERVER_SCHEMA, 4);
+  assert.equal(SERVER_SCHEMA, 5);
   const history = normalizeChatHistory([
     { role: 'assistant', kind: 'text', status: 'complete', id: 'a1', content: 'Скажи точнее.' },
     {

@@ -72,7 +72,7 @@ test('pending or sent user turns are recovered as failed after reload', () => {
   assert.equal(recovered.errorCode, 'INTERRUPTED_REQUEST');
 });
 
-test('legacy history migrates to schema v4 key', () => {
+test('legacy history migrates to schema v5 key', () => {
   const storage = new MemoryStorage({ 'rin-history-v3': JSON.stringify([{ role: 'user', content: 'старое', ts: 1 }]) });
   const loaded = loadChatHistory(storage);
   assert.equal(loaded.length, 1);

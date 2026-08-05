@@ -133,7 +133,7 @@ test('meta-only nonverbal model output is recovered as structured sticker delive
         requestId: 'sticker-recovery',
         history: [{
           role: 'user', kind: 'text', status: 'sent', requestId: 'sticker-recovery',
-          id: 'u-sticker', content: 'Ага)'
+          id: 'u-sticker', content: 'Поддержишь меня?'
         }],
         memory: { relationship: { trust: 80, closeness: 80, playfulness: 60 }, mood: { affection: 80, energy: 60 } }
       }
@@ -143,6 +143,32 @@ test('meta-only nonverbal model output is recovered as structured sticker delive
     assert.equal(res.body.delivery?.type, 'sticker');
     assert.equal(res.body.delivery?.preferredStickerId, 'agreement');
     assert.doesNotMatch(res.body.reply, /Невербальный жест Рин/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('semantic silence returns a successful structured turn without calling OpenAI', async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; throw new Error('must not call upstream'); };
+  try {
+    const req = createReq({
+      headers: { 'x-rin-pin': '1357' },
+      body: {
+        requestId: 'silence-r1',
+        history: [
+          { role: 'assistant', kind: 'text', status: 'complete', id: 'a1', content: 'Тогда договорились.' },
+          { role: 'user', kind: 'text', status: 'sent', requestId: 'silence-r1', id: 'u1', content: 'Понятно)' }
+        ]
+      }
+    });
+    const res = createRes();
+    await chat.default(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.delivery.type, 'silence');
+    assert.equal(res.body.reply, '');
+    assert.equal(called, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
