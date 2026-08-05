@@ -278,6 +278,7 @@ export default async function handler(req, res) {
         initiative: coreDecision.initiative,
         adviceGuard: coreDecision.adviceGuard,
         emotionalResponse: coreDecision.emotionalResponse,
+        nonverbalAction: coreDecision.nonverbalAction,
         habit: coreDecision.habit,
         reason: coreDecision.reason
       }
