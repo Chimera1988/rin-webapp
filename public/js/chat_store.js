@@ -1,6 +1,6 @@
-export const CHAT_SCHEMA_VERSION = 4;
-export const CHAT_STORAGE_KEY = 'rin-history-v4';
-export const LEGACY_CHAT_STORAGE_KEYS = ['rin-history-v3', 'rin-history-v2'];
+export const CHAT_SCHEMA_VERSION = 5;
+export const CHAT_STORAGE_KEY = 'rin-history-v5';
+export const LEGACY_CHAT_STORAGE_KEYS = ['rin-history-v4', 'rin-history-v3', 'rin-history-v2'];
 export const RESETTABLE_STORAGE_KEYS = [
   CHAT_STORAGE_KEY,
   ...LEGACY_CHAT_STORAGE_KEYS,
@@ -26,7 +26,7 @@ export const RESETTABLE_STORAGE_KEYS = [
   'rin-memory-jobs-v1'
 ];
 
-const ALLOWED_KINDS = new Set(['text', 'voice', 'sticker', 'tool_result', 'system']);
+const ALLOWED_KINDS = new Set(['text', 'voice', 'sticker', 'silence', 'tool_result', 'system']);
 const REPLY_KINDS = new Set(['text', 'voice', 'sticker']);
 const ALLOWED_STATUSES = new Set(['pending', 'sent', 'complete', 'failed']);
 const clean = (value, max = 2400) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -99,6 +99,7 @@ export function createChatMessage({
   inReplyTo = null,
   replySnapshot = null,
   sticker = null,
+  silence = null,
   errorCode = null,
   ts = Date.now(),
   id = null
@@ -120,6 +121,9 @@ export function createChatMessage({
     ts: Number.isFinite(Number(ts)) ? Number(ts) : Date.now(),
     ...(clean(errorCode, 80) ? { errorCode: clean(errorCode, 80) } : {})
   };
+  if (kind === 'silence') {
+    message.silence = { reason: clean(silence?.reason, 320) || 'осознанное молчание', scene: clean(silence?.scene, 100) || null };
+  }
   if (kind === 'sticker' && sticker?.src) {
     message.sticker = {
       src: clean(sticker.src, 500),
@@ -151,7 +155,8 @@ export function normalizeStoredMessage(value, index = 0) {
       kind,
       status,
       replySnapshot: value.replySnapshot || null,
-      sticker: value.sticker || null
+      sticker: value.sticker || null,
+      silence: value.silence || null
     });
   } catch {
     return null;
@@ -163,7 +168,7 @@ export function normalizeStoredHistory(value) {
     .map(normalizeStoredMessage)
     .filter(Boolean)
     .filter(message => !(message.role === 'assistant' && ['text', 'voice'].includes(message.kind) && isInternalNonverbalMetaText(message.content)));
-  const textIds = new Set(normalized.filter(item => ['text','voice'].includes(item.kind)).slice(-120).map(item => item.id));
+  const textIds = new Set(normalized.filter(item => ['text','voice','silence'].includes(item.kind)).slice(-140).map(item => item.id));
   const visualIds = new Set(normalized.filter(item => !['text','voice'].includes(item.kind)).slice(-40).map(item => item.id));
   return normalized.filter(item => textIds.has(item.id) || visualIds.has(item.id));
 }
@@ -232,7 +237,7 @@ export function updateMessage(history, id, patch = {}) {
 export function toApiHistory(history, requestId) {
   const selected = normalizeStoredHistory(history)
     .filter(message => {
-      if (message.kind === 'sticker') return message.role === 'assistant' && message.status === 'complete';
+      if (message.kind === 'sticker' || message.kind === 'silence') return message.role === 'assistant' && message.status === 'complete';
       if (!['text', 'voice'].includes(message.kind)) return false;
       if (message.status === 'complete') return true;
       return message.role === 'user' && message.status === 'sent' && message.requestId === requestId;
@@ -250,6 +255,7 @@ export function toApiHistory(history, requestId) {
     status: message.status,
     content: message.content,
     ...(message.kind === 'sticker' ? { sticker: message.sticker } : {}),
+    ...(message.kind === 'silence' ? { silence: message.silence } : {}),
     ts: message.ts
   }));
 }
