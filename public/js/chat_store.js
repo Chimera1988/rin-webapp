@@ -1,6 +1,6 @@
-export const CHAT_SCHEMA_VERSION = 3;
-export const CHAT_STORAGE_KEY = 'rin-history-v3';
-export const LEGACY_CHAT_STORAGE_KEYS = ['rin-history-v2'];
+export const CHAT_SCHEMA_VERSION = 4;
+export const CHAT_STORAGE_KEY = 'rin-history-v4';
+export const LEGACY_CHAT_STORAGE_KEYS = ['rin-history-v3', 'rin-history-v2'];
 export const RESETTABLE_STORAGE_KEYS = [
   CHAT_STORAGE_KEY,
   ...LEGACY_CHAT_STORAGE_KEYS,
@@ -27,15 +27,53 @@ export const RESETTABLE_STORAGE_KEYS = [
 ];
 
 const ALLOWED_KINDS = new Set(['text', 'voice', 'sticker', 'tool_result', 'system']);
+const REPLY_KINDS = new Set(['text', 'voice', 'sticker']);
 const ALLOWED_STATUSES = new Set(['pending', 'sent', 'complete', 'failed']);
 const clean = (value, max = 2400) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const INTERNAL_NONVERBAL_META = /^\s*\[(?:Невербальный\s+жест|Невербальная\s+реакция|Эмоциональный\s+жест|Стикер)\s+Рин\s*:[\s\S]*\]\s*$/iu;
+const SAFE_STICKER_SRC = /^\/stickers\/[a-z0-9_]+\.webp$/iu;
+const randomId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 export function isInternalNonverbalMetaText(value = '') {
   return INTERNAL_NONVERBAL_META.test(String(value || ''));
 }
-const randomId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
+export function normalizeReplySnapshot(value = null) {
+  if (!value || typeof value !== 'object') return null;
+  const role = ['user', 'assistant'].includes(value.role) ? value.role : null;
+  const kind = REPLY_KINDS.has(value.kind) ? value.kind : null;
+  if (!role || !kind) return null;
+  const fallback = kind === 'sticker' ? 'Стикер' : kind === 'voice' ? 'Голосовое сообщение' : '';
+  const excerpt = clean(value.excerpt || fallback, 360);
+  if (!excerpt) return null;
+  const stickerSrc = SAFE_STICKER_SRC.test(String(value.stickerSrc || '')) ? String(value.stickerSrc) : null;
+  return {
+    role,
+    kind,
+    excerpt,
+    stickerSrc: kind === 'sticker' ? stickerSrc : null,
+    stickerId: kind === 'sticker' ? clean(value.stickerId, 80) || null : null
+  };
+}
+
+export function createReplySnapshot(message = null) {
+  if (!message || typeof message !== 'object' || !['user', 'assistant'].includes(message.role)) return null;
+  const kind = message.sticker?.src || message.kind === 'sticker'
+    ? 'sticker'
+    : message.kind === 'voice' ? 'voice' : 'text';
+  const excerpt = kind === 'sticker'
+    ? clean(message.sticker?.utterance, 240) || 'Стикер'
+    : kind === 'voice'
+      ? clean(message.content, 360) || 'Голосовое сообщение'
+      : clean(message.content, 360);
+  return normalizeReplySnapshot({
+    role: message.role,
+    kind,
+    excerpt,
+    stickerSrc: message.sticker?.src || null,
+    stickerId: message.sticker?.id || null
+  });
+}
 
 export function createSerialQueue(worker) {
   if (typeof worker !== 'function') throw new TypeError('Queue worker must be a function');
@@ -52,15 +90,29 @@ export function createSerialQueue(worker) {
   };
 }
 
-export function createChatMessage({ role, kind = 'text', status = 'complete', content = '', requestId = null, inReplyTo = null, sticker = null, errorCode = null, ts = Date.now(), id = null } = {}) {
+export function createChatMessage({
+  role,
+  kind = 'text',
+  status = 'complete',
+  content = '',
+  requestId = null,
+  inReplyTo = null,
+  replySnapshot = null,
+  sticker = null,
+  errorCode = null,
+  ts = Date.now(),
+  id = null
+} = {}) {
   if (!['user', 'assistant'].includes(role)) throw new TypeError('Invalid chat role');
   if (!ALLOWED_KINDS.has(kind)) throw new TypeError('Invalid chat kind');
   if (!ALLOWED_STATUSES.has(status)) throw new TypeError('Invalid chat status');
+  const normalizedReply = normalizeReplySnapshot(replySnapshot);
   const message = {
     schemaVersion: CHAT_SCHEMA_VERSION,
     id: clean(id, 100) || randomId(role),
     requestId: clean(requestId, 100) || null,
     inReplyTo: clean(inReplyTo, 100) || null,
+    replySnapshot: normalizedReply,
     role,
     kind,
     status,
@@ -98,6 +150,7 @@ export function normalizeStoredMessage(value, index = 0) {
       id: value.id || `legacy-${index}-${value.ts || Date.now()}`,
       kind,
       status,
+      replySnapshot: value.replySnapshot || null,
       sticker: value.sticker || null
     });
   } catch {
@@ -190,6 +243,8 @@ export function toApiHistory(history, requestId) {
     schemaVersion: CHAT_SCHEMA_VERSION,
     id: message.id,
     requestId: message.requestId,
+    inReplyTo: message.inReplyTo,
+    replySnapshot: message.replySnapshot,
     role: message.role,
     kind: message.kind,
     status: message.status,
