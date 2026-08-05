@@ -282,7 +282,7 @@ body.chat-app {
 }
 .bubble.her { background: linear-gradient(145deg, var(--bubble-her), color-mix(in srgb, var(--bubble-her) 82%, var(--surface-soft))); }
 .bubble.me { background: linear-gradient(145deg, var(--bubble-me), color-mix(in srgb, var(--bubble-me) 76%, var(--surface))); }
-.bubble:not(.sticker-only)::after {
+.bubble::after {
   content: "";
   position: absolute;
   bottom: -1px;
@@ -291,8 +291,8 @@ body.chat-app {
   background: inherit;
   border-bottom: 1px solid var(--bubble-border);
 }
-.bubble.her:not(.sticker-only)::after { left: -6px; border-left: 1px solid var(--bubble-border); border-bottom-left-radius: 12px; transform: skewX(-24deg); }
-.bubble.me:not(.sticker-only)::after { right: -6px; border-right: 1px solid var(--bubble-border); border-bottom-right-radius: 12px; transform: skewX(24deg); }
+.bubble.her::after { left: -6px; border-left: 1px solid var(--bubble-border); border-bottom-left-radius: 12px; transform: skewX(-24deg); }
+.bubble.me::after { right: -6px; border-right: 1px solid var(--bubble-border); border-bottom-right-radius: 12px; transform: skewX(24deg); }
 
 .bubble-time {
   display: inline-block;
@@ -308,9 +308,9 @@ body.chat-app {
 .bubble.typing span:nth-child(3){ animation-delay: .3s; }
 @keyframes blink { 0%,100%{ transform:translateY(0); opacity:.32 } 50%{ transform:translateY(-2px); opacity:1 } }
 
-.bubble.sticker-only { padding: 6px; border: 0; background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.bubble.sticker-only { min-width: 156px; padding: 8px 8px 6px; border: 1px solid var(--bubble-border); border-radius: 20px; box-shadow: var(--shadow-soft); -webkit-backdrop-filter: blur(18px) saturate(1.12); backdrop-filter: blur(18px) saturate(1.12); }
 .bubble.sticker-only .bubble-time { display: block; margin-top: 5px; text-align: right; }
-.sticker { display: block; width: 140px; height: 140px; border-radius: 50%; background: transparent; object-fit: cover; opacity: var(--sticker-opacity, 1); box-shadow: 0 0 0 1px var(--ring), 0 10px 26px rgba(0,0,0,.20); -webkit-mask-image: radial-gradient(#000 98%, transparent 100%); mask-image: radial-gradient(#000 98%, transparent 100%); }
+.sticker { display: block; width: 140px; height: 140px; border-radius: 50%; background: transparent; object-fit: cover; opacity: var(--sticker-opacity, 1); box-shadow: 0 0 0 1px var(--bubble-border), 0 10px 26px rgba(0,0,0,.20); -webkit-mask-image: radial-gradient(#000 98%, transparent 100%); mask-image: radial-gradient(#000 98%, transparent 100%); }
 .sticker-utter { display: block; max-width: 140px; margin: 7px auto 0; color: var(--muted); font-size: 13px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
 
 .composer {

@@ -2,6 +2,7 @@ import {
   createChatMessage,
   createSerialQueue,
   loadChatHistory,
+  isInternalNonverbalMetaText,
   resetApplicationStorage,
   saveChatHistory,
   toApiHistory,
@@ -1072,6 +1073,7 @@ function inWindow(local, from, to) {
 
 
 function renderStoredMessage(message) {
+  if (message.role === 'assistant' && ['text', 'voice'].includes(message.kind) && isInternalNonverbalMetaText(message.content)) return null;
   if (message.kind === 'sticker' && message.sticker?.src) {
     void addStickerBubble(message.sticker.src, message.role, message.sticker.utterance || null, message.ts); return null;
   }
@@ -1191,15 +1193,23 @@ async function commitStickerDecision(decision) {
 async function maybeSticker(userText, replyText, responseMeta = null, options = {}) {
   try {
     await ensureStickersReady();
+    const forcedDelivery = responseMeta?.delivery?.type === 'sticker' ? responseMeta.delivery : null;
     if (!stickersLib || !STICKERS_CFG || lsStickerMode() === 'off') return null;
     const memory = (await buildMemoryPayload()) || {};
+    const plannedNonverbal = forcedDelivery ? {
+      preferredStickerId: forcedDelivery.preferredStickerId,
+      delivery: forcedDelivery.delivery || 'sticker_only',
+      standalone: true,
+      cause: forcedDelivery.cause || null,
+      intensity: forcedDelivery.intensity || 45
+    } : responseMeta?.coreDecision?.nonverbalAction || null;
     const decision = stickersLib.decideSticker(STICKERS_CFG, {
       userText: userText || '',
       replyText: replyText || '',
       mood: memory.mood || {},
       relationship: memory.relationship || {},
-      mode: lsStickerMode() === 'always' ? 'always' : 'smart',
-      baseProbability: lsStickerProb(),
+      mode: forcedDelivery ? 'always' : lsStickerMode() === 'always' ? 'always' : 'smart',
+      baseProbability: forcedDelivery ? 100 : lsStickerProb(),
       context: {
         safeMode: lsStickerSafe(),
         scene: responseMeta?.conversationBrain?.activeScene?.type || '',
@@ -1210,9 +1220,9 @@ async function maybeSticker(userText, replyText, responseMeta = null, options = 
         intensity: responseMeta?.conversationBrain?.intensity,
         feltEmotion: responseMeta?.coreDecision?.emotionalResponse?.feltEmotion || '',
         emotionalResponse: responseMeta?.coreDecision?.emotionalResponse || null,
-        nonverbalAction: responseMeta?.coreDecision?.nonverbalAction || null,
-        preferredStickerId: responseMeta?.coreDecision?.nonverbalAction?.preferredStickerId || null,
-        cause: responseMeta?.coreDecision?.nonverbalAction?.cause || null,
+        nonverbalAction: plannedNonverbal,
+        preferredStickerId: plannedNonverbal?.preferredStickerId || null,
+        cause: plannedNonverbal?.cause || null,
         relationalCloseness: ['relationship_reassurance','bid_for_reassurance'].includes(responseMeta?.conversationBrain?.hiddenIntent?.type)
       }
     });
@@ -1404,7 +1414,11 @@ async function processUserMessage(messageId) {
       error.code = 'MISMATCHED_RESPONSE';
       throw error;
     }
-    const reply = typeof data.reply === 'string' ? data.reply.trim() : '';
+    let reply = typeof data.reply === 'string' ? data.reply.trim() : '';
+    if (isInternalNonverbalMetaText(reply)) {
+      dbg('blocked internal nonverbal meta reply on client');
+      reply = String(data?.delivery?.fallbackText || 'Мм.').trim();
+    }
     if (!reply) {
       const error = new Error('Empty response');
       error.code = 'EMPTY_MODEL_RESPONSE';
@@ -1414,11 +1428,11 @@ async function processUserMessage(messageId) {
     if (typingRow?.isConnected) typingRow.remove();
     await updateRinMoodFromMessage(userMessage.content);
     const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
-    const stickerOnly = stickerDecision?.delivery === 'sticker_only';
+    const stickerOnly = stickerDecision?.action === 'send' && stickerDecision?.delivery === 'sticker_only';
     if (!stickerOnly && stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
     let kind = stickerOnly ? 'sticker' : 'text';
-    const audioUrl = shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
+    const audioUrl = !stickerOnly && shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
     const assistantMessage = stickerOnly ? null : createChatMessage({
       role: 'assistant',
       kind: audioUrl ? 'voice' : 'text',
@@ -1429,7 +1443,16 @@ async function processUserMessage(messageId) {
     });
     if (assistantMessage) kind = assistantMessage.kind;
     if (stickerOnly) {
-      await commitStickerDecision(stickerDecision);
+      const sent = await commitStickerDecision(stickerDecision);
+      if (!sent) {
+        const fallbackMessage = createChatMessage({
+          role: 'assistant', kind: 'text', status: 'complete', content: reply,
+          requestId: userMessage.requestId, inReplyTo: userMessage.id
+        });
+        addBubble(reply, 'assistant', fallbackMessage.ts, { messageId: fallbackMessage.id, status: fallbackMessage.status });
+        history.push(fallbackMessage);
+        kind = 'text';
+      }
     } else if (audioUrl) addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
     else addBubble(reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
 
