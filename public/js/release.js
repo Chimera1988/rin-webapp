@@ -1,1 +1,1 @@
-export const RIN_RELEASE_ID = '2026-08-05-sticker-emotion-v7';
+export const RIN_RELEASE_ID = '2026-08-05-sticker-meta-fix-v8';

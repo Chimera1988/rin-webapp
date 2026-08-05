@@ -29,6 +29,11 @@ export const RESETTABLE_STORAGE_KEYS = [
 const ALLOWED_KINDS = new Set(['text', 'voice', 'sticker', 'tool_result', 'system']);
 const ALLOWED_STATUSES = new Set(['pending', 'sent', 'complete', 'failed']);
 const clean = (value, max = 2400) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+const INTERNAL_NONVERBAL_META = /^\s*\[(?:Невербальный\s+жест|Невербальная\s+реакция|Эмоциональный\s+жест|Стикер)\s+Рин\s*:[\s\S]*\]\s*$/iu;
+
+export function isInternalNonverbalMetaText(value = '') {
+  return INTERNAL_NONVERBAL_META.test(String(value || ''));
+}
 const randomId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 
@@ -101,7 +106,10 @@ export function normalizeStoredMessage(value, index = 0) {
 }
 
 export function normalizeStoredHistory(value) {
-  const normalized = (Array.isArray(value) ? value : []).map(normalizeStoredMessage).filter(Boolean);
+  const normalized = (Array.isArray(value) ? value : [])
+    .map(normalizeStoredMessage)
+    .filter(Boolean)
+    .filter(message => !(message.role === 'assistant' && ['text', 'voice'].includes(message.kind) && isInternalNonverbalMetaText(message.content)));
   const textIds = new Set(normalized.filter(item => ['text','voice'].includes(item.kind)).slice(-120).map(item => item.id));
   const visualIds = new Set(normalized.filter(item => !['text','voice'].includes(item.kind)).slice(-40).map(item => item.id));
   return normalized.filter(item => textIds.has(item.id) || visualIds.has(item.id));
