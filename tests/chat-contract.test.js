@@ -45,3 +45,15 @@ test('context pruning enforces one documented snapshot boundary', () => {
   assert.ok(pruned.length <= 32);
   assert.ok(JSON.stringify(pruned).length <= 6500 || pruned.length === 8);
 });
+
+
+test('assistant meta leaks are excluded while structured sticker context is preserved', () => {
+  const selected = selectModelHistory([
+    { role: 'assistant', kind: 'text', status: 'complete', id: 'leak', content: '[Невербальный жест Рин: лёгкая улыбка; причина: поддержка]' },
+    { role: 'assistant', kind: 'sticker', status: 'complete', id: 'sticker', content: '[Невербальный жест Рин: лёгкая улыбка; причина: поддержка]', sticker: { id: 'smile', src: '/stickers/smile.webp', meaning: 'лёгкая улыбка', cause: 'поддержка' } },
+    { role: 'user', kind: 'text', status: 'complete', id: 'user', content: 'Ты чего?' }
+  ]);
+  assert.deepEqual(selected.map(item => item.id), ['sticker', 'user']);
+  assert.equal(selected[0].kind, 'sticker');
+  assert.equal(selected[0].sticker.id, 'smile');
+});

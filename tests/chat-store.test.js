@@ -101,3 +101,17 @@ test('corrupted or unavailable history storage recovers without crashing the dia
     console.error = originalError;
   }
 });
+
+
+test('stored assistant meta leaks are removed during history migration', () => {
+  const storage = new MemoryStorage({
+    [CHAT_STORAGE_KEY]: JSON.stringify([
+      { role: 'assistant', kind: 'text', status: 'complete', id: 'leak', content: '[Невербальный жест Рин: кивок; причина: поддержка]', ts: 1 },
+      { role: 'assistant', kind: 'sticker', status: 'complete', id: 'sticker', content: '[Невербальный жест Рин: кивок; причина: поддержка]', sticker: { id: 'agreement', src: '/stickers/agreement.webp', meaning: 'кивок' }, ts: 2 },
+      { role: 'user', kind: 'text', status: 'complete', id: 'user', content: 'Ага', ts: 3 }
+    ])
+  });
+  const loaded = loadChatHistory(storage);
+  assert.deepEqual(loaded.map(item => item.id), ['sticker', 'user']);
+  assert.doesNotMatch(storage.getItem(CHAT_STORAGE_KEY), /\"id\":\"leak\"/);
+});

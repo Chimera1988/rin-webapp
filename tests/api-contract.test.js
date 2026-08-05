@@ -115,3 +115,35 @@ test('direct time/weather questions still go through the single model pipeline w
     globalThis.fetch = originalFetch;
   }
 });
+
+test('meta-only nonverbal model output is recovered as structured sticker delivery', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: { content: '[Невербальный жест Рин: кивок, подтверждающий согласие; причина: поддержка]' },
+      finish_reason: 'stop'
+    }],
+    usage: {}
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  try {
+    const res = createRes();
+    await chat.default(createReq({
+      headers: { 'x-rin-pin': '1357' },
+      body: {
+        requestId: 'sticker-recovery',
+        history: [{
+          role: 'user', kind: 'text', status: 'sent', requestId: 'sticker-recovery',
+          id: 'u-sticker', content: 'Ага)'
+        }],
+        memory: { relationship: { trust: 80, closeness: 80, playfulness: 60 }, mood: { affection: 80, energy: 60 } }
+      }
+    }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.reply, 'Угу.');
+    assert.equal(res.body.delivery?.type, 'sticker');
+    assert.equal(res.body.delivery?.preferredStickerId, 'agreement');
+    assert.doesNotMatch(res.body.reply, /Невербальный жест Рин/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -102,3 +102,28 @@ test('state transition preserves a caused emotional trace and recent open loop',
   assert.match(transition.emotionalTrace.cause, /другой девушки/);
   assert.equal(transition.openLoopUpdates.length, 1);
 });
+
+
+test('verifier converts a meta-only nonverbal leak into a safe sticker recovery', () => {
+  const result = verifyReply('[Невербальный жест Рин: кивок, подтверждающий согласие; причина: поддержка]', {
+    plan: { shouldAskQuestion: false, delivery: 'text' },
+    brain: { literalIntent: 'short_confirmation', relation: { type: 'acknowledges_previous_turn' } },
+    userText: 'Ага)'
+  });
+  assert.equal(result.reply, 'Угу.');
+  assert.equal(result.nonverbalLeak?.metaOnly, true);
+  assert.equal(result.nonverbalLeak?.preferredStickerId, 'agreement');
+  assert.ok(result.repairs.includes('replaced_meta_only_nonverbal_reply'));
+  assert.doesNotMatch(result.reply, /Невербальный жест Рин/);
+});
+
+test('verifier removes an embedded nonverbal service block without deleting natural text', () => {
+  const result = verifyReply('Поняла тебя. [Невербальный жест Рин: лёгкая улыбка; причина: поддержка]', {
+    plan: { shouldAskQuestion: false, delivery: 'text' },
+    brain: { literalIntent: 'statement', relation: { type: 'continuation' } },
+    userText: 'Хорошо'
+  });
+  assert.equal(result.reply, 'Поняла тебя.');
+  assert.equal(result.nonverbalLeak?.metaOnly, false);
+  assert.ok(result.repairs.includes('removed_internal_nonverbal_meta'));
+});
