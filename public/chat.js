@@ -904,40 +904,23 @@ function addTyping(){
 /* === Стикеры: рендер === */
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
-  if (src && typeof src === 'object' && src.src) src = src.src;
-
-  const row = document.createElement('div');
-  row.className = 'row ' + (who==='user' ? 'me' : 'her');
-  const timeStr = fmtTime(new Date(ts));
-
-  const utterHtml = utterance ? `<div class="sticker-utter">${escapeHtml(utterance)}</div>` : '';
-
-  if (who === 'user') {
-    row.innerHTML = `<div class="bubble me sticker-only">
-        <img class="sticker" src="${src}" alt="стикер"/>
-        ${utterHtml}
-        <span class="bubble-time">${timeStr}</span>
-      </div>`;
-  } else {
-    row.innerHTML = `<img class="avatar small" src="/avatar.jpg" alt="Рин"/>
-      <div class="bubble her sticker-only">
-        <img class="sticker" src="${src}" alt="стикер"/>
-        ${utterHtml}
-        <span class="bubble-time">${timeStr}</span>
-      </div>`;
-  }
-
-  const stickerImg = row.querySelector('img.sticker');
-  if (stickerImg) {
-    stickerImg.onerror = () => {
-      dbg(`stickers v6 asset missing: ${src}`);
-      row.remove();
-    };
-  }
-
-  chatEl.appendChild(row);
-  chatViewport.requestScrollToBottom({ force: true });
-  return row;
+  return new Promise(resolve => {
+    if (src && typeof src === 'object' && src.src) src = src.src;
+    if (!/^\/stickers\/[a-z0-9_]+\.webp$/i.test(String(src || ''))) return resolve(null);
+    const row = document.createElement('div');
+    row.className = 'row ' + (who === 'user' ? 'me' : 'her') + ' sticker-loading';
+    if (who !== 'user') {
+      const avatar = document.createElement('img'); avatar.className = 'avatar small'; avatar.src = '/avatar.jpg'; avatar.alt = 'Рин'; row.appendChild(avatar);
+    }
+    const bubble = document.createElement('div'); bubble.className = `bubble ${who === 'user' ? 'me' : 'her'} sticker-only`;
+    const image = document.createElement('img'); image.className = 'sticker'; image.alt = 'стикер';
+    if (utterance) { const label = document.createElement('div'); label.className = 'sticker-utter'; label.textContent = utterance; bubble.appendChild(label); }
+    const time = document.createElement('span'); time.className = 'bubble-time'; time.textContent = fmtTime(new Date(ts));
+    bubble.prepend(image); bubble.appendChild(time); row.appendChild(bubble); chatEl.appendChild(row);
+    image.onload = () => { row.classList.remove('sticker-loading'); chatViewport.requestScrollToBottom({ force: true }); resolve(row); };
+    image.onerror = () => { dbg(`sticker asset failed: ${src}`); row.remove(); resolve(null); };
+    image.src = src;
+  });
 }
 
 /* === Voice bubble === */
@@ -1090,7 +1073,7 @@ function inWindow(local, from, to) {
 
 function renderStoredMessage(message) {
   if (message.kind === 'sticker' && message.sticker?.src) {
-    return addStickerBubble(message.sticker.src, message.role, message.sticker.utterance || null, message.ts);
+    void addStickerBubble(message.sticker.src, message.role, message.sticker.utterance || null, message.ts); return null;
   }
   const prefix = message.kind === 'voice' ? '🎙️ ' : '';
   return addBubble(prefix + message.content, message.role, message.ts, {
@@ -1179,28 +1162,29 @@ async function getTTSUrl(text) {
 }
 
 function stickerSemanticText(decision) {
-  const action = String(decision?.semanticAction || decision?.sticker?.family || 'эмоциональный жест');
-  const utterance = decision?.utterance ? `, со словами «${decision.utterance}»` : '';
-  return `[Невербальный жест Рин: ${action}${utterance}]`;
+  const meaning = String(decision?.meaning || decision?.semanticAction || 'эмоциональный жест');
+  const cause = decision?.cause ? `; причина: ${decision.cause}` : '';
+  return `[Невербальный жест Рин: ${meaning}${cause}]`;
 }
 
 async function commitStickerDecision(decision) {
   if (decision?.action !== 'send' || !decision?.sticker) return false;
+  const rendered = await addStickerBubble(decision.sticker.src, 'assistant', decision.utterance, Date.now());
+  if (!rendered) return false;
   const message = createChatMessage({
-    role: 'assistant',
-    kind: 'sticker',
-    status: 'complete',
-    content: stickerSemanticText(decision),
+    role: 'assistant', kind: 'sticker', status: 'complete', content: stickerSemanticText(decision),
     sticker: {
-      src: decision.sticker.src,
-      emotion: decision.semanticAction || decision.sticker.family || null,
-      utterance: decision.utterance || null
+      id: decision.sticker.id, src: decision.sticker.src, emotion: decision.semanticAction,
+      meaning: decision.meaning, cause: decision.cause, utterance: decision.utterance,
+      delivery: decision.delivery, intensity: decision.intensity, canExplain: decision.canExplain,
+      expiresAfterTurns: decision.expiresAfterTurns
     }
   });
-  addStickerBubble(message.sticker.src, 'assistant', message.sticker.utterance, message.ts);
   stickersLib?.markStickerSent?.(decision.sticker);
-  history.push(message);
-  saveHistory(history);
+  history.push(message); saveHistory(history);
+  const memory = await ensureMemoryReady();
+  await memory?.rememberStickerEmotion?.({ ...message.sticker, explanation: decision.explanation });
+  dbg(`sticker send: id=${decision.sticker.id}; delivery=${decision.delivery}; reason=${decision.reason}`);
   return true;
 }
 
@@ -1225,7 +1209,11 @@ async function maybeSticker(userText, replyText, responseMeta = null, options = 
         hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || '',
         intensity: responseMeta?.conversationBrain?.intensity,
         feltEmotion: responseMeta?.coreDecision?.emotionalResponse?.feltEmotion || '',
-        emotionalResponse: responseMeta?.coreDecision?.emotionalResponse || null
+        emotionalResponse: responseMeta?.coreDecision?.emotionalResponse || null,
+        nonverbalAction: responseMeta?.coreDecision?.nonverbalAction || null,
+        preferredStickerId: responseMeta?.coreDecision?.nonverbalAction?.preferredStickerId || null,
+        cause: responseMeta?.coreDecision?.nonverbalAction?.cause || null,
+        relationalCloseness: ['relationship_reassurance','bid_for_reassurance'].includes(responseMeta?.conversationBrain?.hiddenIntent?.type)
       }
     });
     if (decision?.action === 'send' && decision?.sticker && options.render !== false) await commitStickerDecision(decision);
@@ -1424,12 +1412,14 @@ async function processUserMessage(messageId) {
     }
 
     if (typingRow?.isConnected) typingRow.remove();
+    await updateRinMoodFromMessage(userMessage.content);
     const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
-    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
+    const stickerOnly = stickerDecision?.delivery === 'sticker_only';
+    if (!stickerOnly && stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
-    let kind = 'text';
+    let kind = stickerOnly ? 'sticker' : 'text';
     const audioUrl = shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
-    const assistantMessage = createChatMessage({
+    const assistantMessage = stickerOnly ? null : createChatMessage({
       role: 'assistant',
       kind: audioUrl ? 'voice' : 'text',
       status: 'complete',
@@ -1437,20 +1427,21 @@ async function processUserMessage(messageId) {
       requestId: userMessage.requestId,
       inReplyTo: userMessage.id
     });
-    kind = assistantMessage.kind;
-    if (audioUrl) addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
+    if (assistantMessage) kind = assistantMessage.kind;
+    if (stickerOnly) {
+      await commitStickerDecision(stickerDecision);
+    } else if (audioUrl) addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
     else addBubble(reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
 
     updateMessage(history, userMessage.id, { status: 'complete' });
     const userRow = findMessageRow(userMessage.id);
     if (userRow) userRow.dataset.status = 'complete';
-    history.push(assistantMessage);
+    if (assistantMessage) history.push(assistantMessage);
     saveHistory(history);
-    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
+    if (!stickerOnly && stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
     finishPresence();
 
     if (data?.coreDecision?.initiative?.mode === 'small_observation') await memoryModule?.markInnerLifeSpontaneous?.();
-    await updateRinMoodFromMessage(userMessage.content);
     if (shouldAnalyzeConversationForMemory(userMessage.content)) {
       enqueueMemoryJob({ id: userMessage.id, userText: userMessage.content, assistantText: reply }, localStorage);
       void memoryJobRunner.drain();
