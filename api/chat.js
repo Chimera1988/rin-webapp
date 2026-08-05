@@ -12,7 +12,7 @@ import {
   responsePlanInstruction,
   verifyReply
 } from '../lib/cognition/index.js';
-import { isExplicitFarewell, lastUserText, pruneModelHistory, selectModelHistory } from '../lib/chat-contract.js';
+import { currentUserTurn, isExplicitFarewell, pruneModelHistory, selectModelHistory } from '../lib/chat-contract.js';
 import { fetchWithTimeout, publicError, readJsonBody, requirePin } from '../lib/server/http.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -207,6 +207,26 @@ export function buildSystemPrompt({ profile, env, memory, lore, coreDecision, co
   return { text, voiceMode };
 }
 
+
+function explicitReplyFromTurn(turn = null, history = []) {
+  if (!turn?.inReplyTo || !turn?.replySnapshot) return null;
+  const source = (Array.isArray(history) ? history : []).find(item => item?.id === turn.inReplyTo) || null;
+  const kind = source?.kind || turn.replySnapshot.kind;
+  const excerpt = kind === 'sticker'
+    ? normalize(source?.sticker?.meaning || source?.sticker?.emotion || turn.replySnapshot.excerpt || 'стикер Рин', 360)
+    : normalize(source?.content || turn.replySnapshot.excerpt, 360);
+  return {
+    messageId: normalize(turn.inReplyTo, 120),
+    role: source?.role || turn.replySnapshot.role,
+    kind,
+    excerpt,
+    stickerSrc: turn.replySnapshot.stickerSrc || source?.sticker?.src || null,
+    stickerId: turn.replySnapshot.stickerId || source?.sticker?.id || null,
+    reason: 'пользователь вручную выбрал это сообщение для ответа',
+    confidence: 1
+  };
+}
+
 export function modelMessageFromHistory(item = {}) {
   if (item.kind === 'sticker') {
     const meaning = normalize(item.sticker?.meaning || item.sticker?.emotion || 'эмоциональный жест', 240);
@@ -267,7 +287,8 @@ export default async function handler(req, res) {
     const requestId = normalize(body.requestId, 100);
     const normalized = selectModelHistory(body.history || [], { includeRequestId: requestId });
     const history = pruneModelHistory(normalized);
-    const userTurn = lastUserText(history);
+    const currentTurn = currentUserTurn(history, requestId);
+    const userTurn = normalize(currentTurn?.content, 2000);
     if (!userTurn) return res.status(400).json({ error: 'A user message is required', code: 'INVALID_HISTORY' });
 
     const profile = body.profile && typeof body.profile === 'object' ? body.profile : {};
@@ -275,9 +296,10 @@ export default async function handler(req, res) {
     const lore = body.lore && typeof body.lore === 'object' ? body.lore : null;
     const env = body.env && typeof body.env === 'object' ? body.env : null;
     const conversationState = detectConversationState(history);
+    const explicitReply = explicitReplyFromTurn(currentTurn, history);
     const isLong = Boolean(body?.client?.forceLong) || detectLongMode(userTurn);
     const conversationBrain = analyzeConversation({ userText: userTurn, history, conversationState });
-    const cognition = buildCognitiveTurn({ userText: userTurn, history, memory, brain: conversationBrain, conversationState });
+    const cognition = buildCognitiveTurn({ userText: userTurn, history, memory, brain: conversationBrain, conversationState, explicitReply });
     const coreDecision = buildCoreDecision({ userText: userTurn, history, memory, conversationState, isLong, conversationBrain });
     const responsePlan = planResponse({ cognition, brain: conversationBrain, coreDecision, memory, userText: userTurn, history, isLong });
     const prompt = buildSystemPrompt({
@@ -316,7 +338,7 @@ export default async function handler(req, res) {
     const stateTransition = buildStateTransition({ cognition, coreDecision });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-v5-cognitive-character',
+      promptVersion: 'rin-v6-message-replies',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
