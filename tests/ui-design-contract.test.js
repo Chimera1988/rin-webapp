@@ -44,3 +44,17 @@ test('voice enable switch exists only inside the voice submenu', async () => {
   assert.match(voicePage, /id="voiceEnabled"/);
   assert.match(voicePage, /id="voiceRateCard"/);
 });
+
+test('stickers preserve their original rounded-square geometry inside message bubbles', async () => {
+  const css = await read('public/style.css');
+  const stickerRule = css.match(/\.sticker\s*\{([^}]*)\}/)?.[1] || '';
+  const stickerBubbleRule = css.match(/\.bubble\.sticker-only\s*\{([^}]*)\}/)?.[1] || '';
+
+  assert.match(stickerRule, /width:\s*156px/);
+  assert.match(stickerRule, /height:\s*156px/);
+  assert.match(stickerRule, /border-radius:\s*16px/);
+  assert.match(stickerRule, /-webkit-mask-image:\s*none/);
+  assert.match(stickerRule, /mask-image:\s*none/);
+  assert.doesNotMatch(stickerRule, /border-radius:\s*50%/);
+  assert.match(stickerBubbleRule, /border-radius:\s*20px/);
+});
