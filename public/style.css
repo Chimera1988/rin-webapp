@@ -343,7 +343,7 @@ body.chat-app {
 }
 .composer input::placeholder { color: color-mix(in srgb, var(--muted) 78%, transparent); }
 .composer input:focus { border-color: color-mix(in srgb, var(--accent) 58%, var(--line)); box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-soft); }
-.composer button {
+.composer #send {
   display: inline-grid;
   width: 48px;
   height: 46px;
@@ -356,8 +356,214 @@ body.chat-app {
   cursor: pointer;
   transition: transform .15s ease, filter .15s ease;
 }
-.composer button:active { transform: scale(.95); }
-.composer button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.composer #send:active { transform: scale(.95); }
+.composer #send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+
+/* Ответ на выбранное сообщение — продолжение текущего языка пузырей */
+.reply-preview[hidden] { display: none !important; }
+.reply-preview {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 3px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px 7px 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(145deg, var(--surface), var(--surface-soft));
+  box-shadow: var(--shadow-soft);
+}
+.reply-preview__accent {
+  align-self: stretch;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.reply-preview__jump,
+.reply-preview__cancel {
+  width: auto !important;
+  height: auto !important;
+  min-width: 0;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+}
+.reply-preview__jump {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 0 !important;
+  text-align: left;
+}
+.reply-preview__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.reply-preview__copy strong {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+}
+.reply-preview__copy span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reply-preview__thumb {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border: 1px solid var(--bubble-border);
+  border-radius: 9px;
+  object-fit: cover;
+}
+.reply-preview__cancel {
+  display: grid !important;
+  width: 32px !important;
+  height: 32px !important;
+  place-items: center;
+  padding: 0 !important;
+  color: var(--muted) !important;
+  cursor: pointer;
+}
+.reply-preview__cancel:hover { background: var(--accent-soft) !important; color: var(--text) !important; }
+
+.reply-quote {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 3px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: -2px 0 8px;
+  padding: 7px 9px 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--bubble-border) 82%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-soft) 52%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.reply-quote--media { grid-template-columns: 3px auto minmax(0, 1fr); }
+.reply-quote:hover { background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface-soft)); }
+.reply-quote:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.reply-quote__accent {
+  align-self: stretch;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.reply-quote__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.reply-quote__copy strong {
+  overflow: hidden;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reply-quote__copy span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-size: 13px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.reply-quote__thumb {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--bubble-border);
+  border-radius: 9px;
+  object-fit: cover;
+}
+.reply-quote__voice {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+.reply-quote--missing { opacity: .62; }
+
+.bubble {
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.bubble.reply-swipe-active {
+  transform: translateX(var(--reply-swipe-x, 0));
+  transition: none;
+}
+.bubble.reply-swipe-active::before {
+  content: "↩";
+  position: absolute;
+  top: 50%;
+  left: -40px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  transform: translateY(-50%);
+}
+.message-reply-action {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+  transform: translateY(-50%) scale(.92);
+  transition: opacity .15s ease, transform .15s ease, color .15s ease;
+}
+.message-reply-action svg { width: 17px; height: 17px; fill: currentColor; }
+.row.her .message-reply-action { right: -39px; }
+.row.me .message-reply-action { left: -39px; }
+.bubble:hover .message-reply-action,
+.message-reply-action:focus-visible {
+  color: var(--accent);
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+.reply-source-flash .bubble {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--bubble-border));
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-soft);
+}
+
+@media (pointer: coarse) {
+  .message-reply-action { display: none; }
+}
 
 /* Базовый контейнер настроек; визуальные компоненты ниже используют те же токены */
 .settings.hidden { display: none; }
@@ -494,6 +700,9 @@ body.chat-app {
 /* правая кнопка «A→» — показать текст (можно заменить на STT позже) */
 .voice-tg__action {
   width: 38px; height: 38px;
+  padding: 0;
+  border: 0;
+  font: inherit;
   border-radius: 12px;
   background: color-mix(in oklab, var(--accent) 12%, transparent);
   color: var(--accent);

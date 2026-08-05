@@ -1,8 +1,10 @@
 import {
   createChatMessage,
+  createReplySnapshot,
   createSerialQueue,
   loadChatHistory,
   isInternalNonverbalMetaText,
+  normalizeReplySnapshot,
   resetApplicationStorage,
   saveChatHistory,
   toApiHistory,
@@ -76,6 +78,12 @@ function safeLocalJson(key, fallback = {}) {
 const chatEl        = document.getElementById('chat');
 const formEl        = document.getElementById('form');
 const inputEl       = document.getElementById('input');
+const replyPreviewEl = document.getElementById('replyPreview');
+const replyPreviewJump = document.getElementById('replyPreviewJump');
+const replyPreviewAuthor = document.getElementById('replyPreviewAuthor');
+const replyPreviewText = document.getElementById('replyPreviewText');
+const replyPreviewThumb = document.getElementById('replyPreviewThumb');
+const replyCancelEl = document.getElementById('replyCancel');
 const peerStatus    = document.getElementById('peerStatus');
 
 const chatViewport = createChatViewportController({
@@ -647,7 +655,12 @@ settingsBackBtns.forEach(button => {
   button.addEventListener('click', () => showSettingsPage('main'));
 });
 document.addEventListener('keydown', event => {
-  if (event.key !== 'Escape' || !settingsPanel || settingsPanel.classList.contains('hidden')) return;
+  if (event.key !== 'Escape') return;
+  if (replySelection) {
+    clearReplySelection({ focus: true });
+    return;
+  }
+  if (!settingsPanel || settingsPanel.classList.contains('hidden')) return;
   const activePage = settingsPages.find(page => page.classList.contains('is-active'))?.dataset.settingsPage;
   if (activePage && activePage !== 'main') showSettingsPage('main');
   else closeSettingsPanel();
@@ -848,13 +861,221 @@ if (resetApp){
   };
 }
 
-/* === Рендер сообщений === */
+/* === Рендер сообщений и ответы на выбранные сообщения === */
+let replySelection = null;
+let replyFlashTimer = null;
+
+function replyAuthorLabel(snapshot = null) {
+  return snapshot?.role === 'assistant' ? 'Рин' : 'Ты';
+}
+
+function replyVisibleText(snapshot = null) {
+  if (!snapshot) return '';
+  if (snapshot.kind === 'sticker') return snapshot.excerpt && snapshot.excerpt !== 'Стикер' ? snapshot.excerpt : 'Стикер';
+  if (snapshot.kind === 'voice') return 'Голосовое сообщение';
+  return snapshot.excerpt || '';
+}
+
+function findMessageById(messageId) {
+  return history.find(item => item?.id === messageId) || null;
+}
+
+function scrollToMessage(messageId) {
+  const row = findMessageRow(messageId);
+  if (!row) return false;
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.remove('reply-source-flash');
+  void row.offsetWidth;
+  row.classList.add('reply-source-flash');
+  if (replyFlashTimer) clearTimeout(replyFlashTimer);
+  replyFlashTimer = setTimeout(() => row.classList.remove('reply-source-flash'), 1500);
+  return true;
+}
+
+function renderReplyPreview() {
+  if (!replyPreviewEl) return;
+  if (!replySelection?.snapshot) {
+    replyPreviewEl.hidden = true;
+    replyPreviewThumb.hidden = true;
+    replyPreviewThumb.removeAttribute('src');
+    replyPreviewAuthor.textContent = '';
+    replyPreviewText.textContent = '';
+    return;
+  }
+  const snapshot = replySelection.snapshot;
+  replyPreviewAuthor.textContent = replyAuthorLabel(snapshot);
+  replyPreviewText.textContent = replyVisibleText(snapshot);
+  if (snapshot.kind === 'sticker' && snapshot.stickerSrc) {
+    replyPreviewThumb.src = snapshot.stickerSrc;
+    replyPreviewThumb.alt = 'Миниатюра стикера';
+    replyPreviewThumb.hidden = false;
+  } else {
+    replyPreviewThumb.hidden = true;
+    replyPreviewThumb.removeAttribute('src');
+  }
+  replyPreviewEl.hidden = false;
+}
+
+function clearReplySelection({ focus = false } = {}) {
+  replySelection = null;
+  renderReplyPreview();
+  if (focus) inputEl?.focus({ preventScroll: false });
+}
+
+function selectReplyMessage(message) {
+  if (!message || message.status !== 'complete' || !['text', 'voice', 'sticker'].includes(message.kind || 'text')) return false;
+  const snapshot = createReplySnapshot(message);
+  if (!snapshot) return false;
+  replySelection = { messageId: message.id, snapshot };
+  renderReplyPreview();
+  inputEl?.focus({ preventScroll: false });
+  dbg(`reply target selected: id=${message.id}; kind=${snapshot.kind}; role=${snapshot.role}`);
+  return true;
+}
+
+replyPreviewJump?.addEventListener('click', () => {
+  if (replySelection?.messageId) scrollToMessage(replySelection.messageId);
+});
+replyCancelEl?.addEventListener('click', () => clearReplySelection({ focus: true }));
+
+function createReplyQuote(snapshot, messageId) {
+  const normalized = normalizeReplySnapshot(snapshot);
+  if (!normalized) return null;
+  const quote = document.createElement('button');
+  quote.type = 'button';
+  quote.className = 'reply-quote';
+  quote.dataset.replyTargetId = String(messageId || '');
+  quote.setAttribute('aria-label', `Перейти к сообщению: ${replyAuthorLabel(normalized)} — ${replyVisibleText(normalized)}`);
+
+  const accent = document.createElement('span');
+  accent.className = 'reply-quote__accent';
+  accent.setAttribute('aria-hidden', 'true');
+  quote.appendChild(accent);
+
+  if (normalized.kind === 'sticker' && normalized.stickerSrc) {
+    quote.classList.add('reply-quote--media');
+    const thumb = document.createElement('img');
+    thumb.className = 'reply-quote__thumb';
+    thumb.src = normalized.stickerSrc;
+    thumb.alt = 'Стикер';
+    quote.appendChild(thumb);
+  } else if (normalized.kind === 'voice') {
+    quote.classList.add('reply-quote--media');
+    const voice = document.createElement('span');
+    voice.className = 'reply-quote__voice';
+    voice.textContent = '▶';
+    voice.setAttribute('aria-hidden', 'true');
+    quote.appendChild(voice);
+  }
+
+  const copy = document.createElement('span');
+  copy.className = 'reply-quote__copy';
+  const author = document.createElement('strong');
+  author.textContent = replyAuthorLabel(normalized);
+  const text = document.createElement('span');
+  text.textContent = replyVisibleText(normalized);
+  copy.append(author, text);
+  quote.appendChild(copy);
+  quote.addEventListener('click', event => {
+    event.stopPropagation();
+    if (!scrollToMessage(messageId)) quote.classList.add('reply-quote--missing');
+  });
+  return quote;
+}
+
+function attachReplyInteraction(row, bubble, message) {
+  if (!message || !['text', 'voice', 'sticker'].includes(message.kind || 'text')) return;
+  const currentMessage = () => findMessageById(message.id) || message;
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'message-reply-action';
+  action.setAttribute('aria-label', 'Ответить на сообщение');
+  action.title = 'Ответить';
+  action.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8l-5 4 5 4v-3h4.5c2.8 0 5 1.5 6.5 4-.4-5-2.8-8-6.5-8H9V8z"/></svg>';
+  action.addEventListener('click', event => {
+    event.stopPropagation();
+    selectReplyMessage(currentMessage());
+  });
+  bubble.appendChild(action);
+
+  bubble.addEventListener('contextmenu', event => {
+    if (event.target.closest('button')) return;
+    event.preventDefault();
+    selectReplyMessage(currentMessage());
+  });
+
+  let pointerId = null;
+  let startX = 0;
+  let startY = 0;
+  let shift = 0;
+  let longPressTimer = null;
+  let longPressed = false;
+
+  const reset = () => {
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+    pointerId = null;
+    shift = 0;
+    bubble.classList.remove('reply-swipe-active');
+    bubble.style.removeProperty('--reply-swipe-x');
+  };
+
+  bubble.addEventListener('pointerdown', event => {
+    if (event.button != null && event.button !== 0) return;
+    if (event.target.closest('button')) return;
+    pointerId = event.pointerId;
+    startX = event.clientX;
+    startY = event.clientY;
+    longPressed = false;
+    longPressTimer = setTimeout(() => {
+      longPressed = true;
+      selectReplyMessage(currentMessage());
+      try { navigator.vibrate?.(12); } catch {}
+      reset();
+    }, 520);
+  });
+
+  bubble.addEventListener('pointermove', event => {
+    if (pointerId !== event.pointerId) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    if (Math.abs(dy) > 18 && Math.abs(dy) > Math.abs(dx)) {
+      reset();
+      return;
+    }
+    if (dx <= 5) return;
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+    shift = Math.min(68, dx * 0.72);
+    bubble.classList.add('reply-swipe-active');
+    bubble.style.setProperty('--reply-swipe-x', `${shift}px`);
+  });
+
+  bubble.addEventListener('pointerup', event => {
+    if (pointerId !== event.pointerId) return;
+    const shouldReply = !longPressed && shift >= 42;
+    reset();
+    if (shouldReply) selectReplyMessage(currentMessage());
+  });
+  bubble.addEventListener('pointercancel', reset);
+  bubble.addEventListener('lostpointercapture', reset);
+}
+
+function decorateMessageRow(row, bubble, message, options = {}) {
+  row.classList.add('message-row');
+  if (message?.id || options.messageId) row.dataset.messageId = message?.id || options.messageId;
+  if (message?.status || options.status) row.dataset.status = message?.status || options.status;
+  if (message?.replySnapshot) {
+    const quote = createReplyQuote(message.replySnapshot, message.inReplyTo);
+    if (quote) bubble.prepend(quote);
+  }
+  attachReplyInteraction(row, bubble, message);
+}
+
 function addBubble(text, who='assistant', ts=Date.now(), options={}){
   const d = new Date(ts);
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
-  if (options.messageId) row.dataset.messageId = options.messageId;
-  if (options.status) row.dataset.status = options.status;
 
   if (who !== 'user'){
     const ava=document.createElement('img');
@@ -870,6 +1091,7 @@ function addBubble(text, who='assistant', ts=Date.now(), options={}){
   const wrap=document.createElement('div');
   wrap.className='bubble ' + (who==='user'?'me':'her');
   const msg=document.createElement('span');
+  msg.className='bubble-text';
   msg.textContent=text;
   const time=document.createElement('span');
   time.className='bubble-time';
@@ -887,8 +1109,9 @@ function addBubble(text, who='assistant', ts=Date.now(), options={}){
   }
 
   row.appendChild(wrap);
+  decorateMessageRow(row, wrap, options.message || null, options);
   chatEl.appendChild(row);
-  chatViewport.requestScrollToBottom({ force: true });
+  chatViewport.requestScrollToBottom({ force: options.forceScroll !== false });
   return row;
 }
 
@@ -903,8 +1126,7 @@ function addTyping(){
 }
 
 /* === Стикеры: рендер === */
-function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
+function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now(), options={}){
   return new Promise(resolve => {
     if (src && typeof src === 'object' && src.src) src = src.src;
     if (!/^\/stickers\/[a-z0-9_]+\.webp$/i.test(String(src || ''))) return resolve(null);
@@ -912,13 +1134,19 @@ function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
     row.className = 'row ' + (who === 'user' ? 'me' : 'her') + ' sticker-loading';
     if (who !== 'user') {
       const avatar = document.createElement('img'); avatar.className = 'avatar small'; avatar.src = '/avatar.jpg'; avatar.alt = 'Рин'; row.appendChild(avatar);
+    } else {
+      const spacer = document.createElement('div'); spacer.className = 'avatar small spacer'; row.appendChild(spacer);
     }
     const bubble = document.createElement('div'); bubble.className = `bubble ${who === 'user' ? 'me' : 'her'} sticker-only`;
     const image = document.createElement('img'); image.className = 'sticker'; image.alt = 'стикер';
+    bubble.appendChild(image);
     if (utterance) { const label = document.createElement('div'); label.className = 'sticker-utter'; label.textContent = utterance; bubble.appendChild(label); }
     const time = document.createElement('span'); time.className = 'bubble-time'; time.textContent = fmtTime(new Date(ts));
-    bubble.prepend(image); bubble.appendChild(time); row.appendChild(bubble); chatEl.appendChild(row);
-    image.onload = () => { row.classList.remove('sticker-loading'); chatViewport.requestScrollToBottom({ force: true }); resolve(row); };
+    bubble.appendChild(time);
+    row.appendChild(bubble);
+    decorateMessageRow(row, bubble, options.message || null, options);
+    chatEl.appendChild(row);
+    image.onload = () => { row.classList.remove('sticker-loading'); chatViewport.requestScrollToBottom({ force: options.forceScroll !== false }); resolve(row); };
     image.onerror = () => { dbg(`sticker asset failed: ${src}`); row.remove(); resolve(null); };
     image.src = src;
   });
@@ -927,11 +1155,8 @@ function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now()){
 /* === Voice bubble === */
 function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options={}){
   const d = new Date(ts);
-
   const row = document.createElement('div');
   row.className = 'row ' + (who==='user' ? 'me' : 'her');
-  if (options.messageId) row.dataset.messageId = options.messageId;
-  if (options.status) row.dataset.status = options.status;
 
   if (who !== 'user'){
     const ava=document.createElement('img');
@@ -949,65 +1174,50 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
 
   const top=document.createElement('div');
   top.className='voice-tg__row';
-
   const btn=document.createElement('button');
   btn.className='voice-tg__play';
   btn.setAttribute('aria-label','Проиграть голосовое');
   btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
-
   const wave=document.createElement('div');
   wave.className='voice-tg__wave';
-  const BAR_COUNT = 18;
-  for (let i=0;i<BAR_COUNT;i++){
+  for (let i=0;i<18;i++){
     const bar=document.createElement('i');
     bar.style.height = (8 + Math.round(Math.random()*18)) + 'px';
     wave.appendChild(bar);
   }
-
-  const act=document.createElement('div');
+  const act=document.createElement('button');
+  act.type='button';
   act.className='voice-tg__action';
   act.textContent='→A';
   act.title='Показать текст';
-
-  top.appendChild(btn);
-  top.appendChild(wave);
-  top.appendChild(act);
+  top.append(btn, wave, act);
 
   const meta=document.createElement('div');
   meta.className='voice-tg__meta';
-
   const dur=document.createElement('span');
   dur.className='voice-tg__dur';
   dur.textContent='0:00';
-
   const timeStamp=document.createElement('span');
   timeStamp.className='bubble-time';
   timeStamp.textContent=fmtTime(d);
-
-  meta.appendChild(dur);
-  meta.appendChild(timeStamp);
-
-  wrap.appendChild(top);
-  wrap.appendChild(meta);
+  meta.append(dur, timeStamp);
+  wrap.append(top, meta);
   row.appendChild(wrap);
+  decorateMessageRow(row, wrap, options.message || null, options);
   chatEl.appendChild(row);
-  chatViewport.requestScrollToBottom({ force: true });
+  chatViewport.requestScrollToBottom({ force: options.forceScroll !== false });
 
   const audio=new Audio(audioUrl);
-
-  const secToMMSS = s => {
-    const v=Math.max(0, Math.floor(s||0));
-    return `${Math.floor(v/60)}:${String(v%60).padStart(2,'0')}`;
+  const secToMMSS = value => {
+    const seconds=Math.max(0, Math.floor(value||0));
+    return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
   };
-
   audio.ontimeupdate = () => {
     const cur = audio.currentTime || 0;
     dur.textContent = secToMMSS(cur);
-    const p = (cur / Math.max(1, audio.duration || 1)) * 100;
-    wave.style.setProperty('--progress', `${p}%`);
+    wave.style.setProperty('--progress', `${(cur / Math.max(1, audio.duration || 1)) * 100}%`);
   };
-
-  btn.onclick=()=>{
+  btn.addEventListener('click', () => {
     if (audio.paused){
       audio.play().then(()=>{
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
@@ -1018,21 +1228,19 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
       btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
       wrap.classList.remove('playing');
     }
-  };
-
+  });
   audio.onended=()=>{
     btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
     wrap.classList.remove('playing');
-    try{ URL.revokeObjectURL(audioUrl); }catch(e){}
+    try{ URL.revokeObjectURL(audioUrl); }catch{}
   };
-
-  act.onclick=()=>{
+  act.addEventListener('click', () => {
     act.remove();
-    const tr=document.createElement('div');
-    tr.className='voice-transcript';
-    tr.textContent=text;
-    wrap.appendChild(tr);
-  };
+    const transcript=document.createElement('div');
+    transcript.className='voice-transcript';
+    transcript.textContent=text;
+    wrap.appendChild(transcript);
+  });
   return row;
 }
 
@@ -1072,18 +1280,21 @@ function inWindow(local, from, to) {
 }
 
 
-function renderStoredMessage(message) {
+async function renderStoredMessage(message) {
   if (message.role === 'assistant' && ['text', 'voice'].includes(message.kind) && isInternalNonverbalMetaText(message.content)) return null;
   if (message.kind === 'sticker' && message.sticker?.src) {
-    void addStickerBubble(message.sticker.src, message.role, message.sticker.utterance || null, message.ts); return null;
+    return addStickerBubble(message.sticker.src, message.role, message.sticker.utterance || null, message.ts, {
+      message,
+      forceScroll: false
+    });
   }
   const prefix = message.kind === 'voice' ? '🎙️ ' : '';
   return addBubble(prefix + message.content, message.role, message.ts, {
-    messageId: message.id,
-    status: message.status,
+    message,
     retry: message.role === 'user' && message.status === 'failed'
       ? () => retryMessage(message.id)
-      : null
+      : null,
+    forceScroll: false
   });
 }
 
@@ -1104,7 +1315,8 @@ function renderStoredMessage(message) {
   });
 
   history = loadHistory();
-  history.forEach(renderStoredMessage);
+  for (const message of history) await renderStoredMessage(message);
+  chatViewport.requestScrollToBottom({ force: true });
   if (!history.length) await greet();
 
   setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
@@ -1131,7 +1343,7 @@ async function greet() {
     const stickerDecision = await maybeSticker('', greeting, null, { render: false });
     if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
     const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: greeting });
-    addBubble(greeting, 'assistant', message.ts, { messageId: message.id, status: message.status });
+    addBubble(greeting, 'assistant', message.ts, { message });
     history.push(message);
     saveHistory(history);
     if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
@@ -1169,12 +1381,12 @@ function stickerSemanticText(decision) {
   return `[Невербальный жест Рин: ${meaning}${cause}]`;
 }
 
-async function commitStickerDecision(decision) {
+async function commitStickerDecision(decision, replyLink = null) {
   if (decision?.action !== 'send' || !decision?.sticker) return false;
-  const rendered = await addStickerBubble(decision.sticker.src, 'assistant', decision.utterance, Date.now());
-  if (!rendered) return false;
   const message = createChatMessage({
     role: 'assistant', kind: 'sticker', status: 'complete', content: stickerSemanticText(decision),
+    inReplyTo: replyLink?.inReplyTo || null,
+    replySnapshot: replyLink?.replySnapshot || null,
     sticker: {
       id: decision.sticker.id, src: decision.sticker.src, emotion: decision.semanticAction,
       meaning: decision.meaning, cause: decision.cause, utterance: decision.utterance,
@@ -1182,6 +1394,8 @@ async function commitStickerDecision(decision) {
       expiresAfterTurns: decision.expiresAfterTurns
     }
   });
+  const rendered = await addStickerBubble(decision.sticker.src, 'assistant', decision.utterance, message.ts, { message });
+  if (!rendered) return false;
   stickersLib?.markStickerSent?.(decision.sticker);
   history.push(message); saveHistory(history);
   const memory = await ensureMemoryReady();
@@ -1281,7 +1495,7 @@ async function tryInitiateBySchedule() {
   const stickerDecision = await maybeSticker('', text, null, { render: false });
   if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
   const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: text });
-  addBubble(text, 'assistant', message.ts, { messageId: message.id, status: message.status });
+  addBubble(text, 'assistant', message.ts, { message });
   history.push(message);
   saveHistory(history);
   if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
@@ -1294,13 +1508,23 @@ formEl.addEventListener('submit', event => {
   event.preventDefault();
   const text = inputEl.value.trim();
   if (!text) return;
+  const selectedReply = replySelection;
   inputEl.value = '';
+  clearReplySelection();
 
   const requestId = newRequestId();
-  const message = createChatMessage({ role: 'user', kind: 'text', status: 'pending', content: text, requestId });
+  const message = createChatMessage({
+    role: 'user',
+    kind: 'text',
+    status: 'pending',
+    content: text,
+    requestId,
+    inReplyTo: selectedReply?.messageId || null,
+    replySnapshot: selectedReply?.snapshot || null
+  });
   history.push(message);
   saveHistory(history);
-  addBubble(text, 'user', message.ts, { messageId: message.id, status: message.status });
+  addBubble(text, 'user', message.ts, { message });
   enqueueMessage(message.id);
 });
 
@@ -1347,6 +1571,16 @@ function userFacingError(code) {
   if (code === 'MODEL_RESPONSE_TRUNCATED') return 'Ответ оборвался на стороне модели. Повтори отправку.';
   if (code === 'UPSTREAM_TIMEOUT') return 'Сервис не успел ответить. Повтори отправку.';
   return 'Не удалось получить ответ. Сообщение не включено в следующий контекст; его можно повторить.';
+}
+
+
+function replyLinkFromResponsePlan(plan = null) {
+  const target = plan?.replyTarget;
+  if (!target?.messageId || target.role !== 'user') return null;
+  const source = findMessageById(target.messageId);
+  const snapshot = source ? createReplySnapshot(source) : normalizeReplySnapshot(target);
+  if (!snapshot) return null;
+  return { inReplyTo: target.messageId, replySnapshot: snapshot };
 }
 
 async function processUserMessage(messageId) {
@@ -1429,6 +1663,7 @@ async function processUserMessage(messageId) {
     await updateRinMoodFromMessage(userMessage.content);
     const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
     const stickerOnly = stickerDecision?.action === 'send' && stickerDecision?.delivery === 'sticker_only';
+    const plannedReplyLink = replyLinkFromResponsePlan(data?.responsePlan);
     if (!stickerOnly && stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
 
     let kind = stickerOnly ? 'sticker' : 'text';
@@ -1439,22 +1674,25 @@ async function processUserMessage(messageId) {
       status: 'complete',
       content: reply,
       requestId: userMessage.requestId,
-      inReplyTo: userMessage.id
+      inReplyTo: plannedReplyLink?.inReplyTo || userMessage.id,
+      replySnapshot: plannedReplyLink?.replySnapshot || null
     });
     if (assistantMessage) kind = assistantMessage.kind;
     if (stickerOnly) {
-      const sent = await commitStickerDecision(stickerDecision);
+      const sent = await commitStickerDecision(stickerDecision, plannedReplyLink);
       if (!sent) {
         const fallbackMessage = createChatMessage({
           role: 'assistant', kind: 'text', status: 'complete', content: reply,
-          requestId: userMessage.requestId, inReplyTo: userMessage.id
+          requestId: userMessage.requestId,
+          inReplyTo: plannedReplyLink?.inReplyTo || userMessage.id,
+          replySnapshot: plannedReplyLink?.replySnapshot || null
         });
-        addBubble(reply, 'assistant', fallbackMessage.ts, { messageId: fallbackMessage.id, status: fallbackMessage.status });
+        addBubble(reply, 'assistant', fallbackMessage.ts, { message: fallbackMessage });
         history.push(fallbackMessage);
         kind = 'text';
       }
-    } else if (audioUrl) addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
-    else addBubble(reply, 'assistant', assistantMessage.ts, { messageId: assistantMessage.id, status: assistantMessage.status });
+    } else if (audioUrl) addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
+    else addBubble(reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
 
     updateMessage(history, userMessage.id, { status: 'complete' });
     const userRow = findMessageRow(userMessage.id);

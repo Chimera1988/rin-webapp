@@ -29,7 +29,7 @@
   </script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-08-05-square-stickers-v9" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-05-message-replies-v10" />
 </head>
 <body class="chat-app">
 
@@ -66,6 +66,17 @@
     <section id="chat" class="chat" aria-live="polite"></section>
 
     <form id="form" class="composer" autocomplete="off">
+      <div id="replyPreview" class="reply-preview" hidden aria-live="polite">
+        <span class="reply-preview__accent" aria-hidden="true"></span>
+        <button id="replyPreviewJump" class="reply-preview__jump" type="button" aria-label="Перейти к выбранному сообщению">
+          <img id="replyPreviewThumb" class="reply-preview__thumb" alt="" hidden />
+          <span class="reply-preview__copy">
+            <strong id="replyPreviewAuthor"></strong>
+            <span id="replyPreviewText"></span>
+          </span>
+        </button>
+        <button id="replyCancel" class="reply-preview__cancel" type="button" aria-label="Отменить ответ на сообщение">✕</button>
+      </div>
       <input
         id="input"
         type="text"
@@ -393,7 +404,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-05-square-stickers-v9"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-05-message-replies-v10"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>
