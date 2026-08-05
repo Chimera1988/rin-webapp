@@ -513,20 +513,37 @@ body.chat-app {
   transform: translateX(var(--reply-swipe-x, 0));
   transition: none;
 }
-.bubble.reply-swipe-active::before {
-  content: "↩";
+.reply-swipe-indicator {
   position: absolute;
   top: 50%;
-  left: -40px;
+  left: -43px;
+  z-index: 3;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 31px;
+  height: 31px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
-  border-radius: 50%;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: 11px;
+  background: linear-gradient(145deg, var(--surface), var(--surface-soft));
+  box-shadow: var(--shadow-soft);
   color: var(--accent);
-  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(.9);
+  transition: opacity .12s ease, transform .12s ease;
+}
+.reply-swipe-indicator svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bubble.reply-swipe-active .reply-swipe-indicator {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
 }
 .message-reply-action {
   position: absolute;
@@ -538,8 +555,8 @@ body.chat-app {
   place-items: center;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface);
+  border-radius: 11px;
+  background: linear-gradient(145deg, var(--surface), var(--surface-soft));
   box-shadow: var(--shadow-soft);
   color: var(--muted);
   opacity: 0;
@@ -547,7 +564,7 @@ body.chat-app {
   transform: translateY(-50%) scale(.92);
   transition: opacity .15s ease, transform .15s ease, color .15s ease;
 }
-.message-reply-action svg { width: 17px; height: 17px; fill: currentColor; }
+.message-reply-action svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .row.her .message-reply-action { right: -39px; }
 .row.me .message-reply-action { left: -39px; }
 .bubble:hover .message-reply-action,

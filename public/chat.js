@@ -991,12 +991,17 @@ function attachReplyInteraction(row, bubble, message) {
   action.className = 'message-reply-action';
   action.setAttribute('aria-label', 'Ответить на сообщение');
   action.title = 'Ответить';
-  action.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8l-5 4 5 4v-3h4.5c2.8 0 5 1.5 6.5 4-.4-5-2.8-8-6.5-8H9V8z"/></svg>';
+  const replyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 7.5 4.5 12l5 4.5M5 12h7.2c4 0 6.3 2 7.3 5.4-.1-5.8-2.5-9.4-7.3-9.4H9.5"/></svg>';
+  action.innerHTML = replyIcon;
   action.addEventListener('click', event => {
     event.stopPropagation();
     selectReplyMessage(currentMessage());
   });
-  bubble.appendChild(action);
+  const swipeIndicator = document.createElement('span');
+  swipeIndicator.className = 'reply-swipe-indicator';
+  swipeIndicator.setAttribute('aria-hidden', 'true');
+  swipeIndicator.innerHTML = replyIcon;
+  bubble.append(action, swipeIndicator);
 
   bubble.addEventListener('contextmenu', event => {
     if (event.target.closest('button')) return;
