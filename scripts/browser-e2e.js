@@ -48,7 +48,7 @@ const server = createServer(async (req, res) => {
       await readBody(req);
       await sleep(300);
       return json(res, 200, {
-        schemaVersion: 3,
+        schemaVersion: 4,
         facts: [{ path: 'user.name', value: 'Алексей', confidence: 0.99 }],
         events: [], openLoops: [], resolvedLoops: [], sharedMoments: []
       });
@@ -62,14 +62,29 @@ const server = createServer(async (req, res) => {
         return json(res, 502, { error: 'Temporary failure', code: 'UPSTREAM_TIMEOUT', requestId: body.requestId });
       }
       const remembered = body.memory?.facts?.user?.name;
+      const plannedTarget = current === 'RIN_REPLY_TARGET'
+        ? (body.history || []).find(item => item.role === 'user' && String(item.content || '').includes('Мой проект называется Rin'))
+        : null;
       const reply = current.includes('Как меня зовут')
         ? `Ты говорил, что тебя зовут ${remembered || 'неизвестно'}.`
-        : `Ответ на: ${current}`;
+        : current === 'RIN_REPLY_TARGET'
+          ? 'К этому я и хотела вернуться: что в проекте сейчас самое живое для тебя?'
+          : `Ответ на: ${current}`;
       return json(res, 200, {
         requestId: body.requestId,
         reply,
         finishReason: 'stop',
         long: false,
+        responsePlan: plannedTarget ? {
+          replyTarget: {
+            messageId: plannedTarget.id,
+            role: 'user',
+            kind: plannedTarget.kind || 'text',
+            excerpt: plannedTarget.content,
+            reason: 'browser e2e callback',
+            confidence: 0.9
+          }
+        } : null,
         coreDecision: { initiative: { mode: 'none' }, nonverbalAction: current.includes('Целую тебя') ? { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 } : null, emotionalResponse: { intensity: current.includes('Целую тебя') ? 90 : 40 } }, conversationBrain: { activeScene: { type: current.includes('Целую тебя') ? 'romance' : 'everyday' }, hiddenIntent: { type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none' } }
       });
     }
@@ -299,7 +314,7 @@ try {
     document.querySelector('#form').requestSubmit();
     return true;
   })()`);
-  const completedUsers = count => `JSON.parse(localStorage.getItem('rin-history-v3') || '[]').filter(m => m.role === 'user' && m.status === 'complete').length >= ${count}`;
+  const completedUsers = count => `JSON.parse(localStorage.getItem('rin-history-v4') || '[]').filter(m => m.role === 'user' && m.status === 'complete').length >= ${count}`;
 
   await send('Меня зовут Алексей. Мой проект называется Rin.');
   await waitFor(cdp, completedUsers(1), 'first completed user turn');
@@ -322,9 +337,9 @@ try {
   assert([...retryBody.history].at(-1)?.content === 'FAIL_ONCE', 'retried turn must be the final current context item');
 
   await send('Целую тебя 💋');
-  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v3') || '[]').some(m => m.kind === 'sticker' && m.sticker?.id === 'kiss')", 'standalone kiss sticker');
+  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v4') || '[]').some(m => m.kind === 'sticker' && m.sticker?.id === 'kiss')", 'standalone kiss sticker');
   const kissTurn = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v3') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
     const sticker = history.find(m => m.kind === 'sticker' && m.sticker?.id === 'kiss');
     const rows = [...document.querySelectorAll('#chat .row')];
     return { sticker, lastHasText: rows.at(-1)?.querySelector('.bubble')?.textContent?.includes('Ответ на: Целую тебя') || false };
@@ -334,20 +349,61 @@ try {
   await waitFor(cdp, completedUsers(7), 'follow-up after sticker');
   assert(chatBodies.at(-1)?.history?.some(item => item.kind === 'sticker' && item.content.includes('поцел')), 'next request must include semantic sticker context');
 
-  const lifecycle = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v3') || '[]');
+  const selectedReply = await cdp.evaluate(`(() => {
+    const rows = [...document.querySelectorAll('#chat .row.her[data-message-id]')];
+    const row = rows.at(-1);
+    const action = row?.querySelector('.message-reply-action');
+    if (!row || !action) return null;
+    const sourceId = row.dataset.messageId;
+    action.click();
     return {
-      allTyped: history.every(m => m.id && m.schemaVersion === 3 && m.kind && m.status),
+      sourceId,
+      previewVisible: !document.querySelector('#replyPreview')?.hidden,
+      previewAuthor: document.querySelector('#replyPreviewAuthor')?.textContent
+    };
+  })()`);
+  assert(selectedReply?.previewVisible && selectedReply.previewAuthor === 'Рин', 'manual reply selection must open the composer preview');
+  await send('Я отвечаю именно на эту реплику.');
+  await waitFor(cdp, completedUsers(8), 'manual reply turn');
+  const manualReply = chatBodies.at(-1)?.history?.at(-1);
+  assert(manualReply?.inReplyTo === selectedReply.sourceId, 'manual reply must preserve inReplyTo in the API history');
+  assert(manualReply?.replySnapshot?.role === 'assistant', 'manual reply must preserve a public snapshot of the selected assistant message');
+  const manualUi = await cdp.evaluate(`(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
+    const message = [...history].reverse().find(item => item.role === 'user' && item.content === 'Я отвечаю именно на эту реплику.');
+    const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
+    return { linked: message?.inReplyTo || null, quoteVisible: Boolean(row?.querySelector('.reply-quote')) };
+  })()`);
+  assert(manualUi.linked === selectedReply.sourceId && manualUi.quoteVisible, 'manual reply must render the quote inside the existing user bubble');
+
+  await send('RIN_REPLY_TARGET');
+  await waitFor(cdp, completedUsers(9), 'planned Rin reply target');
+  const rinReply = await cdp.evaluate(`(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
+    const message = [...history].reverse().find(item => item.role === 'assistant' && item.replySnapshot);
+    const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
+    return {
+      targetContent: message?.replySnapshot?.excerpt || '',
+      linked: message?.inReplyTo || null,
+      quoteVisible: Boolean(row?.querySelector('.reply-quote'))
+    };
+  })()`);
+  assert(rinReply.linked && /Мой проект называется Rin/.test(rinReply.targetContent) && rinReply.quoteVisible, 'Rin planned reply must quote a specific earlier user message');
+
+  const lifecycle = await cdp.evaluate(`(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
+    return {
+      allTyped: history.every(m => m.id && m.schemaVersion === 4 && m.kind && m.status),
       failed: history.filter(m => m.status === 'failed').length,
       pending: history.filter(m => ['pending','sent'].includes(m.status)).length,
       peer: document.querySelector('#peerStatus')?.textContent
     };
   })()`);
-  assert(lifecycle.allTyped, 'all persisted chat events must use schema v3');
+  assert(lifecycle.allTyped, 'all persisted chat events must use schema v4');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
 
-  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker and follow-up context; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker, manual reply and planned Rin reply; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);

@@ -26,6 +26,7 @@ const index = await read('public/index.html');
 if ((index.match(/app_bootstrap\.js/g) || []).length !== 1) fail('Index must load exactly one application bootstrap.');
 if (!index.includes('id="chatViewportShell"') || !index.includes('class="chat-viewport-shell"')) fail('Index must provide the visual viewport shell.');
 if (!index.includes('id="chatWallpaper"') || !index.includes('class="chat-wallpaper"')) fail('Index must provide a fixed wallpaper layer outside the chat scroller.');
+if (!index.includes('id="replyPreview"') || !index.includes('class="reply-preview"')) fail('Index must provide the message reply preview inside the existing composer.');
 if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js outside the authenticated bootstrap.');
 
 const activeSources = [
@@ -60,6 +61,9 @@ const chat = await read('public/chat.js');
 if ((chat.match(/fetchWithTimeout\('\/api\/chat'/g) || []).length !== 1) fail('Chat must have exactly one model response endpoint call.');
 if (!chat.includes('shouldRefreshEnvironment')) fail('Environment refresh must feed the unified chat pipeline.');
 if (!chat.includes('await memoryJobRunner.drain();')) fail('The next request must wait for prior semantic-memory work.');
+if (!chat.includes('function selectReplyMessage(') || !chat.includes('replyLinkFromResponsePlan(')) fail('Chat must support manual and planned message replies.');
+const chatStore = await read('public/js/chat_store.js');
+if (!/CHAT_SCHEMA_VERSION\s*=\s*4/.test(chatStore) || !chatStore.includes('replySnapshot')) fail('Chat storage must use schema v4 reply snapshots.');
 if (await exists('public/js/response_postprocessor.js')) fail('Legacy response postprocessor must be removed.');
 if (await exists('lib/stickers-v4.js') || await exists('public/lib/stickers-v4.js')) fail('Legacy stickers v4 entrypoint must be removed.');
 if (!await exists('public/data/legacy/README.md')) fail('Legacy canon must be isolated and documented.');
