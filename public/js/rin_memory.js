@@ -357,6 +357,7 @@ function normalizeDiary(input = {}) {
     relationship,
     openLoops: uniqueLoops,
     summaries: uniqueSummaries,
+    emotionalTrace: source.emotionalTrace && typeof source.emotionalTrace === 'object' ? source.emotionalTrace : null,
     _updated_at: finiteNumber(source._updated_at, now)
   };
 }
@@ -712,3 +713,38 @@ export async function consolidateDiary() {
     window.RIN_PROFILE = await loadProfile();
   } catch {}
 })();
+
+
+export async function rememberStickerEmotion(event = {}) {
+  const normalized = {
+    id: cleanText(event.id, 80), emotion: cleanText(event.emotion, 80), meaning: cleanText(event.meaning, 240),
+    cause: cleanText(event.cause, 280), explanation: cleanText(event.explanation, 300),
+    intensity: clamp(event.intensity ?? 50), remainingTurns: clamp(event.expiresAfterTurns ?? 0, 0, 8),
+    createdAt: Date.now(), resolved: false
+  };
+  if (!normalized.emotion) return false;
+  return mutateDiary(diary => {
+    diary.emotionalTrace = normalized;
+    return clone(normalized);
+  });
+}
+
+export async function advanceStickerEmotion() {
+  return mutateDiary(diary => {
+    const trace = diary.emotionalTrace;
+    if (!trace || trace.resolved) return null;
+    trace.remainingTurns = Math.max(0, Number(trace.remainingTurns || 0) - 1);
+    if (trace.remainingTurns === 0) trace.resolved = true;
+    diary.emotionalTrace = trace;
+    return clone(trace);
+  });
+}
+
+export async function resolveStickerEmotion() {
+  return mutateDiary(diary => {
+    if (!diary.emotionalTrace) return false;
+    diary.emotionalTrace.resolved = true;
+    diary.emotionalTrace.remainingTurns = 0;
+    return true;
+  });
+}

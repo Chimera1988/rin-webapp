@@ -19,6 +19,7 @@ export const RESETTABLE_STORAGE_KEYS = [
   'rin-profile-v1',
   'rin-diary-v1',
   'rin-lore-recent-v1',
+  'rin-stickers-v7-stats',
   'rin-stickers-v6-stats',
   'rin-stickers-v5-stats',
   'rin-memory-analysis-turn',
@@ -66,7 +67,14 @@ export function createChatMessage({ role, kind = 'text', status = 'complete', co
     message.sticker = {
       src: clean(sticker.src, 500),
       utterance: clean(sticker.utterance, 300) || null,
-      emotion: clean(sticker.emotion, 80) || null
+      emotion: clean(sticker.emotion, 80) || null,
+      id: clean(sticker.id, 80) || null,
+      meaning: clean(sticker.meaning, 240) || null,
+      cause: clean(sticker.cause, 280) || null,
+      delivery: clean(sticker.delivery, 40) || null,
+      intensity: Math.max(0, Math.min(100, Number(sticker.intensity) || 0)),
+      canExplain: sticker.canExplain !== false,
+      expiresAfterTurns: Math.max(0, Math.min(8, Number(sticker.expiresAfterTurns) || 0))
     };
   }
   return message;
@@ -93,7 +101,10 @@ export function normalizeStoredMessage(value, index = 0) {
 }
 
 export function normalizeStoredHistory(value) {
-  return (Array.isArray(value) ? value : []).map(normalizeStoredMessage).filter(Boolean).slice(-120);
+  const normalized = (Array.isArray(value) ? value : []).map(normalizeStoredMessage).filter(Boolean);
+  const textIds = new Set(normalized.filter(item => ['text','voice'].includes(item.kind)).slice(-120).map(item => item.id));
+  const visualIds = new Set(normalized.filter(item => !['text','voice'].includes(item.kind)).slice(-40).map(item => item.id));
+  return normalized.filter(item => textIds.has(item.id) || visualIds.has(item.id));
 }
 
 export function safeStorageGet(storage, key, fallback = null) {
@@ -145,7 +156,7 @@ export function loadChatHistory(storage = localStorage) {
 }
 
 export function saveChatHistory(history, storage = localStorage) {
-  return safeStorageSet(storage, CHAT_STORAGE_KEY, JSON.stringify(normalizeStoredHistory(history).slice(-120)));
+  return safeStorageSet(storage, CHAT_STORAGE_KEY, JSON.stringify(normalizeStoredHistory(history)));
 }
 
 export function updateMessage(history, id, patch = {}) {
@@ -160,6 +171,7 @@ export function updateMessage(history, id, patch = {}) {
 export function toApiHistory(history, requestId) {
   const selected = normalizeStoredHistory(history)
     .filter(message => {
+      if (message.kind === 'sticker') return message.role === 'assistant' && message.status === 'complete';
       if (!['text', 'voice'].includes(message.kind)) return false;
       if (message.status === 'complete') return true;
       return message.role === 'user' && message.status === 'sent' && message.requestId === requestId;
@@ -174,6 +186,7 @@ export function toApiHistory(history, requestId) {
     kind: message.kind,
     status: message.status,
     content: message.content,
+    ...(message.kind === 'sticker' ? { sticker: message.sticker } : {}),
     ts: message.ts
   }));
 }
