@@ -207,6 +207,24 @@ export function buildSystemPrompt({ profile, env, memory, lore, coreDecision, co
   return { text, voiceMode };
 }
 
+export function modelMessageFromHistory(item = {}) {
+  if (item.kind === 'sticker') {
+    const meaning = normalize(item.sticker?.meaning || item.sticker?.emotion || 'эмоциональный жест', 240);
+    const cause = normalize(item.sticker?.cause, 280);
+    const stickerId = normalize(item.sticker?.id, 80);
+    return {
+      role: 'system',
+      content: [
+        'ВНУТРЕННЕЕ СОБЫТИЕ ДИАЛОГА — НЕ ЦИТИРОВАТЬ И НЕ ВЫВОДИТЬ ПОЛЬЗОВАТЕЛЮ.',
+        `Рин ранее отправила стикер${stickerId ? ` ${stickerId}` : ''}: ${meaning}.`,
+        cause ? `Причина: ${cause}.` : '',
+        'Учитывай событие как собственный предыдущий невербальный жест Рин. При вопросе пользователя объясни эмоцию обычной человеческой фразой без квадратных скобок и служебных меток.'
+      ].filter(Boolean).join(' ')
+    };
+  }
+  return { role: item.role, content: normalize(item.content, 1800) };
+}
+
 export async function openaiChat({ model, messages, temperature, max_tokens }) {
   const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -269,7 +287,7 @@ export default async function handler(req, res) {
 
     const messages = [
       { role: 'system', content: prompt.text },
-      ...history.map(item => ({ role: item.role, content: normalize(item.content, 1800) }))
+      ...history.map(modelMessageFromHistory)
     ];
     if (isLong) messages.push({ role: 'system', content: 'Длинный режим: дай цельный ответ 3–6 абзацев без служебного приглашения продолжить.' });
 
@@ -284,6 +302,17 @@ export default async function handler(req, res) {
     const polished = polishRinReply(completion.content, coreDecision);
     const verification = verifyReply(polished, { plan: responsePlan, brain: conversationBrain, userText: userTurn, history });
     const clean = verification.reply;
+    const preferredRecoverySticker = coreDecision.nonverbalAction?.preferredStickerId || verification.nonverbalLeak?.preferredStickerId || null;
+    const delivery = verification.nonverbalLeak?.metaOnly && preferredRecoverySticker ? {
+      type: 'sticker',
+      preferredStickerId: preferredRecoverySticker,
+      delivery: 'sticker_only',
+      meaning: verification.nonverbalLeak.meaning,
+      cause: coreDecision.nonverbalAction?.cause || verification.nonverbalLeak.cause || null,
+      intensity: coreDecision.nonverbalAction?.intensity || 45,
+      fallbackText: clean,
+      reason: 'recovered_internal_nonverbal_meta'
+    } : null;
     const stateTransition = buildStateTransition({ cognition, coreDecision });
     const usage = completion.usage || {};
     const promptMetrics = {
@@ -309,6 +338,7 @@ export default async function handler(req, res) {
       cognition: compactCognition(cognition),
       responsePlan,
       verification,
+      delivery,
       stateTransition,
       coreDecision: {
         version: coreDecision.version,
