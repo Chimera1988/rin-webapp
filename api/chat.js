@@ -18,8 +18,9 @@ import { fetchWithTimeout, publicError, readJsonBody, requirePin } from '../lib/
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const SHORT_MODEL = process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
 const LONG_MODEL = process.env.OPENAI_LONG_MODEL || 'gpt-4o';
-const SHORT_PARAMS = { temperature: 0.74, max_tokens: 420 };
-const LONG_PARAMS = { temperature: 0.76, max_tokens: 1400 };
+const SHORT_PARAMS = { temperature: 0.72, max_tokens: 420 };
+const LONG_PARAMS = { temperature: 0.74, max_tokens: 1400 };
+const REWRITE_PARAMS = { temperature: 0.56, max_tokens: 260 };
 
 const normalize = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const clamp = (value, fallback = 50) => {
@@ -262,6 +263,101 @@ export async function openaiChat({ model, messages, temperature, max_tokens }) {
   };
 }
 
+function deterministicAgencyFallback(plan = {}, userText = '') {
+  const seed = String(userText || '').length % 3;
+  const variants = {
+    take_lead: [
+      'Поздно передумывать. Сам попросил — теперь не мешай мне тебя смущать.',
+      'Мм, инициативу я забрала. А ты пока попробуй не выдать себя слишком быстро.',
+      'Хорошо. Тогда сиди спокойно и не делай вид, что совсем не волнуешься.'
+    ],
+    reclaim_scene: [
+      'Да, отвлеклась. Возвращаюсь — и теперь уже не дам тебе так легко увести разговор в сторону.',
+      'Мм, слишком умной прикинулась. Ладно, возвращаюсь к приставаниям.',
+      'Согласна, ушла не туда. Исправляюсь: теперь попробуй не смутиться первым.'
+    ],
+    tease_and_advance: [
+      'Потерпи. Мне нравится, когда ты немного ждёшь.',
+      'Вижу. Только не торопи меня — я ещё выбираю, как именно тебя подразнить.',
+      'Такой нетерпеливый… хорошо, это даже удобно.'
+    ],
+    advance_play: [
+      'Вот и не отвлекайся. Я ещё не закончила.',
+      'Угу. Тогда продолжаем — и без попыток спрятаться за улыбкой.',
+      'Именно. Теперь держись, твоя очередь смущаться.'
+    ],
+    reassure_with_boundary: [
+      'Нет. Когда буду занята — скажу сама.',
+      'Не отвлекаешь. Я умею сказать, когда мне нужно вернуться к делам.',
+      'Сейчас нет. А если начнёшь мешать — я тебя предупрежу.'
+    ]
+  };
+  const pool = variants[plan?.responseAct];
+  return pool ? pool[seed] : null;
+}
+
+function rewriteMessages({ draft = '', verification = null, plan = null, brain = null, userText = '' } = {}) {
+  const guidance = (verification?.rewriteGuidance || []).map(item => `- ${item}`).join('\n');
+  const forbidden = (plan?.mustNot || []).map(item => `- ${item}`).join('\n');
+  const obligations = (plan?.mustAddress || []).map(item => `- ${item}`).join('\n');
+  return [
+    {
+      role: 'system',
+      content: `Ты — строгий редактор одной реплики Рин Акихары в личном чате. Верни только окончательный текст реплики без кавычек, пояснений, списков и служебных меток.
+
+Сохрани факты и прямой смысл, но перепиши голос так, чтобы Рин не звучала ассистентом: у неё есть собственная позиция, она не пересказывает пользователя, не оценивает разговор со стороны, не хвалит очевидное и не заканчивает автоматическим вопросом.
+
+Активная сцена: ${brain?.activeScene?.type || 'everyday'}. Цель сцены: ${plan?.sceneGoal || brain?.activeScene?.goal || 'ответить конкретно'}. Речевой акт: ${plan?.responseAct || 'direct_response'}. Тон: ${plan?.tone || 'calm_personal'}. Длина: ${plan?.length || 'short'}. Вопрос разрешён: ${plan?.shouldAskQuestion ? 'да, только один конкретный' : 'нет'}.
+
+Смысловые обязательства, которые нельзя потерять:
+${obligations || '- Ответить на текущую реплику по смыслу.'}
+
+Нужно исправить:
+${guidance || '- Сделать реплику конкретной и личной.'}
+
+Запрещено:
+${forbidden || '- Ассистентские формулы и общие выводы.'}`
+    },
+    {
+      role: 'user',
+      content: `Реплика пользователя: ${normalize(userText, 1200)}
+
+Черновик Рин: ${normalize(draft, 1800)}`
+    }
+  ];
+}
+
+async function repairReplyIfNeeded({ model, draft, verification, plan, brain, userText }) {
+  if (!verification?.needsRewrite || verification?.nonverbalLeak?.metaOnly) {
+    return { reply: verification?.reply || draft, verification, attempted: false, accepted: false, usage: null };
+  }
+  try {
+    const completion = await openaiChat({
+      model,
+      messages: rewriteMessages({ draft, verification, plan, brain, userText }),
+      ...REWRITE_PARAMS
+    });
+    if (!completion.content || completion.finishReason === 'length') throw new Error('rewrite_incomplete');
+    const polished = polishRinReply(completion.content, { replyStyle: plan?.responseAct === 'take_lead' ? 'bold_tease' : null });
+    const nextVerification = verifyReply(polished, { plan, brain, userText });
+    const improved = !nextVerification.needsRewrite
+      && nextVerification.passed
+      && (nextVerification.warnings.length < verification.warnings.length || verification.needsRewrite);
+    if (improved) return { reply: nextVerification.reply, verification: nextVerification, attempted: true, accepted: true, usage: completion.usage || null };
+  } catch (error) {
+    console.warn('Rin reply rewrite failed', error?.message || error);
+  }
+  const fallback = deterministicAgencyFallback(plan, userText);
+  if (fallback && (
+    plan?.responseAct === 'reassure_with_boundary'
+    || ['missing_required_agency', 'scene_goal_drift', 'assistant_permission_seeking', 'meta_conversation_commentary', 'initiative_collapsed_into_assistant_voice'].some(item => verification.warnings.includes(item))
+  )) {
+    const fallbackVerification = verifyReply(fallback, { plan, brain, userText });
+    return { reply: fallback, verification: fallbackVerification, attempted: true, accepted: true, fallback: true, usage: null };
+  }
+  return { reply: verification.reply, verification, attempted: true, accepted: false, usage: null };
+}
+
 function compactCognition(cognition = {}) {
   return {
     schema: cognition.schema,
@@ -285,9 +381,9 @@ export default async function handler(req, res) {
     if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Chat service is not configured', code: 'CHAT_NOT_CONFIGURED' });
 
     const requestId = normalize(body.requestId, 100);
-    const normalized = selectModelHistory(body.history || [], { includeRequestId: requestId });
-    const history = pruneModelHistory(normalized);
-    const currentTurn = currentUserTurn(history, requestId);
+    const fullHistory = selectModelHistory(body.history || [], { includeRequestId: requestId });
+    const history = pruneModelHistory(fullHistory, 42, 12_000);
+    const currentTurn = currentUserTurn(fullHistory, requestId);
     const userTurn = normalize(currentTurn?.content, 2000);
     if (!userTurn) return res.status(400).json({ error: 'A user message is required', code: 'INVALID_HISTORY' });
 
@@ -295,16 +391,16 @@ export default async function handler(req, res) {
     const memory = body.memory && typeof body.memory === 'object' ? body.memory : null;
     const lore = body.lore && typeof body.lore === 'object' ? body.lore : null;
     const env = body.env && typeof body.env === 'object' ? body.env : null;
-    const conversationState = detectConversationState(history);
-    const explicitReply = explicitReplyFromTurn(currentTurn, history);
+    const conversationState = detectConversationState(fullHistory);
+    const explicitReply = explicitReplyFromTurn(currentTurn, fullHistory);
     const isLong = Boolean(body?.client?.forceLong) || detectLongMode(userTurn);
-    const conversationBrain = analyzeConversation({ userText: userTurn, history, conversationState });
-    const cognition = buildCognitiveTurn({ userText: userTurn, history, memory, brain: conversationBrain, conversationState, explicitReply });
-    const coreDecision = buildCoreDecision({ userText: userTurn, history, memory, conversationState, isLong, conversationBrain });
-    const responsePlan = planResponse({ cognition, brain: conversationBrain, coreDecision, memory, userText: userTurn, history, isLong });
+    const conversationBrain = analyzeConversation({ userText: userTurn, history: fullHistory, conversationState });
+    const cognition = buildCognitiveTurn({ userText: userTurn, history: fullHistory, memory, brain: conversationBrain, conversationState, explicitReply });
+    const coreDecision = buildCoreDecision({ userText: userTurn, history: fullHistory, memory, conversationState, isLong, conversationBrain });
+    const responsePlan = planResponse({ cognition, brain: conversationBrain, coreDecision, memory, userText: userTurn, history: fullHistory, isLong });
     const prompt = buildSystemPrompt({
       profile, env, memory, lore, coreDecision, conversationState, conversationBrain, cognition, responsePlan,
-      history, userText: userTurn, client: body.client || {}
+      history: fullHistory, userText: userTurn, client: body.client || {}
     });
 
     const messages = [
@@ -322,8 +418,17 @@ export default async function handler(req, res) {
     if (!completion.content) return res.status(502).json({ error: 'Model returned an empty response', code: 'EMPTY_MODEL_RESPONSE', requestId });
 
     const polished = polishRinReply(completion.content, coreDecision);
-    const verification = verifyReply(polished, { plan: responsePlan, brain: conversationBrain, userText: userTurn, history });
-    const clean = verification.reply;
+    const initialVerification = verifyReply(polished, { plan: responsePlan, brain: conversationBrain, userText: userTurn, history: fullHistory });
+    const repair = await repairReplyIfNeeded({
+      model,
+      draft: initialVerification.reply,
+      verification: initialVerification,
+      plan: responsePlan,
+      brain: conversationBrain,
+      userText: userTurn
+    });
+    const verification = repair.verification;
+    const clean = repair.reply;
     const preferredRecoverySticker = coreDecision.nonverbalAction?.preferredStickerId || verification.nonverbalLeak?.preferredStickerId || null;
     const delivery = verification.nonverbalLeak?.metaOnly && preferredRecoverySticker ? {
       type: 'sticker',
@@ -338,14 +443,19 @@ export default async function handler(req, res) {
     const stateTransition = buildStateTransition({ cognition, coreDecision });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-v6-message-replies',
+      promptVersion: 'rin-v7-scene-agency',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
       inputTokens: usage.prompt_tokens ?? null,
       outputTokens: usage.completion_tokens ?? null,
       totalTokens: usage.total_tokens ?? null,
-      cachedInputTokens: usage.prompt_tokens_details?.cached_tokens ?? null
+      cachedInputTokens: usage.prompt_tokens_details?.cached_tokens ?? null,
+      rewriteAttempted: repair.attempted,
+      rewriteAccepted: repair.accepted,
+      rewriteFallback: Boolean(repair.fallback),
+      rewriteInputTokens: repair.usage?.prompt_tokens ?? null,
+      rewriteOutputTokens: repair.usage?.completion_tokens ?? null
     };
 
     return res.status(200).json({
