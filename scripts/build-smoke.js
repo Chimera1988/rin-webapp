@@ -32,7 +32,7 @@ const activeSources = [
   'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
   'lib/server/http.js', 'public/chat.js', 'public/js/login.js',
   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
-  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js'
+  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
 ];
 const forbidden = ['stickers-v4', 'stickers-v5.test', 'response_postprocessor', '/data/rin_persona.json', '/data/rin_mind.json', '/data/rin_reasoning.json', '/data/rin_speaking_habits.json'];
 for (const file of activeSources) {
@@ -66,6 +66,16 @@ if (!await exists('public/data/legacy/README.md')) fail('Legacy canon must be is
 const memorySource = await read('public/js/rin_memory.js');
 if (!memorySource.includes('navigator?.locks')) fail('Diary writes must use a cross-tab lock when the browser supports Web Locks.');
 
+
+
+const stickerContractUrl = pathToFileURL(path.join(root, 'public/lib/sticker-contract.js')).href;
+const stickerContract = await import(`${stickerContractUrl}?build-smoke=${Date.now()}`);
+const stickerConfig = JSON.parse(await read('public/data/stickers-v6.json'));
+const { readdir } = await import('node:fs/promises');
+const stickerAssets = new Set((await readdir(path.join(root, 'public/stickers'))).map(file => `/stickers/${file}`));
+const stickerValidation = stickerContract.validateStickerConfig(stickerConfig, stickerAssets);
+if (!stickerValidation.ok) fail(`Sticker manifest invalid: ${stickerValidation.errors.join('; ')}`);
+if (stickerAssets.size !== 34) fail(`Expected 34 sticker assets, found ${stickerAssets.size}.`);
 
 const httpModuleUrl = pathToFileURL(path.join(root, 'lib/server/http.js')).href;
 const httpModule = await import(`${httpModuleUrl}?build-smoke=${Date.now()}`);

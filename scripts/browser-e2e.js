@@ -70,7 +70,7 @@ const server = createServer(async (req, res) => {
         reply,
         finishReason: 'stop',
         long: false,
-        coreDecision: { initiative: { mode: 'none' } }
+        coreDecision: { initiative: { mode: 'none' }, nonverbalAction: current.includes('Целую тебя') ? { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 } : null, emotionalResponse: { intensity: current.includes('Целую тебя') ? 90 : 40 } }, conversationBrain: { activeScene: { type: current.includes('Целую тебя') ? 'romance' : 'everyday' }, hiddenIntent: { type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none' } }
       });
     }
     if (url.pathname === '/api/tts') return json(res, 503, { error: 'disabled', code: 'TTS_NOT_CONFIGURED' });
@@ -198,7 +198,7 @@ try {
   assert(await cdp.evaluate("localStorage.getItem('rin-pin') === null"), 'invalid PIN must not be saved');
 
   await cdp.evaluate(`(() => {
-    localStorage.setItem('rin-sticker-mode', 'off');
+    localStorage.setItem('rin-sticker-mode', 'always');
     localStorage.setItem('rin-profile-v1', JSON.stringify({ initiation: { max_per_day: 0, windows: [] } }));
     document.querySelector('#pinInput').disabled = false;
     document.querySelector('#pinInput').value = '1357';
@@ -321,6 +321,19 @@ try {
   const retryBody = chatBodies.at(-1);
   assert([...retryBody.history].at(-1)?.content === 'FAIL_ONCE', 'retried turn must be the final current context item');
 
+  await send('Целую тебя 💋');
+  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v3') || '[]').some(m => m.kind === 'sticker' && m.sticker?.id === 'kiss')", 'standalone kiss sticker');
+  const kissTurn = await cdp.evaluate(`(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v3') || '[]');
+    const sticker = history.find(m => m.kind === 'sticker' && m.sticker?.id === 'kiss');
+    const rows = [...document.querySelectorAll('#chat .row')];
+    return { sticker, lastHasText: rows.at(-1)?.querySelector('.bubble')?.textContent?.includes('Ответ на: Целую тебя') || false };
+  })()`);
+  assert(Boolean(kissTurn.sticker) && !kissTurn.lastHasText, 'kiss must be a sticker-only assistant turn');
+  await send('Ты чего?');
+  await waitFor(cdp, completedUsers(7), 'follow-up after sticker');
+  assert(chatBodies.at(-1)?.history?.some(item => item.kind === 'sticker' && item.content.includes('поцел')), 'next request must include semantic sticker context');
+
   const lifecycle = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v3') || '[]');
     return {
@@ -334,7 +347,7 @@ try {
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
 
-  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker and follow-up context; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);
