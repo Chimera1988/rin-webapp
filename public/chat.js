@@ -280,9 +280,6 @@ async function loadDossierForChat(key, url, invalidMessage) {
   }
 }
 
-const loadPromptProfileForChat = () =>
-  loadDossierForChat('prompt profile', '/data/rin_prompt_profile.json', 'invalid prompt profile');
-
 async function ensureLoreReady() {
   if (loreLib) return loreLib;
 
@@ -306,21 +303,15 @@ async function ensureActiveProfile() {
   if (globalProfile && typeof globalProfile === 'object') profile = globalProfile;
   if (!profile || typeof profile !== 'object') profile = {};
 
-  const promptProfile =
-    profile.prompt_profile ||
-    await loadPromptProfileForChat();
-
-  // В API отправляется единый компактный профиль. Канон модели приходит только
-  // из rin_prompt_profile.json, пользовательский профиль содержит лишь overrides.
+  // Канонический prompt-профиль принадлежит серверу. Клиент передаёт только
+  // пользовательские overrides и настройки инициативы, но не может подменить canon.
   profile = {
     name: profile.name || 'Рин Акихара',
     description: profile.description || '',
-    base_rules: profile.base_rules || '',
     instructions_extra: profile.instructions_extra || '',
     knowledge: profile.knowledge || '',
     starters: Array.isArray(profile.starters) ? profile.starters : [],
-    initiation: profile.initiation || null,
-    ...(promptProfile ? { prompt_profile: promptProfile } : {})
+    initiation: profile.initiation || null
   };
 
   return profile;
@@ -356,7 +347,7 @@ async function ensureMemoryReady() {
  * Формирует компактный пакет памяти для модели.
  * Весь дневник не отправляем, чтобы не раздувать запрос.
  */
-async function buildMemoryPayload() {
+async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
   const numberOr = (value, fallback = null) => {
     const number = Number(value);
     return Number.isFinite(number) ? number : fallback;
@@ -429,18 +420,24 @@ async function buildMemoryPayload() {
             ts: numberOr(item?.ts)
           })).filter(item => item.text)
         : [],
-      innerLife: diary.innerLife && typeof diary.innerLife === 'object'
-        ? {
-            activity: String(diary.innerLife.activity || '').slice(0, 180),
-            trace: String(diary.innerLife.trace || '').slice(0, 220),
-            focus: String(diary.innerLife.focus || '').slice(0, 220),
-            privateThought: String(diary.innerLife.privateThought || '').slice(0, 260),
-            part: String(diary.innerLife.part || '').slice(0, 20),
-            startedAt: numberOr(diary.innerLife.startedAt),
-            expiresAt: numberOr(diary.innerLife.expiresAt),
-            lastSpontaneousAt: numberOr(diary.innerLife.lastSpontaneousAt),
-            interactionCount: numberOr(diary.innerLife.interactionCount, 0)
-          }
+      innerLife: (innerLifeOverride || diary.innerLife) && typeof (innerLifeOverride || diary.innerLife) === 'object'
+        ? (() => {
+            const state = innerLifeOverride || diary.innerLife;
+            return {
+              activity: String(state.activity || '').slice(0, 180),
+              trace: String(state.trace || '').slice(0, 220),
+              focus: String(state.focus || '').slice(0, 220),
+              privateThought: String(state.privateThought || '').slice(0, 260),
+              part: String(state.part || '').slice(0, 20),
+              startedAt: numberOr(state.startedAt),
+              expiresAt: numberOr(state.expiresAt),
+              lastSpontaneousAt: numberOr(state.lastSpontaneousAt),
+              interactionCount: numberOr(state.interactionCount, 0)
+            };
+          })()
+        : null,
+      conversationState: diary.conversationState && typeof diary.conversationState === 'object'
+        ? diary.conversationState
         : null
     };
   } catch (error) {
@@ -535,55 +532,21 @@ setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
 /* НАСТРОЕНИЕ РИН */
 /* ============================= */
 
-function analyzeUserMoodImpact(userText = '') {
-  const text = String(userText || '').toLowerCase().trim();
-  const mood = { affection: 0, energy: 0 };
-  const relationship = { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0 };
-  if (!text) return { mood, relationship };
-
-  if (/(спасибо|благодарю|ты милая|ты хорошая|рад тебя видеть|соскучился|обнимаю|целую|люблю тебя|мне приятно с тобой|ты мне нравишься)/i.test(text)) {
-    mood.affection += 3;
-    relationship.trust += 1;
-    relationship.closeness += 1;
-  }
-  if (/(шучу|шутка|хаха|ахаха|😁|😏|😉|подкол|пофлиртуем|флирт)/i.test(text)) {
-    mood.affection += 1;
-    relationship.playfulness += 3;
-  }
-  if (/(хочу рассказать|никому не говорил|только тебе|поделюсь с тобой|мне важно твоё мнение|я доверяю тебе)/i.test(text)) {
-    mood.affection += 2;
-    relationship.trust += 3;
-    relationship.closeness += 1;
-  }
-  if (/(устал|вымотался|тяжёлый день|нет сил|выгорел|хочу спать|очень тяжело|мне грустно|плохо на душе|расстроен|одиноко|обидно|печально|не получилось)/i.test(text)) {
-    mood.energy -= 3;
-    mood.affection += 1;
-    relationship.playfulness -= 2;
-  }
-  if (/(заткнись|отстань|бесишь|глупая|тупая|ненавижу тебя|замолчи)/i.test(text)) {
-    mood.affection -= 8;
-    mood.energy -= 5;
-    relationship.playfulness -= 4;
-    relationship.trust -= 4;
-    relationship.respect -= 3;
-  }
-  return { mood, relationship };
-}
-
-async function updateRinMoodFromMessage(userText) {
-  try {
-    const lib = await ensureMemoryReady();
-    if (!lib?.updateMood || !lib?.applyMoodTimeDecay) return null;
-    await lib.applyMoodTimeDecay();
-    const delta = analyzeUserMoodImpact(userText);
-    const mood = await lib.updateMood({ ...delta.mood, lastInteractionAt: Date.now() });
-    await lib.updateRelationship?.({ ...delta.relationship, lastInteractionAt: Date.now() });
-    if (mood) dbg(`mood updated: ${mood.label}; affection=${mood.affection}; energy=${mood.energy}`);
-    return mood;
-  } catch (error) {
-    dbg('mood update failed: ' + (error?.message || error));
-    return null;
-  }
+async function commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore }) {
+  const transition = data?.stateTransition || null;
+  const spontaneous = data?.coreDecision?.initiative?.mode === 'small_observation';
+  const committed = await memoryModule?.commitTurnState?.({
+    requestId: userMessage.requestId,
+    innerLife: preparedInnerLife,
+    stateTransition: transition,
+    moodDelta: transition?.moodDelta || null,
+    relationshipDelta: transition?.relationshipDelta || null,
+    spontaneous,
+    now: Date.now()
+  });
+  if (preparedLore) loreModule?.commitLorePayload?.(preparedLore);
+  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}`);
+  return committed;
 }
 
 /* Стикеры вызываются внутри сериализованного диалогового потока. */
@@ -1346,13 +1309,10 @@ async function greet() {
     }
     if (!greeting) greeting = pool === 'morning' ? 'Доброе утро. Как ты?' : pool === 'evening' ? 'Добрый вечер. Как твой день?' : pool === 'night' ? 'Тихая ночь тут… ты как?' : 'Привет. Как ты?';
 
-    const stickerDecision = await maybeSticker('', greeting, null, { render: false });
-    if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
     const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: greeting });
     addBubble(greeting, 'assistant', message.ts, { message });
     history.push(message);
     saveHistory(history);
-    if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
     return true;
   } finally {
     greetingActive = false;
@@ -1404,8 +1364,6 @@ async function commitStickerDecision(decision, replyLink = null) {
   if (!rendered) return false;
   stickersLib?.markStickerSent?.(decision.sticker);
   history.push(message); saveHistory(history);
-  const memory = await ensureMemoryReady();
-  await memory?.rememberStickerEmotion?.({ ...message.sticker, explanation: decision.explanation });
   dbg(`sticker send: id=${decision.sticker.id}; delivery=${decision.delivery}; reason=${decision.reason}`);
   return true;
 }
@@ -1413,41 +1371,28 @@ async function commitStickerDecision(decision, replyLink = null) {
 async function maybeSticker(userText, replyText, responseMeta = null, options = {}) {
   try {
     await ensureStickersReady();
-    const forcedDelivery = responseMeta?.delivery?.type === 'sticker' ? responseMeta.delivery : null;
     if (!stickersLib || !STICKERS_CFG || lsStickerMode() === 'off') return null;
-    const memory = (await buildMemoryPayload()) || {};
-    const plannedNonverbal = forcedDelivery ? {
-      preferredStickerId: forcedDelivery.preferredStickerId,
-      delivery: forcedDelivery.delivery || 'sticker_only',
-      standalone: true,
-      cause: forcedDelivery.cause || null,
-      intensity: forcedDelivery.intensity || 45
-    } : responseMeta?.coreDecision?.nonverbalAction || null;
-    const decision = stickersLib.decideSticker(STICKERS_CFG, {
-      userText: userText || '',
-      replyText: replyText || '',
-      mood: memory.mood || {},
-      relationship: memory.relationship || {},
-      mode: forcedDelivery ? 'always' : lsStickerMode() === 'always' ? 'always' : 'smart',
-      baseProbability: forcedDelivery ? 100 : lsStickerProb(),
-      context: {
-        safeMode: lsStickerSafe(),
-        scene: responseMeta?.conversationBrain?.activeScene?.type || '',
-        intent: responseMeta?.coreDecision?.intent || '',
-        userEmotion: responseMeta?.coreDecision?.userEmotion || '',
-        deliveryStyle: responseMeta?.coreDecision?.deliveryStyle || '',
-        hiddenIntent: responseMeta?.conversationBrain?.hiddenIntent?.type || '',
-        intensity: responseMeta?.conversationBrain?.intensity,
-        feltEmotion: responseMeta?.coreDecision?.emotionalResponse?.feltEmotion || '',
-        emotionalResponse: responseMeta?.coreDecision?.emotionalResponse || null,
-        nonverbalAction: plannedNonverbal,
-        preferredStickerId: plannedNonverbal?.preferredStickerId || null,
-        cause: plannedNonverbal?.cause || null,
-        relationalCloseness: ['relationship_reassurance','bid_for_reassurance'].includes(responseMeta?.conversationBrain?.hiddenIntent?.type)
-      }
-    });
-    if (decision?.action === 'send' && decision?.sticker && options.render !== false) await commitStickerDecision(decision);
-    return decision || null;
+
+    // Для модельного хода семантика стикера уже определена серверным TurnDecision.
+    // Клиент может только применить пользовательскую display-policy (off/smart/always),
+    // но не выбирает другую эмоцию или другой стикер по тексту повторно.
+    if (responseMeta) {
+      const planned = responseMeta?.delivery?.nonverbal || null;
+      if (!planned) return null;
+      const decision = stickersLib.decidePlannedSticker?.(STICKERS_CFG, {
+        planned,
+        mode: lsStickerMode() === 'always' ? 'always' : 'smart',
+        baseProbability: lsStickerProb(),
+        safeMode: lsStickerSafe()
+      }) || null;
+      if (decision?.action === 'send' && decision?.sticker && options.render !== false) await commitStickerDecision(decision);
+      return decision;
+    }
+
+    // Proactive/greeting messages do not yet pass through /api/chat. Foundation v1
+    // therefore keeps them text-only rather than reviving a second semantic sticker
+    // classifier. Their full TurnDecision migration belongs to the autonomy stage.
+    return null;
   } catch (error) {
     dbg('stickers error: ' + (error?.message || error));
     return null;
@@ -1467,7 +1412,7 @@ async function tryInitiateBySchedule() {
   const window = windows.find(item => inWindow(date, item.from, item.to) && Math.random() < Number(item.probability ?? 0.35));
   if (!window) return false;
 
-  const last = [...history].reverse().find(item => ['text', 'voice'].includes(item?.kind || 'text'));
+  const last = [...history].reverse().find(item => ['text', 'voice', 'sticker', 'silence'].includes(item?.kind || 'text'));
   const silenceMinutes = policy.minimumSilenceMinutes;
   if (!last || last.role !== 'assistant' || Date.now() - Number(last.ts || Date.now()) < silenceMinutes * 60_000) return false;
 
@@ -1498,13 +1443,10 @@ async function tryInitiateBySchedule() {
   }
   if (typing?.isConnected) typing.remove();
 
-  const stickerDecision = await maybeSticker('', text, null, { render: false });
-  if (stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
   const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: text });
   addBubble(text, 'assistant', message.ts, { message });
   history.push(message);
   saveHistory(history);
-  if (stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
   bumpInitCount(dateKey);
   presence.finishTurn(presenceTurn);
   return true;
@@ -1613,13 +1555,14 @@ async function processUserMessage(messageId) {
     await memoryJobRunner.drain();
     if (shouldRefreshEnvironment(userMessage.content)) await refreshRinEnv();
     const memoryModule = await ensureMemoryReady();
-    await memoryModule?.advanceInnerLife?.(currentEnv || {}, userMessage.content);
+    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, userMessage.content);
     const [memory, activeProfile, loreModule] = await Promise.all([
-      buildMemoryPayload(),
+      buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
       ensureActiveProfile(),
       ensureLoreReady()
     ]);
-    const lore = await loreModule?.buildLorePayload?.(userMessage.content);
+    const preparedLore = await loreModule?.buildLorePayload?.(userMessage.content);
+    const lore = loreModule?.lorePayloadForApi?.(preparedLore) || null;
     const response = await fetchWithTimeout('/api/chat', {
       method: 'POST',
       headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
@@ -1657,7 +1600,7 @@ async function processUserMessage(messageId) {
     const intentionalSilence = data?.delivery?.type === 'silence';
     if (intentionalSilence) {
       if (typingRow?.isConnected) typingRow.remove();
-      await updateRinMoodFromMessage(userMessage.content);
+      await commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore });
       const silenceMessage = createChatMessage({
         role: 'assistant', kind: 'silence', status: 'complete', content: '',
         requestId: userMessage.requestId, inReplyTo: userMessage.id,
@@ -1684,7 +1627,7 @@ async function processUserMessage(messageId) {
     }
 
     if (typingRow?.isConnected) typingRow.remove();
-    await updateRinMoodFromMessage(userMessage.content);
+    await commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore });
     const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
     const stickerOnly = stickerDecision?.action === 'send' && stickerDecision?.delivery === 'sticker_only';
     const plannedReplyLink = replyLinkFromResponsePlan(data?.responsePlan);
@@ -1726,7 +1669,6 @@ async function processUserMessage(messageId) {
     if (!stickerOnly && stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
     finishPresence();
 
-    if (data?.coreDecision?.initiative?.mode === 'small_observation') await memoryModule?.markInnerLifeSpontaneous?.();
     if (shouldAnalyzeConversationForMemory(userMessage.content)) {
       enqueueMemoryJob({ id: userMessage.id, userText: userMessage.content, assistantText: reply }, localStorage);
       void memoryJobRunner.drain();
