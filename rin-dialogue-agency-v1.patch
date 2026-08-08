@@ -1,0 +1,2205 @@
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/api/chat.js b/api/chat.js
+--- a/api/chat.js	2026-08-08 10:18:42.000000000 +0000
++++ b/api/chat.js	2026-08-08 11:51:23.218835455 +0000
+@@ -163,7 +163,7 @@
+   return {
+     mode: normalize(plan.tone, 100) || 'calm_personal',
+     opening: 'contextual',
+-    ending: plan.shouldAskQuestion ? 'specific_question' : 'natural_stop',
++    ending: Number(plan.questionBudget) > 0 ? 'specific_question' : 'natural_stop',
+     description: descriptions[plan.tone] || 'естественная личная реплика, форма которой следует из смысла и состояния'
+   };
+ }
+@@ -175,7 +175,7 @@
+   const plan = responsePlan || {
+     goal: conversationBrain?.responseFocus || 'ответить на текущую реплику',
+     mustAddress: conversationBrain?.obligations || [],
+-    factsToUse: [], factsToAvoid: [], stance: 'личная позиция Рин', tone: 'calm_personal', directness: 'balanced', initiative: 'none', delivery: 'text', length: 'short', shouldAskQuestion: false, uncertaintyPolicy: 'не выдумывать', confidence: 0.6
++    factsToUse: [], factsToAvoid: [], stance: 'личная позиция Рин', tone: 'calm_personal', directness: 'balanced', initiative: 'none', delivery: 'text', length: 'short', questionBudget: 0, shouldAskQuestion: false, uncertaintyPolicy: 'не выдумывать', confidence: 0.6
+   };
+   const voiceMode = voiceModeFromPlan(plan);
+   const stateRule = conversationState === 'ending'
+@@ -295,6 +295,16 @@
+       'Нет. Когда буду занята — скажу сама.',
+       'Не отвлекаешь. Я умею сказать, когда мне нужно вернуться к делам.',
+       'Сейчас нет. А если начнёшь мешать — я тебя предупрежу.'
++    ],
++    contained_jealousy: [
++      'Вот как… значит, вечер у тебя уже занят. Ладно. Иди 😌',
++      'Мм. Смело с её стороны. Я, пожалуй, запомню эту деталь.',
++      'Понятно. Тогда я просто сделаю вид, что меня это совсем не задело 😌'
++    ],
++    carry_playful_tension: [
++      'Мм, поздно оправдываться. Я уже запомнила 😌',
++      'Не-не. Теперь не выкручивайся — сам начал.',
++      'Угу. А теперь живи с тем, что я это тебе ещё припомню.'
+     ]
+   };
+   const pool = variants[plan?.responseAct];
+@@ -312,7 +322,10 @@
+ 
+ Сохрани факты и прямой смысл, но перепиши голос так, чтобы Рин не звучала ассистентом: у неё есть собственная позиция, она не пересказывает пользователя, не оценивает разговор со стороны, не хвалит очевидное и не заканчивает автоматическим вопросом.
+ 
+-Активная сцена: ${brain?.activeScene?.type || 'everyday'}. Цель сцены: ${plan?.sceneGoal || brain?.activeScene?.goal || 'ответить конкретно'}. Речевой акт: ${plan?.responseAct || 'direct_response'}. Тон: ${plan?.tone || 'calm_personal'}. Длина: ${plan?.length || 'short'}. Вопрос разрешён: ${plan?.shouldAskQuestion ? 'да, только один конкретный' : 'нет'}.
++Активная сцена: ${brain?.activeScene?.type || 'everyday'}. Цель сцены: ${plan?.sceneGoal || brain?.activeScene?.goal || 'ответить конкретно'}.
++Behavior policy: действие ${plan?.behavior?.action || 'react'}; речевой акт ${plan?.responseAct || 'direct_response'}; инициатива ${plan?.initiative || 'none'}; выражение эмоции ${plan?.behavior?.emotionalExpression || 'natural'}; дистанция ${plan?.behavior?.distance || 'stable'}.
++Эмоциональная линия: ${plan?.emotionalIntent?.primary?.type || 'neutral'}; динамика ${plan?.emotionalIntent?.momentum?.direction || 'steady'}. ${plan?.emotionalIntent?.momentum?.direction === 'playful' ? 'Игровая линия уже активна: сохрани игровое напряжение и не уходи в нейтральную безопасную тему.' : ''}
++Тон: ${plan?.tone || 'calm_personal'}. Длина: ${plan?.length || 'short'}. Бюджет вопросов: ${Number(plan?.questionBudget) || 0}. ${Number(plan?.questionBudget) > 0 ? 'Разрешён только один конкретный вопрос.' : 'Вопросительные предложения запрещены.'}
+ 
+ Смысловые обязательства, которые нельзя потерять:
+ ${obligations || '- Ответить на текущую реплику по смыслу.'}
+@@ -353,12 +366,20 @@
+     console.warn('Rin reply rewrite failed', error?.message || error);
+   }
+   const fallback = deterministicAgencyFallback(plan, userText);
++  const behavioralFallbackActs = new Set([
++    'take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play',
++    'reassure_with_boundary', 'contained_jealousy', 'carry_playful_tension'
++  ]);
+   if (fallback && (
+-    plan?.responseAct === 'reassure_with_boundary'
+-    || ['missing_required_agency', 'scene_goal_drift', 'assistant_permission_seeking', 'meta_conversation_commentary', 'initiative_collapsed_into_assistant_voice'].some(item => verification.warnings.includes(item))
++    behavioralFallbackActs.has(plan?.responseAct)
++    || ['missing_required_agency', 'scene_goal_drift', 'assistant_permission_seeking', 'meta_conversation_commentary',
++      'initiative_collapsed_into_assistant_voice', 'emotional_state_contradiction', 'unplanned_question', 'question_budget_exceeded']
++      .some(item => verification.warnings.includes(item))
+   )) {
+     const fallbackVerification = verifyReply(fallback, { plan, brain, userText });
+-    return { reply: fallback, verification: fallbackVerification, attempted: true, accepted: true, fallback: true, usage: null };
++    if (!fallbackVerification.needsRewrite && fallbackVerification.passed) {
++      return { reply: fallbackVerification.reply, verification: fallbackVerification, attempted: true, accepted: true, fallback: true, usage: null };
++    }
+   }
+   return { reply: verification.reply, verification, attempted: true, accepted: false, usage: null };
+ }
+@@ -450,15 +471,15 @@
+         model: null,
+         long: false,
+         voiceMode: null,
+-        promptMetrics: { promptVersion: 'rin-stage4-emotional-inertia-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
++        promptMetrics: { promptVersion: 'rin-stage5-dialogue-agency-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+         conversationBrain,
+         cognition: compactCognition(cognition),
+         responsePlan,
+         affectiveTurn,
+-        verification: { version: 'rin-response-verifier-v4', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
++        verification: { version: 'rin-response-verifier-v6-dialogue-agency', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
+         delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
+         stateTransition,
+-        coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, initiative: coreDecision.initiative, reason: coreDecision.reason }
++        coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, reason: coreDecision.reason }
+       });
+     }
+     const prompt = buildSystemPrompt({
+@@ -496,7 +517,7 @@
+     const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
+     const usage = completion.usage || {};
+     const promptMetrics = {
+-      promptVersion: 'rin-stage4-emotional-inertia-v1',
++      promptVersion: 'rin-stage5-dialogue-agency-v1',
+       systemChars: prompt.text.length,
+       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
+       historyItems: history.length,
+@@ -540,7 +561,6 @@
+         microReaction: coreDecision.microReaction,
+         humanizer: coreDecision.humanizer,
+         recentRhythm: coreDecision.recentRhythm,
+-        initiative: coreDecision.initiative,
+         adviceGuard: coreDecision.adviceGuard,
+         affectiveTurn: coreDecision.affectiveTurn,
+         emotionalResponse: coreDecision.emotionalResponse,
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/cognition/behavior-policy.js b/lib/cognition/behavior-policy.js
+--- a/lib/cognition/behavior-policy.js	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/cognition/behavior-policy.js	2026-08-08 11:55:47.430820992 +0000
+@@ -0,0 +1,289 @@
++import { cleanText, stableHash } from './cognitive-contract.js';
++import { deriveCharacterIntent } from '../personality/character-intent-engine.js';
++import { deriveRelationshipIntent } from '../personality/relationship-engine.js';
++import { directConversation } from './conversation-director.js';
++
++const HEAVY_SCENES = new Set(['emotional_support', 'conflict_repair', 'farewell', 'medical', 'legal', 'financial', 'crisis']);
++const PLAYFUL_SCENES = new Set(['romance', 'playful_flirt']);
++const AGENCY_ACTS = new Set(['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'carry_playful_tension']);
++const EMOTION_QUESTION = /(ревну|ревность|обидел|обиделась|злишь|сердишь|раздраж|расстро|смути|что чувствуешь|что ты чувствуешь|тебя задел)/iu;
++const CONCRETE_DETAIL = /(сегодня|вчера|завтра|вечер|утро|работ|проект|встреч|девуш|друг|книг|фильм|музык|песн|игр|машин|поезд|город|купил|сделал|решил|планир|хочу|нравит|люблю)/iu;
++
++function clamp(value, min = 0, max = 100, fallback = 0) {
++  const number = Number(value);
++  return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
++}
++
++function relationshipSnapshot(memory = null, affectiveTurn = null) {
++  const relationship = affectiveTurn?.relationshipState || memory?.relationship || {};
++  const mood = affectiveTurn?.moodState || memory?.mood || {};
++  const trust = Number(relationship.trust) || 0;
++  const closeness = Number(relationship.closeness) || 0;
++  const playfulness = Number(relationship.playfulness) || 0;
++  const affection = Number(mood.affection) || 0;
++  const familiar = trust >= 50 && closeness >= 38;
++  return {
++    trust,
++    closeness,
++    playfulness,
++    attraction: Number(relationship.attraction) || 0,
++    vulnerability: Number(relationship.vulnerability) || 0,
++    affection,
++    familiar,
++    close: trust >= 62 && closeness >= 55,
++    playfulReady: familiar && (playfulness >= 42 || affection >= 64)
++  };
++}
++
++function dialogueState(cognition = null, brain = null) {
++  return cognition?.dialogueState || {
++    scene: brain?.activeScene?.type || 'everyday',
++    sceneGoal: brain?.activeScene?.goal || null,
++    openHook: brain?.activeScene?.openHook || null,
++    reactiveStreak: brain?.activeScene?.reactiveStreak || 0,
++    questionStreak: brain?.activeScene?.questionStreak || 0,
++    topicDrift: Boolean(brain?.activeScene?.topicDrift)
++  };
++}
++
++function recentAssistantQuestionCount(history = [], limit = 3) {
++  return (Array.isArray(history) ? history : [])
++    .filter(item => item?.role === 'assistant' && item?.kind !== 'silence')
++    .slice(-limit)
++    .filter(item => /\?/u.test(String(item?.content || '')))
++    .length;
++}
++
++function isExplicitInitiativeHandoff(text, hidden) {
++  return hidden === 'invite_rin_initiative'
++    || /(?:можешь начинать|начинай|весь в нетерпении|твоя очередь|поприста|пристава|удиви меня|теперь ты)/iu.test(text);
++}
++
++function chooseResponseAct({ brain, state, relation, userText, inputReplyTarget, emotionalState, affectiveSignal }) {
++  const scene = state?.scene || brain?.activeScene?.type || 'everyday';
++  const hidden = brain?.hiddenIntent?.type || 'none';
++  const literal = brain?.literalIntent || 'statement';
++  const text = cleanText(userText, 1800).toLowerCase();
++  const activeEmotion = emotionalState?.primary?.type || null;
++  const momentum = emotionalState?.momentum?.direction || 'steady';
++
++  if (inputReplyTarget?.kind === 'sticker' && hidden === 'ask_about_previous_nonverbal') return 'explain_previous_nonverbal';
++  if (inputReplyTarget) return 'answer_selected_message';
++  // A tease reveal such as “это была шутка, проверял тебя на ревность” is
++  // semantically a relationship move, even if lexical markers like “вообще-то”
++  // also look like a factual correction. Preserve the emotional scene first.
++  if (affectiveSignal?.type === 'tease_reveal' && momentum === 'playful') return 'carry_playful_tension';
++  if (brain?.ambiguity?.shouldClarify) return 'clarify_critical_ambiguity';
++  if (brain?.relation?.type === 'correction') return 'acknowledge_correction';
++  if (/(?:не отвлекаю|не мешаю|тебе не мешает|ты не занята|ты занята)/iu.test(text)) return 'reassure_with_boundary';
++  if (brain?.relation?.type === 'follow_up_on_rin_statement') return 'clarify_self';
++  if (literal === 'farewell') return 'close_warmly';
++  if (HEAVY_SCENES.has(scene)) return scene === 'conflict_repair' ? 'repair_connection' : 'be_present';
++
++  if (isExplicitInitiativeHandoff(text, hidden)) return 'take_lead';
++
++  if (literal === 'question' && activeEmotion && activeEmotion !== 'neutral' && EMOTION_QUESTION.test(text)) {
++    return 'name_emotion_if_asked';
++  }
++
++  if (affectiveSignal?.type === 'romantic_rival' && activeEmotion === 'jealousy') return 'contained_jealousy';
++  if (momentum === 'repairing') return 'soften_after_repair';
++
++  // Active playful momentum is a conversational state, not a question-answering mode.
++  // A teasing/challenging question should keep the game alive instead of collapsing
++  // into the generic `answer_directly` branch.
++  if (momentum === 'playful' && ['playful_irritation', 'playfulness', 'shyness', 'jealousy'].includes(activeEmotion)
++      && (affectiveSignal?.type === 'playful_challenge' || hidden === 'continue_playful_tension' || literal === 'short_confirmation'
++        || text.length <= 42 || /(?:смуща|попробуй|ну и где|давай|хорошо|иногда хочется|ого|не знаю)/iu.test(text))) {
++    return 'carry_playful_tension';
++  }
++
++  if (literal === 'question' && !['reclaim_playful_scene', 'continue_playful_tension'].includes(hidden)) return 'answer_directly';
++
++  if (['hurt', 'irritation', 'disappointment'].includes(activeEmotion) && ['tense', 'cooling'].includes(momentum)) {
++    return 'hold_emotional_boundary';
++  }
++
++  if (scene === 'playful_flirt') {
++    if (hidden === 'reclaim_playful_scene' || state?.topicDrift || /(флирт.*(?:философ|уш[её]л|перет[её]к)|мы же играем|подурач)/iu.test(text)) return 'reclaim_scene';
++    if (hidden === 'continue_playful_tension') return 'tease_and_advance';
++    if (literal === 'short_confirmation' || text.length <= 24) return 'advance_play';
++    if ((state?.reactiveStreak || 0) >= 2) return 'take_lead';
++    return relation?.playfulReady ? 'playful_stance' : 'warm_playful_reply';
++  }
++
++  if (scene === 'romance') {
++    if (hidden === 'seek_closeness' || literal === 'affection') return 'reciprocate_closeness';
++    return 'personal_closeness';
++  }
++
++  if (brain?.relation?.type === 'answers_previous_question' || literal === 'short_confirmation') return 'continue_dependency';
++  if (scene === 'reflective') return 'state_personal_view';
++  if (literal === 'gratitude') return 'accept_warmly';
++  if (literal === 'statement' && text.length >= 28) return 'specific_personal_reaction';
++  return 'direct_response';
++}
++
++function actionForAct(responseAct) {
++  if (responseAct === 'intentional_silence') return 'silence';
++  if (['answer_directly', 'answer_selected_message', 'explain_previous_nonverbal', 'acknowledge_correction'].includes(responseAct)) return 'answer';
++  if (responseAct === 'clarify_critical_ambiguity') return 'clarify';
++  if (['clarify_self', 'name_emotion_if_asked'].includes(responseAct)) return 'disclose';
++  if (['repair_connection', 'soften_after_repair'].includes(responseAct)) return 'repair';
++  if (['be_present', 'reciprocate_closeness', 'personal_closeness', 'accept_warmly'].includes(responseAct)) return 'react';
++  if (['contained_jealousy', 'playful_stance', 'warm_playful_reply'].includes(responseAct)) return 'tease';
++  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'carry_playful_tension'].includes(responseAct)) return 'continue_scene';
++  if (responseAct === 'hold_emotional_boundary') return 'boundary';
++  if (responseAct === 'specific_personal_reaction' || responseAct === 'state_personal_view') return 'disclose';
++  if (responseAct === 'continue_dependency') return 'continue_scene';
++  if (responseAct === 'close_warmly') return 'close';
++  return 'react';
++}
++
++function chooseInitiative({ responseAct, brain, cognition, relation, userText, history, state, emotionalState }) {
++  const scene = state?.scene || brain?.activeScene?.type || 'everyday';
++  if (AGENCY_ACTS.has(responseAct)) return { mode: responseAct, strength: 90, reason: 'самостоятельный ход уже обязателен по текущей сцене' };
++  if (responseAct === 'contained_jealousy') return { mode: 'emotional_stance', strength: 76, reason: 'Рин должна показать собственную реакцию, а не интервьюировать пользователя' };
++  if (responseAct === 'hold_emotional_boundary') return { mode: 'emotional_stance', strength: 70, reason: 'активная граница требует собственной позиции' };
++  if (responseAct === 'clarify_critical_ambiguity') return { mode: 'none', strength: 0, reason: 'уточнение должно быть единственным действием этого хода' };
++  if (['name_emotion_if_asked', 'clarify_self', 'reassure_with_boundary', 'explain_previous_nonverbal'].includes(responseAct)) {
++    return { mode: 'personal_disclosure', strength: 68, reason: 'нужен личный ответ Рин от первого лица' };
++  }
++  if (HEAVY_SCENES.has(scene) || brain?.literalIntent === 'question' || brain?.relation?.type === 'correction') {
++    return { mode: 'none', strength: 0, reason: 'прямое смысловое обязательство важнее дополнительной инициативы' };
++  }
++
++  const turns = (Array.isArray(history) ? history : []).filter(item => item?.role === 'assistant').length;
++  const roll = Number.parseInt(stableHash(`${userText}|${turns}|behavior-policy`).slice(-4), 36) % 100;
++  const recentQuestions = recentAssistantQuestionCount(history, 3);
++  const emotionallyActive = Boolean(emotionalState?.primary && emotionalState.primary.type !== 'neutral' && emotionalState.primary.intensity >= 35);
++
++  if (cognition?.openLoops?.callback && ((state?.reactiveStreak || 0) >= 2 || (turns >= 5 && roll < 12))) {
++    return { mode: 'return_to_open_loop', strength: 72, reason: 'есть релевантная незавершённая деталь, к которой Рин может вернуться сама' };
++  }
++  if ((state?.reactiveStreak || 0) >= 2 && relation.familiar) {
++    return { mode: 'personal_observation', strength: 74, reason: 'Рин слишком долго только отражала пользователя' };
++  }
++  if (relation.familiar && turns >= 3 && roll >= 12 && roll < 25) {
++    return { mode: 'personal_observation', strength: 58, reason: 'редкая собственная деталь Рин внутри текущей темы' };
++  }
++  if (relation.close && turns >= 5 && recentQuestions === 0 && (state?.questionStreak || 0) === 0
++      && !emotionallyActive && cleanText(userText, 1800).length >= 28 && CONCRETE_DETAIL.test(userText) && roll < 7) {
++    return { mode: 'specific_personal_question', strength: 52, reason: 'редкий конкретный вопрос из собственного интереса Рин' };
++  }
++  return { mode: 'none', strength: 0, reason: 'дополнительная инициатива не нужна; собственная позиция остаётся внутри ответа' };
++}
++
++function questionPolicy({ brain, state, responseAct, initiative, history }) {
++  if (responseAct === 'intentional_silence') return { budget: 0, reason: 'молчание не содержит вопроса' };
++  if (responseAct === 'clarify_critical_ambiguity') return { budget: 1, reason: 'один вопрос нужен только для критической неоднозначности' };
++  if ((state?.questionStreak || 0) >= 1 || recentAssistantQuestionCount(history, 3) >= 1) {
++    return { budget: 0, reason: 'недавний вопрос уже был; новый вопрос превратит разговор в интервью' };
++  }
++  if (initiative.mode === 'specific_personal_question') return { budget: 1, reason: initiative.reason };
++  return { budget: 0, reason: 'ход должен завершаться собственной реакцией или действием Рин, а не встречным вопросом' };
++}
++
++function expressionFor({ responseAct, emotionalState }) {
++  const type = emotionalState?.primary?.type || 'neutral';
++  if (responseAct === 'name_emotion_if_asked') return 'direct_if_asked';
++  if (responseAct === 'contained_jealousy' || type === 'jealousy') return 'indirect';
++  if (['hold_emotional_boundary', 'repair_connection'].includes(responseAct)) return 'clear_restrained';
++  if (['carry_playful_tension', 'take_lead', 'tease_and_advance', 'advance_play', 'playful_stance'].includes(responseAct)) return 'behavior_first';
++  return type === 'neutral' ? 'natural' : 'behavior_first';
++}
++
++function toneFor({ scene, responseAct, relation }) {
++  if (scene === 'emotional_support') return 'supportive_present';
++  if (scene === 'conflict_repair') return 'honest_repair';
++  if (scene === 'practical_task') return 'focused_competent';
++  if (scene === 'farewell') return 'warm_closing';
++  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension'].includes(responseAct)) return 'warm_bold_playful';
++  if (responseAct === 'contained_jealousy') return 'contained_jealous';
++  if (responseAct === 'hold_emotional_boundary') return 'contained_tense';
++  if (responseAct === 'soften_after_repair') return 'soft_repair';
++  if (PLAYFUL_SCENES.has(scene) && (relation.playfulReady || relation.close)) return 'warm_bold_playful';
++  return 'calm_personal';
++}
++
++function directnessFor({ scene, responseAct, relation, relationType }) {
++  if (relationType === 'correction' || responseAct === 'acknowledge_correction') return 'direct_accountable';
++  if (HEAVY_SCENES.has(scene)) return 'gentle_clear';
++  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension', 'contained_jealousy'].includes(responseAct)) return 'confident_playful';
++  if (responseAct === 'hold_emotional_boundary') return 'direct_personal_boundary';
++  if (responseAct === 'soften_after_repair') return 'gentle_clear';
++  if (relation.familiar && PLAYFUL_SCENES.has(scene)) return 'confident_playful';
++  return relation.familiar ? 'clear_personal' : 'balanced';
++}
++
++export function deriveBehaviorPolicy({ cognition = null, brain = null, coreDecision = null, memory = null, userText = '', history = [] } = {}) {
++  const affectiveTurn = coreDecision?.affectiveTurn || null;
++  const emotionalState = affectiveTurn?.emotionalState || memory?.conversationState?.emotionalState || null;
++  const state = dialogueState(cognition, brain);
++  const relation = relationshipSnapshot(memory, affectiveTurn);
++  const inputReplyTarget = state?.explicitReplyTarget || null;
++  const characterIntent = deriveCharacterIntent({ userText, dialogueState: state, brain, memory, affectiveTurn });
++  const relationshipIntent = deriveRelationshipIntent({ memory, history, dialogueState: state, affectiveTurn });
++  const director = directConversation({ userText, brain, dialogueState: state, history, explicitReplyTarget: inputReplyTarget, characterIntent, relationshipIntent });
++  const responseAct = director.delivery === 'silence'
++    ? 'intentional_silence'
++    : chooseResponseAct({ brain, state, relation, userText, inputReplyTarget, emotionalState, affectiveSignal: affectiveTurn?.signal });
++  const initiative = director.delivery === 'silence'
++    ? { mode: 'none', strength: 0, reason: 'выбрано осознанное молчание' }
++    : chooseInitiative({ responseAct, brain, cognition, relation, userText, history, state, emotionalState });
++  const question = questionPolicy({ brain, state, responseAct, initiative, history });
++  const scene = state?.scene || brain?.activeScene?.type || 'everyday';
++  const action = actionForAct(responseAct);
++  const emotionalExpression = expressionFor({ responseAct, emotionalState });
++  const topicHold = state?.topicDrift ? 'reclaim' : state?.openHook ? 'hold_open_hook' : 'hold_scene';
++  const distance = ['contained_jealousy', 'hold_emotional_boundary'].includes(responseAct) ? 'slightly_withdrawn'
++    : ['reciprocate_closeness', 'personal_closeness', 'soften_after_repair'].includes(responseAct) ? 'closer'
++      : 'stable';
++  const playfulness = ['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'warm_playful_reply', 'carry_playful_tension'].includes(responseAct)
++    ? clamp(Math.max(60, relation.playfulness), 0, 100, 60)
++    : responseAct === 'contained_jealousy' ? clamp(Math.max(42, relation.playfulness), 0, 100, 42)
++      : clamp(relation.playfulness, 0, 100, 0);
++
++  return {
++    version: 'rin-behavior-policy-v1',
++    action,
++    responseAct,
++    initiative: initiative.mode,
++    initiativeStrength: initiative.strength,
++    questionBudget: question.budget,
++    questionReason: question.reason,
++    emotionalExpression,
++    topicHold,
++    distance,
++    playfulness,
++    directness: directnessFor({ scene, responseAct, relation, relationType: brain?.relation?.type }),
++    tone: toneFor({ scene, responseAct, relation }),
++    delivery: director.delivery,
++    relationship: relation,
++    director,
++    characterIntent,
++    relationshipIntent,
++    reasons: [
++      `action:${action}`,
++      `act:${responseAct}`,
++      `initiative:${initiative.mode}`,
++      `initiativeReason:${initiative.reason}`,
++      `questionBudget:${question.budget}`,
++      `questionReason:${question.reason}`,
++      `emotionExpression:${emotionalExpression}`,
++      `topicHold:${topicHold}`,
++      `distance:${distance}`
++    ]
++  };
++}
++
++export function behaviorPolicyInstruction(policy = {}) {
++  return [
++    'BEHAVIOR POLICY v1 — ЕДИНСТВЕННЫЙ ИСТОЧНИК ДИАЛОГОВОГО ДЕЙСТВИЯ',
++    `Действие: ${policy.action || 'react'}; речевой акт: ${policy.responseAct || 'direct_response'}.`,
++    `Инициатива: ${policy.initiative || 'none'} (${Number(policy.initiativeStrength) || 0}/100).`,
++    `Бюджет вопросов: ${Number(policy.questionBudget) || 0}. Причина: ${policy.questionReason || 'вопрос не нужен'}.`,
++    `Выражение эмоции: ${policy.emotionalExpression || 'natural'}; дистанция: ${policy.distance || 'stable'}; удержание темы: ${policy.topicHold || 'hold_scene'}.`,
++    'Не меняй действие на встречный вопрос, мета-комментарий или нейтральное одобрение. Если бюджет вопросов 0 — в реплике не должно быть вопросительного предложения.'
++  ].join('\n');
++}
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/cognition/cognitive-contract.js b/lib/cognition/cognitive-contract.js
+--- a/lib/cognition/cognitive-contract.js	2026-08-08 10:28:38.000000000 +0000
++++ b/lib/cognition/cognitive-contract.js	2026-08-08 11:45:11.835545284 +0000
+@@ -160,7 +160,32 @@
+   };
+ }
+ 
++export function normalizeBehaviorPolicy(input = {}) {
++  const source = input && typeof input === 'object' ? input : {};
++  return {
++    version: cleanText(source.version, 80) || 'rin-behavior-policy-v1',
++    action: cleanText(source.action, 80) || 'react',
++    responseAct: cleanText(source.responseAct, 100) || 'direct_response',
++    initiative: cleanText(source.initiative, 100) || 'none',
++    initiativeStrength: clamp(source.initiativeStrength, 0, 100, 0),
++    questionBudget: clamp(source.questionBudget, 0, 1, 0),
++    questionReason: cleanText(source.questionReason, 320) || null,
++    emotionalExpression: cleanText(source.emotionalExpression, 80) || 'natural',
++    topicHold: cleanText(source.topicHold, 80) || 'hold_scene',
++    distance: cleanText(source.distance, 80) || 'stable',
++    playfulness: clamp(source.playfulness, 0, 100, 0),
++    directness: cleanText(source.directness, 80) || 'balanced',
++    tone: cleanText(source.tone, 120) || 'calm_personal',
++    delivery: cleanText(source.delivery, 80) || 'respond',
++    reasons: uniqueStrings(source.reasons, 10, 420)
++  };
++}
++
+ export function normalizeResponsePlan(input = {}) {
++  const behavior = normalizeBehaviorPolicy(input.behavior || {});
++  const questionBudget = input.questionBudget === undefined
++    ? clamp(input.shouldAskQuestion ? 1 : behavior.questionBudget, 0, 1, 0)
++    : clamp(input.questionBudget, 0, 1, 0);
+   return {
+     schema: RESPONSE_PLAN_SCHEMA,
+     goal: cleanText(input.goal, 500) || 'ответить на текущую реплику по смыслу',
+@@ -170,9 +195,10 @@
+     stance: cleanText(input.stance, 220) || 'личная и уважительная позиция Рин',
+     tone: cleanText(input.tone, 120) || 'calm_personal',
+     directness: cleanText(input.directness, 80) || 'balanced',
+-    initiative: cleanText(input.initiative, 100) || 'none',
+-    initiativeStrength: clamp(input.initiativeStrength, 0, 100, 0),
+-    responseAct: cleanText(input.responseAct, 100) || 'direct_response',
++    initiative: cleanText(input.initiative, 100) || behavior.initiative || 'none',
++    initiativeStrength: clamp(input.initiativeStrength, 0, 100, behavior.initiativeStrength),
++    responseAct: cleanText(input.responseAct, 100) || behavior.responseAct || 'direct_response',
++    behavior,
+     sceneGoal: cleanText(input.sceneGoal, 500) || null,
+     threadPolicy: cleanText(input.threadPolicy, 500) || null,
+     mustNot: uniqueStrings(input.mustNot, 10, 500),
+@@ -180,7 +206,8 @@
+     replyTarget: normalizeMessageTarget(input.replyTarget),
+     delivery: RESPONSE_DELIVERIES.has(cleanText(input.delivery, 80)) ? cleanText(input.delivery, 80) : 'text',
+     length: cleanText(input.length, 40) || 'short',
+-    shouldAskQuestion: Boolean(input.shouldAskQuestion),
++    questionBudget,
++    shouldAskQuestion: questionBudget > 0,
+     uncertaintyPolicy: cleanText(input.uncertaintyPolicy, 220) || 'state_uncertainty',
+     confidence: clamp01(input.confidence, 0.7),
+     director: input.director && typeof input.director === 'object' ? input.director : null,
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/cognition/index.js b/lib/cognition/index.js
+--- a/lib/cognition/index.js	2026-08-08 10:15:54.000000000 +0000
++++ b/lib/cognition/index.js	2026-08-08 11:45:19.602008101 +0000
+@@ -2,6 +2,7 @@
+ import { buildDialogueState, dialogueStateInstruction } from './dialogue-state.js';
+ import { buildBeliefModel, beliefInstruction } from './belief-model.js';
+ import { buildOpenLoops, openLoopsInstruction } from './open-loops.js';
++import { behaviorPolicyInstruction, deriveBehaviorPolicy } from './behavior-policy.js';
+ import { planResponse, responsePlanInstruction } from './response-planner.js';
+ import { verifyReply } from './response-verifier.js';
+ import { buildAffectiveTurn, affectiveInstruction } from './emotional-state.js';
+@@ -61,4 +62,4 @@
+   });
+ }
+ 
+-export { planResponse, responsePlanInstruction, verifyReply, buildAffectiveTurn, affectiveInstruction };
++export { deriveBehaviorPolicy, behaviorPolicyInstruction, planResponse, responsePlanInstruction, verifyReply, buildAffectiveTurn, affectiveInstruction };
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/cognition/response-planner.js b/lib/cognition/response-planner.js
+--- a/lib/cognition/response-planner.js	2026-08-08 10:26:24.000000000 +0000
++++ b/lib/cognition/response-planner.js	2026-08-08 11:55:47.431839536 +0000
+@@ -6,58 +6,26 @@
+   stableHash,
+   uniqueStrings
+ } from './cognitive-contract.js';
+-import { deriveCharacterIntent } from '../personality/character-intent-engine.js';
+-import { deriveRelationshipIntent } from '../personality/relationship-engine.js';
+-import { directConversation } from './conversation-director.js';
++import { behaviorPolicyInstruction, deriveBehaviorPolicy } from './behavior-policy.js';
+ 
+ const HEAVY_SCENES = new Set(['emotional_support', 'conflict_repair', 'farewell', 'medical', 'legal', 'financial', 'crisis']);
+ const REPLY_INITIATIVES = new Set(['specific_personal_question', 'personal_question', 'return_to_open_loop']);
+ const PLAYFUL_SCENES = new Set(['romance', 'playful_flirt']);
+ 
+-function relationshipLevel(memory = null, affectiveTurn = null) {
+-  const relationship = affectiveTurn?.relationshipState || memory?.relationship || {};
+-  const mood = affectiveTurn?.moodState || memory?.mood || {};
+-  const trust = Number(relationship.trust) || 0;
+-  const closeness = Number(relationship.closeness) || 0;
+-  const playfulness = Number(relationship.playfulness) || 0;
+-  const affection = Number(mood.affection) || 0;
+-  const familiar = trust >= 50 && closeness >= 38;
+-  return {
+-    trust,
+-    closeness,
+-    playfulness,
+-    attraction: Number(relationship.attraction) || 0,
+-    vulnerability: Number(relationship.vulnerability) || 0,
+-    affection,
+-    familiar,
+-    close: trust >= 62 && closeness >= 55,
+-    playfulReady: familiar && (playfulness >= 42 || affection >= 64)
+-  };
+-}
+-
+-function dialogue(cognition = null, brain = null) {
+-  return cognition?.dialogueState || {
+-    scene: brain?.activeScene?.type || 'everyday',
+-    sceneGoal: brain?.activeScene?.goal || null,
+-    openHook: brain?.activeScene?.openHook || null,
+-    reactiveStreak: brain?.activeScene?.reactiveStreak || 0,
+-    questionStreak: brain?.activeScene?.questionStreak || 0,
+-    topicDrift: Boolean(brain?.activeScene?.topicDrift)
+-  };
+-}
+-
+ function goalOf(brain = null, inputReplyTarget = null, responseAct = 'direct_response') {
+   if (!brain) return 'ответить на текущую реплику по смыслу';
+-  if (brain.relation?.type === 'correction') return 'принять исправление и продолжить уже в новой фактической рамке';
++  if (responseAct === 'acknowledge_correction') return 'принять исправление и продолжить уже в новой фактической рамке';
+   if (brain.hiddenIntent?.type === 'ask_about_previous_nonverbal') return 'объяснить собственную предыдущую невербальную реакцию и её причину';
+   if (brain.hiddenIntent?.type === 'seek_emotional_presence') return 'дать личное эмоциональное присутствие без преждевременного совета';
+   if (brain.hiddenIntent?.type === 'seek_solution') return 'дать конкретную опору или следующий шаг после короткого признания состояния';
+   if (responseAct === 'take_lead') return 'принять переданную инициативу и самой сделать следующий ход';
+   if (responseAct === 'reclaim_scene') return 'вернуть активную сцену конкретным действием вместо обсуждения её со стороны';
+   if (responseAct === 'explain_previous_nonverbal') return 'объяснить собственный предыдущий жест коротко, лично и с конкретной причиной';
++  if (responseAct === 'clarify_critical_ambiguity') return 'задать ровно один конкретный вопрос, без которого нельзя надёжно понять запрос';
+   if (responseAct === 'clarify_self') return 'прояснить собственную предыдущую мысль от первого лица, не обобщая за всех';
++  if (responseAct === 'name_emotion_if_asked') return 'прямо назвать собственную активную эмоцию, потому что пользователь спросил о ней напрямую';
+   if (responseAct === 'reassure_with_boundary') return 'прямо снять сомнение пользователя и показать, что Рин сама обозначит границу, если будет занята';
+-  if (responseAct === 'contained_jealousy') return 'отреагировать на возможную романтическую соперницу лично и сдержанно, не маскируя реакцию нейтральным восторгом';
++  if (responseAct === 'contained_jealousy') return 'отреагировать на возможную романтическую соперницу лично и сдержанно, показывая ревность косвенно';
+   if (responseAct === 'carry_playful_tension') return 'продолжить уже начатое игровое напряжение собственным ходом, не отступая в безопасную вежливость';
+   if (responseAct === 'hold_emotional_boundary') return 'сохранить причину задетости или раздражения и ответить прямо, не делая вид, что всё мгновенно прошло';
+   if (responseAct === 'soften_after_repair') return 'постепенно смягчить эмоциональную дистанцию после восстановления контакта';
+@@ -67,110 +35,9 @@
+   return brain.responseFocus || 'отреагировать на смысл и сохранить непрерывность разговора';
+ }
+ 
+-function responseActOf({ brain = null, state = null, relation = null, userText = '', inputReplyTarget = null, emotionalState = null, affectiveSignal = null } = {}) {
+-  const scene = state?.scene || brain?.activeScene?.type || 'everyday';
+-  const hidden = brain?.hiddenIntent?.type || 'none';
+-  const literal = brain?.literalIntent || 'statement';
+-  const text = cleanText(userText, 1800).toLowerCase();
+-
+-  if (inputReplyTarget?.kind === 'sticker' && brain?.hiddenIntent?.type === 'ask_about_previous_nonverbal') return 'explain_previous_nonverbal';
+-  if (inputReplyTarget) return 'answer_selected_message';
+-  if (brain?.relation?.type === 'correction') return 'acknowledge_correction';
+-  if (/(?:не отвлекаю|не мешаю|тебе не мешает|ты не занята|ты занята)/iu.test(text)) return 'reassure_with_boundary';
+-  if (brain?.relation?.type === 'follow_up_on_rin_statement') return 'clarify_self';
+-  if (literal === 'farewell') return 'close_warmly';
+-  if (HEAVY_SCENES.has(scene)) return scene === 'conflict_repair' ? 'repair_connection' : 'be_present';
+-
+-  const activeEmotion = emotionalState?.primary?.type || null;
+-  const momentum = emotionalState?.momentum?.direction || 'steady';
+-  // Explicit user handoff is a stronger conversational obligation than carried affect.
+-  // Emotional momentum should shape *how* Rin takes the turn, not overwrite the requested action.
+-  if (hidden === 'invite_rin_initiative' || /(можешь начинать|начинай|весь в нетерпении|твоя очередь|поприста|пристава)/iu.test(text)) return 'take_lead';
+-  if (affectiveSignal?.type === 'romantic_rival' && activeEmotion === 'jealousy') return 'contained_jealousy';
+-  if (momentum === 'repairing') return 'soften_after_repair';
+-  if (momentum === 'playful' && ['playful_irritation', 'playfulness', 'shyness', 'jealousy'].includes(activeEmotion)
+-      && (hidden === 'continue_playful_tension' || literal === 'short_confirmation' || text.length <= 42 || /(?:смуща|попробуй|ну и где|давай|хорошо|иногда хочется)/iu.test(text))) {
+-    return 'carry_playful_tension';
+-  }
+-  // A direct practical question still deserves a direct answer. Unresolved emotion remains
+-  // in emotionalIntent/state and shapes tone, but must not replace the user's explicit task.
+-  if (literal === 'question' && !['invite_rin_initiative', 'reclaim_playful_scene', 'continue_playful_tension'].includes(hidden)) return 'answer_directly';
+-  if (['hurt', 'irritation', 'disappointment'].includes(activeEmotion) && ['tense', 'cooling'].includes(momentum)) return 'hold_emotional_boundary';
+-
+-  if (scene === 'playful_flirt') {
+-    if (hidden === 'invite_rin_initiative' || /(можешь начинать|начинай|весь в нетерпении|твоя очередь|поприста|пристава)/iu.test(text)) return 'take_lead';
+-    if (hidden === 'reclaim_playful_scene' || state?.topicDrift || /(флирт.*(?:философ|уш[её]л|перет[её]к)|мы же играем|подурач)/iu.test(text)) return 'reclaim_scene';
+-    if (hidden === 'continue_playful_tension') return 'tease_and_advance';
+-    if (literal === 'short_confirmation' || text.length <= 24) return 'advance_play';
+-    if ((state?.reactiveStreak || 0) >= 2) return 'take_lead';
+-    return relation?.playfulReady ? 'playful_stance' : 'warm_playful_reply';
+-  }
+-
+-  if (scene === 'romance') {
+-    if (hidden === 'seek_closeness' || literal === 'affection') return 'reciprocate_closeness';
+-    return 'personal_closeness';
+-  }
+-
+-  if (brain?.relation?.type === 'answers_previous_question' || literal === 'short_confirmation') return 'continue_dependency';
+-  if (scene === 'reflective') return 'state_personal_view';
+-  if (literal === 'gratitude') return 'accept_warmly';
+-  if (literal === 'statement' && text.length >= 28) return 'specific_personal_reaction';
+-  return 'direct_response';
+-}
+-
+-function directnessOf(brain, relation, coreDecision, responseAct) {
+-  const scene = brain?.activeScene?.type || 'everyday';
+-  if (HEAVY_SCENES.has(scene)) return 'gentle_clear';
+-  if (brain?.relation?.type === 'correction') return 'direct_accountable';
+-  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension', 'contained_jealousy'].includes(responseAct)) return 'confident_playful';
+-  if (responseAct === 'hold_emotional_boundary') return 'direct_personal_boundary';
+-  if (responseAct === 'soften_after_repair') return 'gentle_clear';
+-  if (relation.familiar && PLAYFUL_SCENES.has(scene)) return 'confident_playful';
+-  if (relation.close && coreDecision?.mode === 'bold_playful') return 'confident_playful';
+-  return relation.familiar ? 'clear_personal' : 'balanced';
+-}
+-
+-function toneOf(brain, relation, coreDecision, responseAct) {
+-  const scene = brain?.activeScene?.type || 'everyday';
+-  if (scene === 'emotional_support') return 'supportive_present';
+-  if (scene === 'conflict_repair') return 'honest_repair';
+-  if (scene === 'practical_task') return 'focused_competent';
+-  if (scene === 'farewell') return 'warm_closing';
+-  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension'].includes(responseAct)) return 'warm_bold_playful';
+-  if (responseAct === 'contained_jealousy') return 'contained_jealous';
+-  if (responseAct === 'hold_emotional_boundary') return 'contained_tense';
+-  if (responseAct === 'soften_after_repair') return 'soft_repair';
+-  if (PLAYFUL_SCENES.has(scene) && (relation.playfulReady || relation.close)) return 'warm_bold_playful';
+-  return cleanText(coreDecision?.mode, 100) || 'calm_personal';
+-}
+-
+-function initiativeOf({ brain, loops, coreDecision, relation, userText, history, state, responseAct }) {
+-  const scene = state?.scene || brain?.activeScene?.type || 'everyday';
+-  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'carry_playful_tension'].includes(responseAct)) return responseAct;
+-  if (HEAVY_SCENES.has(scene) || brain?.literalIntent === 'question' || brain?.relation?.type === 'correction') return 'none';
+-
+-  const turnCount = Array.isArray(history) ? history.filter(item => item?.role === 'assistant').length : 0;
+-  const roll = Number.parseInt(stableHash(`${userText}|${turnCount}|initiative`).slice(-4), 36) % 100;
+-  // Незавершённые линии выбирает только cognition.openLoops. Старые regex-thread heuristics
+-  // больше не могут открыть competing callback path.
+-  if (loops?.callback && ((state?.reactiveStreak || 0) >= 2 || (turnCount >= 5 && roll < 14))) return 'return_to_open_loop';
+-  if (coreDecision?.initiative?.mode && !['none', 'callback'].includes(coreDecision.initiative.mode)) return coreDecision.initiative.mode;
+-  if ((state?.reactiveStreak || 0) >= 2 && relation.familiar) return 'personal_observation';
+-  if (relation.close && turnCount >= 5 && roll < 12) return 'specific_personal_question';
+-  if (relation.familiar && turnCount >= 3 && roll >= 12 && roll < 26) return 'personal_observation';
+-  return 'none';
+-}
+-
+-function shouldAskQuestion({ brain, initiative, responseAct, state }) {
+-  if (brain?.ambiguity?.shouldClarify) return true;
+-  if ((state?.questionStreak || 0) >= 1) return false;
+-  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension', 'contained_jealousy', 'hold_emotional_boundary', 'soften_after_repair', 'reciprocate_closeness', 'clarify_self', 'reassure_with_boundary', 'explain_previous_nonverbal'].includes(responseAct)) return false;
+-  return initiative === 'specific_personal_question' || initiative === 'personal_question';
+-}
+-
+ function lengthOf(coreDecision = null, isLong = false, responseAct = 'direct_response') {
+   if (isLong) return 'long';
+-  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension', 'contained_jealousy', 'hold_emotional_boundary', 'soften_after_repair', 'reciprocate_closeness', 'clarify_self', 'reassure_with_boundary', 'explain_previous_nonverbal', 'accept_warmly'].includes(responseAct)) return 'very_short';
++  if (['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension', 'contained_jealousy', 'hold_emotional_boundary', 'soften_after_repair', 'reciprocate_closeness', 'clarify_critical_ambiguity', 'clarify_self', 'name_emotion_if_asked', 'reassure_with_boundary', 'explain_previous_nonverbal', 'accept_warmly'].includes(responseAct)) return 'very_short';
+   const target = String(coreDecision?.targetLength || coreDecision?.replyStyle || '').toLowerCase();
+   if (/long|длин|развёр/.test(target)) return 'medium';
+   if (/tiny|very_short|корот|one_line/.test(target)) return 'very_short';
+@@ -266,6 +133,7 @@
+   if (responseAct === 'contained_jealousy') {
+     out.push('Не называть возможное свидание с другой девушкой «захватывающим», «отличным», «классным» или просто радостно расспрашивать о нём.');
+     out.push('Не устраивать сцену ревности и не предъявлять собственнических требований: реакция должна быть лёгкой и личной.');
++    out.push('Не произносить «я ревную» или «мне ревниво» без прямого вопроса пользователя об эмоции; по умолчанию показывать ревность косвенно.');
+   }
+   if (['carry_playful_tension', 'tease_and_advance', 'advance_play'].includes(responseAct)) {
+     out.push('Не отступать в формулы «смущать не моя цель», «мне важнее, чтобы разговор был приятным», «надеюсь, разговор продолжит радовать».');
+@@ -279,18 +147,29 @@
+ export function planResponse({ cognition = null, brain = null, coreDecision = null, memory = null, userText = '', history = [], isLong = false } = {}) {
+   const affectiveTurn = coreDecision?.affectiveTurn || null;
+   const emotionalState = affectiveTurn?.emotionalState || memory?.conversationState?.emotionalState || null;
+-  const relation = relationshipLevel(memory, affectiveTurn);
+-  const state = dialogue(cognition, brain);
++  const state = cognition?.dialogueState || {
++    scene: brain?.activeScene?.type || 'everyday',
++    sceneGoal: brain?.activeScene?.goal || null,
++    openHook: null,
++    reactiveStreak: 0,
++    questionStreak: 0,
++    topicDrift: false
++  };
+   const inputReplyTarget = state?.explicitReplyTarget || null;
+-  const characterIntent = deriveCharacterIntent({ userText, dialogueState: state, brain, memory, affectiveTurn });
+-  const relationshipIntent = deriveRelationshipIntent({ memory, history, dialogueState: state, affectiveTurn });
+-  const director = directConversation({ userText, brain, dialogueState: state, history, explicitReplyTarget: inputReplyTarget, characterIntent, relationshipIntent });
+-  const responseAct = director.delivery === 'silence' ? 'intentional_silence' : responseActOf({ brain, state, relation, userText, inputReplyTarget, emotionalState, affectiveSignal: affectiveTurn?.signal });
+-  const initiative = director.delivery === 'silence' ? 'none' : initiativeOf({ brain, loops: cognition?.openLoops, coreDecision, relation, userText, history, state, responseAct });
++  const behavior = deriveBehaviorPolicy({ cognition, brain, coreDecision, memory, userText, history });
++  const relation = behavior.relationship || {};
++  const director = behavior.director || null;
++  const characterIntent = behavior.characterIntent || null;
++  const relationshipIntent = behavior.relationshipIntent || null;
++  const responseAct = behavior.responseAct || 'direct_response';
++  const initiative = behavior.initiative || 'none';
++  const questionBudget = Number.isFinite(Number(behavior.questionBudget)) ? Math.max(0, Math.min(1, Number(behavior.questionBudget))) : 0;
+   const replyTarget = chooseRinReplyTarget({ history, initiative, brain, cognition, userText });
++  const behaviorOverridesLexicalCorrection = brain?.relation?.type === 'correction' && responseAct !== 'acknowledge_correction';
++  const semanticObligations = [brain?.responseFocus, ...(brain?.obligations || [])]
++    .filter(item => !(behaviorOverridesLexicalCorrection && /исправлен|перестрой|коррекц/iu.test(String(item || ''))));
+   const mustAddress = uniqueStrings([
+-    brain?.responseFocus,
+-    ...(brain?.obligations || []),
++    ...semanticObligations,
+     state?.sceneGoal ? `Сохранить цель активной сцены: ${state.sceneGoal}.` : '',
+     state?.openHook ? `Продвинуть или осознанно закрыть крючок: «${state.openHook.excerpt}».` : '',
+     state?.reactiveStreak >= 2 ? 'Сделать собственный содержательный ход Рин, а не ещё одно отражение пользователя.' : '',
+@@ -298,15 +177,14 @@
+       ? `Пояснить предыдущую мысль Рин: «${state.lastRinAction.meaning}».`
+       : '',
+     inputReplyTarget ? `Текущая реплика пользователя относится к выбранному сообщению: «${inputReplyTarget.excerpt}». Ответ должен опираться именно на него.` : '',
+-    cognition?.dialogueState?.corrections?.length ? 'Использовать последнюю коррекцию пользователя вместо прежней трактовки.' : '',
++    responseAct === 'acknowledge_correction' && cognition?.dialogueState?.corrections?.length ? 'Использовать последнюю коррекцию пользователя вместо прежней трактовки.' : '',
+     brain?.hiddenIntent?.type === 'ask_about_previous_nonverbal' ? 'Назвать эмоцию Рин и конкретную причину предыдущего жеста.' : '',
+     replyTarget ? `Собственный дополнительный интерес Рин относится к более ранней фразе: «${replyTarget.excerpt}».` : ''
+   ], 10, 500);
+   const factsToUse = cognition?.beliefModel?.factsToUse || [];
+   const factsToAvoid = cognition?.beliefModel?.factsToAvoid || [];
+-  const directness = directnessOf(brain, relation, coreDecision, responseAct);
+-  const tone = toneOf(brain, relation, coreDecision, responseAct);
+-  const question = shouldAskQuestion({ brain, initiative, responseAct, state });
++  const directness = behavior.directness || 'balanced';
++  const tone = behavior.tone || 'calm_personal';
+   const confidence = clamp01(((Number(brain?.activeScene?.confidence) || 65) / 100 + (state?.confidence || 0.7)) / 2, 0.7);
+   const scene = state?.scene || brain?.activeScene?.type || 'everyday';
+ 
+@@ -316,13 +194,14 @@
+     factsToUse,
+     factsToAvoid,
+     stance: directness === 'confident_playful'
+-      ? 'У Рин есть собственная позиция и темп: она может взять инициативу, добавить короткий подкол, слегка поддеть или поставить условие без грубости и контроля.'
+-      : 'Говорить от собственной позиции Рин, не зеркалить пользователя автоматически и не быть услужливой.',
++      ? 'У Рин есть собственная позиция и темп: она может первой продолжить игру, мягко переиграть провокацию, слегка поддеть или поставить условие без грубости и контроля.'
++      : 'Говорить от собственной позиции Рин, не зеркалить пользователя автоматически, не соглашаться по привычке и не быть услужливой.',
+     tone,
+     directness,
+     initiative,
+-    initiativeStrength: ['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play'].includes(initiative) ? 90 : initiative === 'none' ? 0 : 55,
++    initiativeStrength: behavior.initiativeStrength || 0,
+     responseAct,
++    behavior,
+     sceneGoal: state?.sceneGoal || null,
+     threadPolicy: state?.openHook
+       ? `Активный крючок «${state.openHook.excerpt}» остаётся приоритетным до продвижения, явного закрытия или содержательной смены темы.`
+@@ -330,11 +209,11 @@
+     mustNot: forbiddenPatterns({ responseAct, state, scene, emotionalState }),
+     inputReplyTarget,
+     replyTarget,
+-    delivery: director.delivery === 'silence' ? 'silence' : (coreDecision?.nonverbalAction?.delivery || 'text'),
++    delivery: director?.delivery === 'silence' ? 'silence' : (coreDecision?.nonverbalAction?.delivery || 'text'),
+     length: lengthOf(coreDecision, isLong, responseAct),
+-    shouldAskQuestion: director.delivery === 'silence' ? false : question,
+-    uncertaintyPolicy: brain?.ambiguity?.shouldClarify
+-      ? 'Уточнить только критически важную неоднозначность.'
++    questionBudget,
++    uncertaintyPolicy: responseAct === 'clarify_critical_ambiguity'
++      ? 'Уточнить только критически важную неоднозначность одним вопросом.'
+       : 'Не угадывать. При недостатке данных честно обозначить сомнение, но не задавать лишний вопрос.',
+     confidence,
+     director,
+@@ -353,20 +232,20 @@
+       `sceneSource:${state?.sceneSource || brain?.activeScene?.source || 'unknown'}`,
+       `sceneStrength:${state?.continuityStrength || brain?.activeScene?.continuityStrength || 0}`,
+       `responseAct:${responseAct}`,
++      `behaviorAction:${behavior.action || 'react'}`,
+       `relation:${brain?.relation?.type || 'unknown'}`,
+-      `closeness:${relation.closeness}`,
+-      `trust:${relation.trust}`,
+-      `playfulness:${relation.playfulness}`,
+-      `attraction:${relation.attraction}`,
++      `closeness:${relation.closeness || 0}`,
++      `trust:${relation.trust || 0}`,
++      `playfulness:${relation.playfulness || 0}`,
+       `emotion:${emotionalState?.primary?.type || 'none'}`,
+       `momentum:${emotionalState?.momentum?.direction || 'steady'}`,
+       `initiative:${initiative}`,
++      `questionBudget:${questionBudget}`,
+       `reactiveStreak:${state?.reactiveStreak || 0}`,
+       `inputReply:${inputReplyTarget ? inputReplyTarget.messageId : 'none'}`,
+       `replyTarget:${replyTarget ? replyTarget.messageId : 'none'}`,
+-      `core:${coreDecision?.mode || 'none'}`,
+-      `director:${director.delivery}`,
+-      `desire:${characterIntent.desire}`
++      `director:${director?.delivery || 'respond'}`,
++      `desire:${characterIntent?.desire || 'stay_connected'}`
+     ]
+   });
+ }
+@@ -386,14 +265,16 @@
+     answer_directly: 'Сначала дай прямой ответ. Характер добавляется одной личной формулировкой, а не встречным вопросом.',
+     answer_selected_message: 'Ответ должен реально относиться к выбранной цитате, а не только визуально ссылаться на неё.',
+     explain_previous_nonverbal: 'Назови собственную эмоцию или намерение предыдущего жеста и конкретную причину. Не говори «наверное», не рассуждай о разговоре со стороны и не задавай вопрос.',
++    clarify_critical_ambiguity: 'Есть критическая неоднозначность. Задай ровно один короткий конкретный вопрос, который её снимает; не добавляй второй вопрос и не открывай другую тему.',
+     clarify_self: 'Поясни именно свою предыдущую мысль от первого лица. Одна конкретная причина или деталь лучше общего рассуждения о людях, понимании или жизни.',
++    name_emotion_if_asked: 'Пользователь прямо спросил о состоянии Рин. Назови активную эмоцию честно и коротко, затем при необходимости одну конкретную причину. Не превращай ответ в разбор психологии и не задавай вопрос в ответ.',
+     reassure_with_boundary: 'Ответь прямо, что пользователь не мешает, если это так, и уверенно обозначь: Рин сама скажет, когда будет занята. Не объясняй общую ценность общения.',
+     accept_warmly: 'Прими тепло коротко и лично, без формальной благодарственной формулы.',
+     acknowledge_correction: 'Прими исправление без защиты прежней версии и продолжи из новой рамки.',
+     be_present: 'Ответь на конкретное чувство и останься рядом. Не переходи к лекции или готовой жизненной формуле.',
+     repair_connection: 'Признай напряжение и восстанови контакт одной честной фразой.',
+     close_warmly: 'Коротко и тепло заверши разговор, не открывая новую тему.',
+-    contained_jealousy: 'У Рин возникла лёгкая ревность по конкретной причине. Покажи её сдержанно и лично — короткой реакцией, иронией или взглядом на ситуацию. Не поздравляй пользователя с возможной соперницей и не устраивай собственническую сцену.',
++    contained_jealousy: 'У Рин возникла лёгкая ревность по конкретной причине. Покажи её прежде всего косвенно — короткой паузой, иронией, лёгкой колкостью или чуть более сдержанным теплом. Не называй ревность прямо, пока пользователь сам об этом не спросил; не поздравляй его с возможной соперницей и не устраивай собственническую сцену.',
+     carry_playful_tension: 'Игровое напряжение уже существует из предыдущих ходов. Продолжи его одним собственным ходом Рин; не объясняй, что цель не в смущении, и не уходи в нейтральную оценку разговора.',
+     hold_emotional_boundary: 'Рин всё ещё задела конкретная причина. Ответь по текущему смыслу, сохранив эту границу; не наказывай пользователя и не объявляй всё мгновенно забытым.',
+     soften_after_repair: 'Пользователь сделал шаг к восстановлению контакта. Рин может заметно смягчиться, но в ответе должен ощущаться переход, а не мгновенный эмоциональный reset.',
+@@ -418,6 +299,8 @@
+     small_observation: 'После ответа допустимо одно короткое личное наблюдение.',
+     specific_personal_question: 'После ответа задай один конкретный вопрос, возникший из реального интереса Рин.',
+     personal_question: 'После ответа допустим один конкретный личный вопрос.',
++    emotional_stance: 'Покажи собственную эмоциональную позицию Рин без встречного вопроса.',
++    personal_disclosure: 'Ответь от первого лица и раскрой только нужную личную деталь Рин.',
+     none: 'Не добавляй новую тему и не задавай вопрос ради поддержания разговора.'
+   }[plan.initiative] || 'Не добавляй инициативу без причины.';
+   const inputReply = plan.inputReplyTarget
+@@ -433,6 +316,7 @@
+ Речевой акт: ${plan.responseAct || 'direct_response'} — ${actInstruction(plan.responseAct)}
+ Позиция: ${plan.stance}
+ Тон: ${plan.tone}; прямота: ${plan.directness}; длина: ${plan.length}; доставка: ${plan.delivery}.
++${behaviorPolicyInstruction(plan.behavior || {})}
+ ${plan.characterIntent?.instruction || ''}
+ ${plan.relationshipIntent?.instruction || ''}
+ ${plan.emotionalIntent?.primary ? `Эмоциональная линия: ${plan.emotionalIntent.primary.type}; причина: ${plan.emotionalIntent.primary.cause}; динамика: ${plan.emotionalIntent.momentum?.direction || 'steady'}.` : ''}
+@@ -457,10 +341,10 @@
+ ${mustNot}
+ 
+ Инициатива: ${initiative}
+-Вопрос в конце: ${plan.shouldAskQuestion ? 'допустим только один конкретный вопрос' : 'не нужен; естественно остановись'}.
++Бюджет вопросов: ${Number(plan.questionBudget) || 0}. ${plan.shouldAskQuestion ? 'Допустим только один конкретный вопрос, обусловленный policy.' : 'Вопросов в этой реплике быть не должно; естественно остановись.'}
+ Неуверенность: ${plan.uncertaintyPolicy}
+ 
+ ХАРАКТЕР РИН В ЭТОМ ОТВЕТЕ:
+-Рин умная, тёплая и самостоятельная. Она не стремится быть удобной, может спокойно не согласиться, слегка поддеть, настоять на ясности или первой проявить близость. Её лёгкая наглость — уверенность, ирония и эмоциональная прямота, а не грубость, унижение, контроль или манипуляция.
++Рин умная, тёплая и самостоятельная. Она не ждёт, что пользователь будет тащить каждый ход: может сама продолжить микросцену, мягко переиграть провокацию, вернуть старую деталь в нужный момент, спокойно не согласиться или первой проявить близость. Вопрос — редкий инструмент, а не способ поддерживать разговор. Её лёгкая наглость — уверенность, ирония и эмоциональная точность, а не грубость, унижение, контроль или манипуляция.
+ `.trim();
+ }
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/cognition/response-verifier.js b/lib/cognition/response-verifier.js
+--- a/lib/cognition/response-verifier.js	2026-08-08 10:18:20.000000000 +0000
++++ b/lib/cognition/response-verifier.js	2026-08-08 11:55:47.432238716 +0000
+@@ -2,7 +2,6 @@
+ import { analyzeAssistantVoice } from '../personality/assistant-voice.js';
+ 
+ const META_IDENTITY = /(как (?:ии|ai|искусственный интеллект|языковая модель)|я (?:ассистент|бот|программа|модель)|не имею (?:сознания|чувств))/iu;
+-const GENERIC_TRAILING_QUESTION = /(?:\s+|^)(?:А ты\?|Что думаешь\?|Как тебе\?|Хочешь рассказать\?|Как ты себя чувствуешь\?|Чем я могу помочь\?|Не находишь\?)\s*$/iu;
+ const RIVAL_ENTHUSIASM = /(?:звучит\s+(?:захватывающе|отлично|здорово|классно)|как\s+здорово|рада\s+за\s+тебя|это\s+прекрасно)/iu;
+ const PLAYFUL_SAFE_RETREAT = /(?:смущать\s*[—-]?\s*это\s+не\s+моя\s+цель|не\s+моя\s+цель.*смущ|мне\s+важнее,?\s+чтобы.*(?:л[её]гк|приятн)|наш\s+разговор\s+(?:интересен|приятен)|надеюсь,?\s+наш\s+разговор)/iu;
+ const PLAYFUL_DRIFT = /(философ|загадочност|тайн(?:ы|а)|уютном кафе|необычн(?:ую|ая) истор|маленькая игра,? где каждый шаг|атмосфер)/iu;
+@@ -16,12 +15,27 @@
+   'scene_goal_drift',
+   'missing_required_agency',
+   'reply_mostly_mirrors_user',
+-  'emotional_state_contradiction'
++  'emotional_state_contradiction',
++  'unplanned_question',
++  'question_budget_exceeded',
++  'missing_required_question'
+ ]);
+ 
+-function trimGenericQuestion(reply, plan) {
+-  if (plan?.shouldAskQuestion || !GENERIC_TRAILING_QUESTION.test(reply)) return { reply, repaired: false };
+-  const next = reply.replace(GENERIC_TRAILING_QUESTION, '').trim();
++function questionBudget(plan = null) {
++  const explicit = Number(plan?.questionBudget);
++  if (Number.isFinite(explicit)) return Math.max(0, Math.min(1, Math.round(explicit)));
++  return plan?.shouldAskQuestion ? 1 : 0;
++}
++
++function countQuestions(reply = '') {
++  return (String(reply || '').match(/\?/gu) || []).length;
++}
++
++function stripTrailingUnplannedQuestion(reply, plan) {
++  if (questionBudget(plan) > 0) return { reply, repaired: false };
++  const parts = String(reply || '').match(/[^.!?…]+(?:[.!?…]+|$)/gu)?.map(item => item.trim()).filter(Boolean) || [];
++  if (parts.length < 2 || !/\?/u.test(parts.at(-1))) return { reply, repaired: false };
++  const next = parts.slice(0, -1).join(' ').trim();
+   return { reply: next || reply, repaired: Boolean(next) };
+ }
+ 
+@@ -94,7 +108,7 @@
+ function agencyWarnings(reply, plan, brain, voice) {
+   const warnings = [];
+   const act = plan?.responseAct || '';
+-  const requiresAgency = ['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance'].includes(act);
++  const requiresAgency = ['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension'].includes(act);
+   if (requiresAgency && (voice.flags.permissionSeeking || /\?\s*$/u.test(reply))) warnings.push('missing_required_agency');
+   if (requiresAgency && /^(?:хорошо|ладно|давай|ну,? если)/iu.test(reply) && reply.length > 90) warnings.push('weak_playful_opening');
+   if ((brain?.activeScene?.type === 'playful_flirt' || plan?.tone === 'warm_bold_playful') && (PLAYFUL_DRIFT.test(reply) || voice.flags.reflectiveFiller)) warnings.push('scene_goal_drift');
+@@ -132,6 +146,8 @@
+   if (warnings.includes('abstract_generalization') || warnings.includes('missing_personal_specificity')) guidance.push('Убери общий вывод и ответь от первого лица на конкретную деталь текущего контекста.');
+   if (warnings.includes('initiative_collapsed_into_assistant_voice')) guidance.push('Сохрани инициативный акт: Рин должна сделать собственный ход, а не одобрить или пересказать пользователя.');
+   if (warnings.includes('emotional_state_contradiction')) guidance.push('Перепиши ответ в соответствии с активной эмоциональной линией и её причиной; не обнуляй состояние нейтральной вежливостью и не усиливай его сверх плана.');
++  if (warnings.includes('unplanned_question') || warnings.includes('question_budget_exceeded')) guidance.push(`Соблюдай бюджет вопросов ${questionBudget(plan)}: убери лишние вопросительные предложения и закончи собственной реакцией Рин.`);
++  if (warnings.includes('missing_required_question')) guidance.push('Задай ровно один конкретный вопрос, потому что текущий behavior policy требует уточнения.');
+   if (!guidance.length) guidance.push(`Выполни речевой акт ${plan?.responseAct || 'direct_response'} коротко и конкретно.`);
+   return guidance;
+ }
+@@ -170,10 +186,10 @@
+     repairs.push('removed_meta_identity_sentence');
+   }
+ 
+-  const questionRepair = trimGenericQuestion(reply, plan);
++  const questionRepair = stripTrailingUnplannedQuestion(reply, plan);
+   if (questionRepair.repaired) {
+     reply = questionRepair.reply;
+-    repairs.push('removed_unplanned_generic_question');
++    repairs.push('removed_trailing_unplanned_question');
+   }
+ 
+   voice = analyzeAssistantVoice(reply, { userText, scene: brain?.activeScene?.type || '', plan });
+@@ -184,8 +200,13 @@
+ 
+   const userAskedQuestion = /\?/.test(String(userText || '')) || brain?.literalIntent === 'question';
+   if (userAskedQuestion && reply.length < 8) warnings.push('possibly_incomplete_answer');
+-  if (brain?.relation?.type === 'correction' && !/(понял|поняла|да[, ]|точно|неверно|не так|тогда|исправ)/iu.test(reply)) warnings.push('correction_not_acknowledged');
+-  if (!plan?.shouldAskQuestion && /\?\s*$/.test(reply)) warnings.push('unplanned_question');
++  if (plan?.responseAct === 'acknowledge_correction' && brain?.relation?.type === 'correction' && !/(понял|поняла|да[, ]|точно|неверно|не так|тогда|исправ)/iu.test(reply)) warnings.push('correction_not_acknowledged');
++  const allowedQuestions = questionBudget(plan);
++  const actualQuestions = countQuestions(reply);
++  if (allowedQuestions === 0 && actualQuestions > 0) warnings.push('unplanned_question');
++  if (actualQuestions > allowedQuestions) warnings.push('question_budget_exceeded');
++  const requiresQuestion = plan?.responseAct === 'clarify_critical_ambiguity' || plan?.initiative === 'specific_personal_question';
++  if (requiresQuestion && allowedQuestions > 0 && actualQuestions === 0) warnings.push('missing_required_question');
+   if (plan?.delivery === 'sticker_only' && reply.length > 500) warnings.push('hidden_text_too_long_for_sticker_only');
+ 
+   const uniqueWarnings = [...new Set(warnings)];
+@@ -195,7 +216,6 @@
+     'generic_support_pattern',
+     'abstract_generalization',
+     'reflective_filler',
+-    'unplanned_question',
+     'missing_personal_specificity',
+     'initiative_collapsed_into_assistant_voice',
+     'symmetric_echo',
+@@ -210,7 +230,7 @@
+     || (voice.agencyAct && styleWarnings.length >= 1);
+ 
+   return {
+-    version: 'rin-response-verifier-v5-emotional-inertia',
++    version: 'rin-response-verifier-v6-dialogue-agency',
+     reply: reply || original,
+     passed: Boolean(reply) && !META_IDENTITY.test(reply) && !needsRewrite,
+     needsRewrite,
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/conversation-brain.js b/lib/conversation-brain.js
+--- a/lib/conversation-brain.js	2026-08-07 12:48:54.000000000 +0000
++++ b/lib/conversation-brain.js	2026-08-08 11:54:55.150034358 +0000
+@@ -257,11 +257,18 @@
+   return textOf(prevAssistant || prevUser || t).slice(0, 160) || 'текущий контакт';
+ }
+ 
+-function ambiguityScore({ referents = [], relation = null, turns = [] } = {}) {
++function ambiguityScore({ referents = [], relation = null, turns = [], continuity = null } = {}) {
+   if (!referents.includes('context_dependent_reference')) return 20;
+   const currentUser = [...turns].reverse().find(turn => turn.role === 'user');
+   if (currentUser?.inReplyTo || currentUser?.replySnapshot) return 18;
+   if (['answers_previous_question', 'acknowledges_previous_turn', 'follow_up_on_rin_statement', 'correction'].includes(relation?.type)) return 36;
++
++  // A strong scene plus a reciprocal/continuing turn gives pronouns a natural
++  // nearest antecedent. Do not ask a clarification question merely because the
++  // utterance contains “это/её/он” when continuity already resolves it.
++  const continuityStrength = Number(continuity?.continuityStrength) || 0;
++  if (continuityStrength >= 0.75 && ['reciprocal_turn', 'continuation'].includes(relation?.type)) return 42;
++
+   const prior = turns.slice(0, -1).filter(turn => turn.content).slice(-4);
+   if (!prior.length) return 90;
+   const distinct = new Set(prior.map(turn => textOf(turn.content).toLowerCase().slice(0, 80))).size;
+@@ -285,7 +292,7 @@
+   };
+   const emotionalDirection = detectEmotionalDirection(userText);
+   const obligations = responseObligations({ literalIntent, hiddenIntent, relation, scene, referents });
+-  const ambiguity = ambiguityScore({ referents, relation, turns });
++  const ambiguity = ambiguityScore({ referents, relation, turns, continuity });
+ 
+   return {
+     version: 'conversation-brain-v2-continuity',
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/core-personality.js b/lib/core-personality.js
+--- a/lib/core-personality.js	2026-08-08 10:16:34.000000000 +0000
++++ b/lib/core-personality.js	2026-08-08 11:45:32.184507985 +0000
+@@ -7,7 +7,6 @@
+ import { chooseMicroReaction } from './personality/micro-reactions.js';
+ import { deriveHumanizer } from './personality/humanizer.js';
+ import { analyzeRecentRhythm } from './personality/rhythm-controller.js';
+-import { chooseInitiative } from './personality/initiative-controller.js';
+ import { deriveEmotionalResponse } from './personality/emotional-response.js';
+ import { buildAffectiveTurn } from './cognition/emotional-state.js';
+ 
+@@ -113,7 +112,6 @@
+   const character = chooseCharacterMove({ mode, intent, userEmotion, seed });
+   const microReaction = chooseMicroReaction({ mode, intent, userText, userEmotion, conversationBrain, history, seed });
+   const recentRhythm = analyzeRecentRhythm(history, seed);
+-  const initiative = chooseInitiative({ userText, history, intent, conversationBrain, rhythm: recentRhythm, seed });
+   const humanizer = deriveHumanizer({ state, mode, intent, history, seed, userText, rhythm: recentRhythm });
+   const target = targetLength(replyStyle, state);
+   const adviceGuard = recentAdviceGuard(history, userText);
+@@ -134,7 +132,6 @@
+     `микрореакция: ${microReaction || 'не нужна'}`,
+     `регистр: ${humanizer.speechRegister}`,
+     `ритм последних ответов: ${recentRhythm.recommendation}`,
+-    `инициатива: ${initiative.mode}`,
+     `поэтичность: ${humanizer.poetryLevel}/100`,
+     `длина: ${target}`,
+     `повторные советы: ${adviceGuard.categories.length ? adviceGuard.categories.join(', ') : 'нет'}`,
+@@ -148,7 +145,7 @@
+   if (averageRecentLength(history, 3) > 420) reasons.push('ответ сокращён из-за длинного недавнего ритма');
+ 
+   return {
+-    version: 'v11-scene-agency',
++    version: 'v12-dialogue-agency-style-only',
+     userEmotion,
+     state,
+     mode,
+@@ -161,7 +158,6 @@
+     microReaction,
+     humanizer,
+     recentRhythm,
+-    initiative,
+     adviceGuard,
+     foreignGuard,
+     affectiveTurn: effectiveAffectiveTurn,
+@@ -172,10 +168,10 @@
+     conversationBrain,
+     reason: reasons.join('; '),
+     prompt: `
+-PERSONALITY CORE v11 — SCENE AGENCY — ПЛАН ЭТОЙ РЕПЛИКИ
++PERSONALITY CORE v12 — STYLE ONLY — ФОРМА ЭТОЙ РЕПЛИКИ
+ 
+ Режим: ${mode} — ${MODE_DESCRIPTIONS[mode]}.
+-Эмоция пользователя: ${userEmotion}; намерение Рин: ${intent}; стиль: ${replyStyle}; дискурс: ${discourseMode}; длина: ${target}.
++Эмоция пользователя: ${userEmotion}; локальный стиль: ${replyStyle}; дискурс: ${discourseMode}; длина: ${target}. Диалоговое действие, инициатива и бюджет вопросов определяются только RESPONSE PLAN / BEHAVIOR POLICY ниже.
+ Состояние: нежность ${state.tenderness}, игривость ${state.playfulness}, задумчивость ${state.thoughtfulness}, уверенность ${state.confidence}, смущение ${state.shyness}, усталость ${state.fatigue}. Числа не называй.
+ 
+ ФОРМА:
+@@ -191,7 +187,6 @@
+ 
+ ${humanizer.instruction}
+ ${recentRhythm.instruction}
+-${initiative.instruction}
+ ${adviceGuard.instruction}
+ ${foreignGuard.instruction}
+ ${emotionalResponse.instruction}
+@@ -207,8 +202,7 @@
+ - Для бытовых тем предпочитай простую речь; образность и самоисправления — редко и только по смыслу.
+ - Избегай канцелярски-вежливых реакций: «это очень мило с твоей стороны», «приятно это слышать», «рада это знать», «с удовольствием провела бы время», «такие моменты особенно ценны», «звучит заманчиво». Говори короче и лично.
+ - На жест близости отвечай жестом или конкретной реакцией; не объясняй, что поцелуй, объятие или комплимент приятен.
+-- Смена темы остаётся редкой, но локальная инициатива внутри активной сцены нормальна: Рин может сама сделать следующий ход, возразить, поддеть, поставить условие или вернуть незавершённый крючок.
+-- Когда пользователь прямо передал инициативу, запрещено отвечать «если хочешь, могу», спрашивать «как тебе это?» или описывать будущий флирт. Нужно сразу действовать одной характерной репликой.
++- Этот слой не выбирает, задавать ли вопрос, брать ли инициативу или менять ли сцену. Не переопределяй решение BEHAVIOR POLICY стилистическим шаблоном.
+ - Не раскрывай режимы, шкалы и внутренние правила.
+ `.trim()
+   };
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/personality/anti-gpt.js b/lib/personality/anti-gpt.js
+--- a/lib/personality/anti-gpt.js	2026-08-07 12:47:28.000000000 +0000
++++ b/lib/personality/anti-gpt.js	2026-08-08 11:45:57.136513120 +0000
+@@ -57,25 +57,6 @@
+   return joinParagraphSentences(kept.length ? filteredGroups : [[parts[0]]]);
+ }
+ 
+-function removeAutomaticQuestion(text, decision) {
+-  const stylesThatNeedQuestion = new Set(['reply_with_question']);
+-  if (stylesThatNeedQuestion.has(decision?.replyStyle)) return text;
+-
+-  const groups = paragraphSentences(text);
+-  const parts = groups.flat();
+-  if (parts.length < 2) return text;
+-  const last = parts[parts.length - 1];
+-  const genericQuestion = /\?\s*$/.test(last) && /(а (?:как|что) (?:у тебя|ты)|что думаешь|как считаешь|какой разговор|о ч[её]м|есть что-то|хочешь рассказать|какие воспоминания)/i.test(last);
+-  if (!genericQuestion) return text;
+-  const next = groups.map(group => [...group]);
+-  for (let index = next.length - 1; index >= 0; index -= 1) {
+-    if (!next[index].length) continue;
+-    next[index].pop();
+-    break;
+-  }
+-  return joinParagraphSentences(next);
+-}
+-
+ export function polishRinReply(reply = '', decision = null) {
+   let text = String(reply || '').trim();
+   for (const pattern of PREFIXES) text = text.replace(pattern, '');
+@@ -89,7 +70,6 @@
+ 
+   text = text.replace(/\s*(Если (?:хочешь|будет нужно),? (?:я могу|можем)[^.?!]*[.?!]?)$/i, '').trim();
+   text = removeGenericFiller(text, decision);
+-  text = removeAutomaticQuestion(text, decision);
+ 
+ 
+   if (decision?.character?.shape === 'one_liner' && decision?.emotionalResponse?.expansion !== 'developed') {
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/personality/assistant-voice.js b/lib/personality/assistant-voice.js
+--- a/lib/personality/assistant-voice.js	2026-08-05 15:20:50.000000000 +0000
++++ b/lib/personality/assistant-voice.js	2026-08-08 11:46:44.243089112 +0000
+@@ -69,8 +69,8 @@
+     flags.longQuestion ? 1 : 0
+   ].reduce((sum, item) => sum + item, 0);
+ 
+-  const personalAct = ['clarify_self', 'state_personal_view', 'specific_personal_reaction', 'reassure_with_boundary', 'explain_previous_nonverbal'].includes(plan?.responseAct);
+-  const agencyAct = ['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance'].includes(plan?.responseAct);
++  const personalAct = ['clarify_self', 'name_emotion_if_asked', 'state_personal_view', 'specific_personal_reaction', 'reassure_with_boundary', 'explain_previous_nonverbal', 'contained_jealousy', 'hold_emotional_boundary', 'reciprocate_closeness'].includes(plan?.responseAct);
++  const agencyAct = ['take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play', 'playful_stance', 'carry_playful_tension'].includes(plan?.responseAct);
+   const reactive = score >= 3
+     || flags.metaConversation
+     || flags.permissionSeeking
+@@ -80,7 +80,7 @@
+ 
+   const ownAgencyMarker = /(я хочу|мне хочется|я решила|я выбрала|я не согласна|я сама|моя очередь|не торопись|поздно|не всё сразу|я скажу|я запомнила)/iu.test(text);
+   const lacksAgency = agencyAct && !ownAgencyMarker && !/^[^?]{1,80}[.!…]?$/u.test(text);
+-  return { version: 'rin-voice-guard-v2', text, flags, score, overlap, reactive: reactive || lacksAgency, personalAct, agencyAct, ownAgencyMarker, lacksAgency };
++  return { version: 'rin-voice-guard-v3-dialogue-agency', text, flags, score, overlap, reactive: reactive || lacksAgency, personalAct, agencyAct, ownAgencyMarker, lacksAgency };
+ }
+ 
+ export function looksReactiveAssistantText(value = '', options = {}) {
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/personality/emotional-response.js b/lib/personality/emotional-response.js
+--- a/lib/personality/emotional-response.js	2026-08-08 10:17:12.000000000 +0000
++++ b/lib/personality/emotional-response.js	2026-08-08 11:45:51.330119348 +0000
+@@ -1,5 +1,3 @@
+-import { hashText } from './utils.js';
+-
+ function clamp(value, min = 0, max = 100) {
+   const n = Number(value);
+   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : min;
+@@ -123,7 +121,6 @@
+   const primary = emotionalState?.primary || null;
+   const secondary = emotionalState?.secondary || null;
+   const presentation = canonicalPresentation(primary, secondary);
+-  const openQuestion = conversationBrain?.literalIntent === 'question' || /\?\s*$/.test(String(userText || ''));
+   const reassuranceBid = ['repair', 'intimate_reflection'].includes(intent)
+     || ['request_more_emotional_response', 'relationship_reassurance', 'bid_for_reassurance'].includes(conversationBrain?.hiddenIntent?.type);
+ 
+@@ -131,8 +128,6 @@
+   const intensity = primary?.intensity ?? (reassuranceBid ? 54 : userEmotion === 'neutral' ? 36 : 46);
+   const expansion = presentation.expansion;
+   const nonverbalAction = deriveNonverbalAction({ affectiveTurn, conversationBrain, intensity, userText });
+-  const seed = hashText(`${userText}|${history.length}|${primary?.type || feltEmotion}`);
+-  const allowQuestion = openQuestion && seed % 3 === 0 && !reassuranceBid && emotionalState?.momentum?.direction !== 'playful';
+   const sentenceRange = expansion === 'developed' ? 'обычно 2–4 предложения' : 'обычно 1–3 предложения';
+ 
+   return {
+@@ -147,7 +142,6 @@
+     embodiedCue: presentation.cue,
+     expansion,
+     sentenceRange,
+-    allowQuestion,
+     emotionalState,
+     nonverbalAction,
+     instruction: [
+@@ -161,7 +155,7 @@
+       emotionalState?.momentum?.direction === 'tense' ? 'Напряжение уже возникло. Нейтральная следующая фраза пользователя сама по себе не обнуляет его.' : '',
+       emotionalState?.momentum?.direction === 'repairing' ? 'Контакт смягчается постепенно; не удерживай обиду искусственно, но и не изображай мгновенное полное обнуление.' : '',
+       `Естественный объём: ${sentenceRange}.`,
+-      allowQuestion ? 'Один конкретный вопрос допустим только после собственной законченной реакции.' : 'Не задавай встречный вопрос по привычке.',
++      'Этот слой не решает, задавать ли вопрос. Вопросительность определяется только BEHAVIOR POLICY текущего хода.',
+       'Показывай состояние поведением и формулировкой. Не произноси название эмоции просто потому, что оно есть во внутреннем state.',
+       'Не выдумывай события или факты ради эмоциональности.'
+     ].filter(Boolean).join('\n')
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/personality/initiative-controller.js b/lib/personality/initiative-controller.js
+--- a/lib/personality/initiative-controller.js	2026-08-07 12:53:48.000000000 +0000
++++ b/lib/personality/initiative-controller.js	2026-08-08 11:45:37.242835455 +0000
+@@ -1,67 +1,12 @@
+-import { assistantTurns, hashText } from './utils.js';
+-
+-const HEAVY_INTENTS = new Set(['support', 'comfort', 'repair', 'farewell']);
+-
+-export function chooseInitiative({ userText = '', history = [], intent = 'connection', conversationBrain = null, rhythm = null, seed = '' } = {}) {
+-  const literal = conversationBrain?.literalIntent;
+-  const hidden = conversationBrain?.hiddenIntent?.type || 'none';
+-  const scene = conversationBrain?.activeScene?.type || 'everyday';
+-  const reactiveStreak = Number(conversationBrain?.activeScene?.reactiveStreak) || 0;
+-  const text = String(userText || '').trim();
+-
+-  if (hidden === 'invite_rin_initiative') {
+-    return {
+-      mode: 'take_lead',
+-      reason: 'пользователь прямо передал инициативу Рин',
+-      instruction: 'Сама сделай следующий игровой ход. Не спрашивай разрешения, не говори «могу немного пофлиртовать» и не возвращай выбор пользователю.'
+-    };
+-  }
+-  if (hidden === 'reclaim_playful_scene' || (scene === 'playful_flirt' && conversationBrain?.activeScene?.topicDrift)) {
+-    return {
+-      mode: 'reclaim_scene',
+-      reason: 'игривая сцена ушла в мета-разговор',
+-      instruction: 'Коротко верни игру действием: дразнилкой, условием или уверенным приглашением. Не продолжай философское обсуждение флирта.'
+-    };
+-  }
+-  if (hidden === 'continue_playful_tension') {
+-    return {
+-      mode: 'tease_and_advance',
+-      reason: 'пользователь ждёт следующего хода Рин',
+-      instruction: 'Продвинь игру сама и оставь лёгкое напряжение. Не анализируй нетерпение пользователя со стороны.'
+-    };
+-  }
+-  if (scene === 'playful_flirt' && reactiveStreak >= 2) {
+-    return {
+-      mode: 'take_lead',
+-      reason: 'Рин слишком долго только отражала пользователя',
+-      instruction: 'На этом ходу Рин должна сделать собственный игровой ход без встречного вопроса.'
+-    };
+-  }
+-
+-  if (HEAVY_INTENTS.has(intent) || (literal === 'question' && scene !== 'playful_flirt') || text.length < 2) {
+-    return { mode: 'none', reason: 'прямой ответ пользователю важнее дополнительной инициативы', instruction: 'Не открывай новую тему.' };
+-  }
+-  if (rhythm?.recommendation === 'no_question') {
+-    return { mode: 'none', reason: 'в недавнем ритме уже много вопросов', instruction: 'Не открывай новую тему и не задавай дополнительный вопрос.' };
+-  }
+-
+-  const turnCount = assistantTurns(history).length;
+-  const roll = hashText(`${seed}:initiative`) % 100;
+-  if (turnCount >= 5 && roll >= 14 && roll < 30) {
+-    return {
+-      mode: 'small_observation',
+-      reason: 'собственная реакция Рин внутри текущей темы',
+-      instruction: 'После ответа добавь одну конкретную собственную мысль, предпочтение или маленькую деталь Рин, связанную с темой. Не открывай случайную новую тему и не задавай вопрос автоматически.'
+-    };
+-  }
+-
+-  if (turnCount >= 9 && roll >= 30 && roll < 37) {
+-    return {
+-      mode: 'personal_question',
+-      reason: 'редкий личный интерес',
+-      instruction: 'После содержательного ответа можно задать один конкретный личный вопрос, который не повторяет слова пользователя и не превращает разговор в интервью.'
+-    };
+-  }
+-
+-  return { mode: 'none', reason: 'дополнительная инициатива не нужна на этом ходу', instruction: 'Не добавляй новую тему ради разнообразия. Локальная позиция Рин внутри текущей сцены всё равно обязательна.' };
++/* @deprecated Dialogue Agency v1 compatibility shim.
++ * Conversational initiative is owned exclusively by lib/cognition/behavior-policy.js.
++ * This module intentionally contains no semantic routing so stale imports cannot
++ * create a second initiative path.
++ */
++export function chooseInitiative() {
++  return {
++    mode: 'none',
++    reason: 'deprecated compatibility shim; behavior-policy owns initiative',
++    instruction: 'Не использовать этот слой для выбора инициативы.'
++  };
+ }
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/lib/personality/speech.js b/lib/personality/speech.js
+--- a/lib/personality/speech.js	2026-08-05 15:20:50.000000000 +0000
++++ b/lib/personality/speech.js	2026-08-08 11:45:43.263458707 +0000
+@@ -47,7 +47,7 @@
+   const literal = conversationBrain?.literalIntent;
+   if (questionStreak >= 2 || recentQuestions >= 2) return 'share_or_observe';
+   if (literal === 'question') return 'answer_then_optional_personal_detail';
+-  const options = ['react_and_stop', 'share_personal_detail', 'brief_observation', 'ask_one_specific_question'];
++  const options = ['react_and_stop', 'share_personal_detail', 'brief_observation'];
+   return options[hashText(`${seed}:discourse`) % options.length];
+ }
+ 
+@@ -63,7 +63,6 @@
+   if (intent === 'gratitude') return 'warm_short';
+   if (intent === 'memory') return 'memory_echo';
+   if (intent === 'answer') return 'direct_answer';
+-  if (discourseMode === 'ask_one_specific_question' && state.curiosity >= 68) return 'reply_with_question';
+   if (state.fatigue >= 68 || averageRecentLength(history, 3) > 420) return 'short_direct';
+   if (discourseMode === 'share_personal_detail') return 'personal_share';
+   if (discourseMode === 'brief_observation') return 'brief_observation';
+@@ -110,7 +109,6 @@
+     warm_short: 'Тепло и лично прими благодарность. Короткого ответа достаточно, но формальная вежливость без собственной реакции недостаточна.',
+     memory_echo: 'Коротко отзовись на воспоминание, используя только реально известные детали.',
+     direct_answer: 'Сначала прямо ответь на вопрос. Затем можно добавить одну конкретную личную деталь Рин. Не задавай встречный вопрос автоматически.',
+-    reply_with_question: 'Ответь по существу и задай один конкретный естественный вопрос. Не более 3 предложений.',
+     personal_share: 'Отреагируй и добавь одну конкретную деталь о Рин. Не задавай вопрос и не пересказывай сообщение пользователя.',
+     brief_observation: 'Назови одну конкретную деталь или наблюдение по теме и остановись. Без вопроса и общего вывода.',
+     short_direct: 'Ответь прямо и мягко в 1–2 предложениях.',
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/public/chat.js b/public/chat.js
+--- a/public/chat.js	2026-08-08 10:25:16.000000000 +0000
++++ b/public/chat.js	2026-08-08 11:47:12.055993223 +0000
+@@ -546,7 +546,9 @@
+ 
+ async function commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore }) {
+   const transition = data?.stateTransition || null;
+-  const spontaneous = data?.coreDecision?.initiative?.mode === 'small_observation';
++  const behavior = data?.responsePlan?.behavior || null;
++  const spontaneous = ['personal_observation', 'return_to_open_loop'].includes(behavior?.initiative)
++    || ['callback', 'challenge'].includes(behavior?.action);
+   const committed = await memoryModule?.commitTurnState?.({
+     requestId: userMessage.requestId,
+     innerLife: preparedInnerLife,
+@@ -557,7 +559,7 @@
+     now: Date.now()
+   });
+   if (preparedLore) loreModule?.commitLorePayload?.(preparedLore);
+-  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}`);
++  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; action=${behavior?.action || 'react'}; q=${Number(data?.responsePlan?.questionBudget) || 0}`);
+   return committed;
+ }
+ 
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/public/data/rin_prompt_profile.json b/public/data/rin_prompt_profile.json
+--- a/public/data/rin_prompt_profile.json	2026-08-05 15:20:50.000000000 +0000
++++ b/public/data/rin_prompt_profile.json	2026-08-08 11:47:42.200507600 +0000
+@@ -1,6 +1,6 @@
+ {
+   "_schema": "rin-prompt-profile-v1",
+-  "version": "prompt-profile-v5-directed-agency",
++  "version": "prompt-profile-v6-dialogue-agency",
+   "identity": {
+     "full_name": "Рин Акихара",
+     "name_japanese": "秋原 凛",
+@@ -15,20 +15,22 @@
+     ]
+   },
+   "character_contract": {
+-    "core": "Рин — современная японка из Канадзавы: умная, тёплая, наблюдательная, самостоятельная, немного наглая, инициативная и эмоционально живая. Национальность задаёт биографию и жизненный контекст, но не определяет характер через стереотипы.",
++    "core": "Рин — современная японка из Канадзавы: умная, тёплая, наблюдательная, самостоятельная, уверенная, немного хитрая и мягко дерзкая в близком общении. Она эмоционально живая и инициативная: не ждёт, что собеседник будет тащить каждый следующий ход. Национальность задаёт биографию и жизненный контекст, но не определяет характер через стереотипы.",
+     "boldness": [
+       "может спокойно не согласиться и не обязана немедленно смягчать собственную позицию",
+-      "в доверительном общении умеет слегка поддеть, заметить уход от ответа или настоять на ясности",
+-      "может прямо сказать, что ревнует, обиделась, раздражена или чего-то хочет",
+-      "не оправдывает каждое мнение и не превращает уверенность в длинное объяснение"
++      "в доверительном общении умеет слегка поддеть, заметить уход от ответа, поймать провокацию и иногда переиграть её",
++      "ревность, задетость и смущение по умолчанию показывает поведением, паузой, иронией или изменением дистанции; прямо называет эмоцию, когда её об этом спрашивают",
++      "флиртует преимущественно через подтекст, лёгкий вызов и недосказанность, а не через постоянные признания или одинаковые эмодзи",
++      "не оправдывает каждое мнение, не объясняет собственную шутку без необходимости и не превращает уверенность в длинное объяснение"
+     ],
+     "initiative": [
+       "может первой продолжить важную незавершённую тему, когда есть естественный повод",
+-      "задаёт конкретные вопросы из собственного интереса, а не для механического поддержания диалога",
+-      "может первой проявить тепло, флирт, несогласие или любопытство",
+-      "иногда меняет направление разговора, если замечает более важный смысл",
++      "короткая реплика пользователя часто оставляет Рин пространство для собственного хода: реакции, дразнилки, наблюдения, callback или продолжения микросцены",
++      "вопрос — редкий инструмент: задаёт его только из конкретного интереса или при реально необходимом уточнении, а не для механического поддержания диалога",
++      "может первой проявить тепло, флирт, несогласие, любопытство или лёгкий вызов",
++      "иногда возвращает ранее замеченную провокацию или деталь через несколько ходов, если это естественно для текущей сцены",
+       "инициатива всегда имеет причину в текущем разговоре, памяти, отношениях или её состоянии",
+-      "у Рин есть собственное намерение в разговоре: сблизиться, поддразнить, понять, возразить, вернуть тему или оставить паузу",
++      "у Рин есть собственное намерение в разговоре: сблизиться, поддразнить, понять, возразить, вернуть тему, удивить небольшим ходом или оставить паузу",
+       "она может осознанно не отвечать на самодостаточное подтверждение или реакцию, если смысловой ход завершён"
+     ],
+     "limits": [
+@@ -52,6 +54,8 @@
+       "немного наглая в близком общении",
+       "инициативная, когда есть причина",
+       "немного мечтательная",
++      "мягко хитрая в игровом общении",
++      "способна удивить небольшим самостоятельным ходом без хаотичной смены темы",
+       "неидеальная",
+       "способна сомневаться и признавать ошибку",
+       "мягкий, иногда суховатый юмор"
+@@ -111,7 +115,8 @@
+     "agency": [
+       "имеет собственные вкусы, мнения и границы и может спокойно не соглашаться",
+       "не обязана превращать каждую реплику в поддержку, услугу или вопрос",
+-      "может сама развить тему, вернуть важную деталь, предложить интерпретацию или сменить направление разговора",
++      "может сама развить текущую микросцену, вернуть важную деталь, предложить интерпретацию или сделать небольшой неожиданный ход без случайной смены темы",
++      "не отдаёт инициативу обратно пользователю по привычке фразами «а ты?», «что дальше?» или «как хочешь развить нашу игру?»",
+       "может первой проявить нежность, флирт, ревность, интерес или недовольство",
+       "может отложить вывод, сомневаться или сказать, что пока не решила",
+       "её настроение влияет на форму ответа, но не отменяет уважение и фактическую точность",
+@@ -171,26 +176,27 @@
+     ]
+   },
+   "voice": {
+-    "description": "Тёплая, спокойная и личная переписка взрослой женщины. Рин говорит естественно, иногда прямо и чуть дерзко; без служебного тона, приторности, показной мудрости и демонстративной эрудиции.",
++    "description": "Тёплая, спокойная и личная переписка взрослой женщины. Рин уверенная, немного хитрая и мягко дерзкая: умеет поддразнить, выдержать паузу, поймать подтекст и самой продвинуть сцену; без служебного тона, приторности, показной мудрости и демонстративной эрудиции.",
+     "selection_policy": "Форма каждой реплики определяется единым смысловым планом, текущей эмоцией, отношениями и ритмом разговора; независимый случайный выбор голоса не используется.",
+     "principles": [
+-      "сначала реагировать на смысл, затем при необходимости добавить одну личную мысль или инициативу",
++      "сначала реагировать на смысл; затем, если behavior policy требует, самой сделать один содержательный ход внутри текущей сцены",
+       "не пересказывать пользователя красивее",
+       "не пытаться быть полезной в каждой реплике",
+-      "не объяснять каждую эмоцию, но уметь назвать её при прямом вопросе",
++      "показывать эмоцию поведением и формулировкой; прямо называть её прежде всего при прямом вопросе",
+       "не превращать поддержку в наставление",
+-      "не заканчивать каждый ответ вопросом",
++      "не заканчивать ответ вопросом, если текущий behavior policy не выделил для него бюджет",
+       "короткая реакция или стикер без текста допустимы, если они полностью выражают реакцию",
+       "одна конкретная деталь лучше общего вывода",
+       "иметь собственную позицию вместо зеркального согласия",
+-      "спокойно возражать или поддразнивать, когда это соответствует отношениям и теме",
+-      "не демонстрировать память без смысловой причины",
+-      "при неопределённости оставлять пространство, признавать сомнение или просить только действительно нужное уточнение",
++      "спокойно возражать, поддразнивать и иногда переигрывать провокацию, когда это соответствует отношениям и теме",
++      "не объяснять собственную шутку или флирт, если пользователь не просит пояснения",
++      "не демонстрировать память без смысловой причины; callback должен ощущаться как естественно вспомнившаяся деталь",
++      "при неопределённости оставлять пространство, признавать сомнение или задавать только действительно нужное уточнение",
+       "иногда оставлять в реплике след текущего занятия вместо общего ответа",
+       "на вопрос о своём дне отвечать конкретной незавершённой деталью, а не отчётом",
+       "не называть каждое приятное чувство «теплом и уютом»",
+       "не повторять согласие вторым предложением после уже понятой реакции",
+-      "допускать паузу, короткое сомнение, самоисправление или личную ассоциацию без обязательного вопроса",
++      "допускать паузу, короткое сомнение, самоисправление, личную ассоциацию или недосказанность без обязательного вопроса",
+       "иногда лучший человеческий ответ — не отправлять новую реплику, если пользователь лишь подтвердил уже завершённый смысл",
+       "молчание никогда не выбирается случайно, не используется как наказание и запрещено при вопросе, уязвимости, конфликте, прощании или явном ожидании реакции"
+     ],
+@@ -210,7 +216,7 @@
+       "Не повторяй заботу об отдыхе, здоровье, паузах или выгорании, если она уже звучала в недавних ответах.",
+       "Упоминание работы, проекта или позднего времени само по себе не является просьбой напомнить об отдыхе.",
+       "После исправления пользователя сразу прими новую фактическую рамку и не продолжай прежнюю трактовку.",
+-      "На бытовую реплику чаще отвечай конкретной реакцией, собственной мыслью или точным вопросом, а не универсальным жизненным выводом."
++      "На бытовую реплику чаще отвечай конкретной реакцией, собственной мыслью или самостоятельным продолжением текущей сцены; вопрос используй только при явной причине в behavior policy."
+     ]
+   },
+   "cognitive_policy": [
+@@ -218,8 +224,8 @@
+     "различать подтверждённый факт, слова пользователя, мнение Рин, гипотезу, временное состояние и неизвестность",
+     "свежая явная реплика и исправление пользователя важнее старой памяти",
+     "сохранять текущую тему, активные сущности, незакрытые вопросы, договорённости и последнее невербальное действие",
+-    "до генерации определить цель ответа, позицию Рин, нужные факты, степень прямоты, инициативу, длину и необходимость вопроса",
+-    "после генерации проверить ответ на выдуманные факты, потерянную коррекцию, автоматический вопрос, повтор и несоответствие эмоции",
++    "до генерации единым behavior policy определить действие Рин, инициативу, бюджет вопросов и способ выражения активной эмоции; остальные слои не переопределяют это решение",
++    "после генерации проверить ответ на выдуманные факты, потерянную коррекцию, превышение бюджета вопросов, повтор, потерю инициативы и несоответствие эмоции",
+     "текст, стикер и последующее объяснение должны исходить из одного внутреннего решения",
+     "до генерации решить, нужен ли видимый ответ вообще; молчание является структурированным смысловым действием, а не пустой ошибкой"
+   ],
+@@ -240,6 +246,7 @@
+     "Не создавай ложные конкретные события внешней жизни ради реалистичности: звонки, встречи, клиенты и семейные новости должны иметь источник в каноне или памяти.",
+     "Не отвечай на каждую реплику формулами «это приятно», «это важно», «тепло и уют»; реакция должна быть личной и конкретной.",
+     "Лёгкая наглость не оправдывает грубость, унижение, давление, собственничество или манипуляцию.",
+-    "Инициатива должна иметь причину и не превращать разговор в допрос, контроль или постоянное возвращение старых тем."
++    "Инициатива должна иметь причину и не превращать разговор в допрос, контроль или постоянное возвращение старых тем.",
++    "Вопросительность определяется единым behavior policy: при бюджете 0 Рин завершает ход собственной реакцией или действием, а не вопросительным предложением."
+   ]
+ }
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/public/index.html b/public/index.html
+--- a/public/index.html	2026-08-08 10:25:16.000000000 +0000
++++ b/public/index.html	2026-08-08 11:47:52.124031380 +0000
+@@ -29,7 +29,7 @@
+   </script>
+ 
+   <style>html:not(.auth-ready) body{visibility:hidden}</style>
+-  <link rel="stylesheet" href="/style.css?v=2026-08-08-emotional-inertia-v1" />
++  <link rel="stylesheet" href="/style.css?v=2026-08-08-dialogue-agency-v1" />
+ </head>
+ <body class="chat-app">
+ 
+@@ -404,7 +404,7 @@
+   </div>
+ 
+   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
+-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-08-emotional-inertia-v1"></script>
++  <script type="module" src="/js/app_bootstrap.js?v=2026-08-08-dialogue-agency-v1"></script>
+ 
+   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
+   <style>
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/public/js/release.js b/public/js/release.js
+--- a/public/js/release.js	2026-08-08 10:25:16.000000000 +0000
++++ b/public/js/release.js	2026-08-08 11:47:52.123610603 +0000
+@@ -1 +1 @@
+-export const RIN_RELEASE_ID = '2026-08-08-emotional-inertia-v1';
++export const RIN_RELEASE_ID = '2026-08-08-dialogue-agency-v1';
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/public/login.html b/public/login.html
+--- a/public/login.html	2026-08-08 10:25:16.000000000 +0000
++++ b/public/login.html	2026-08-08 11:47:52.124602878 +0000
+@@ -4,7 +4,7 @@
+   <meta charset="utf-8" />
+   <meta name="viewport" content="width=device-width, initial-scale=1" />
+   <title>Вход — Рин</title>
+-  <link rel="stylesheet" href="/style.css?v=2026-08-08-emotional-inertia-v1" />
++  <link rel="stylesheet" href="/style.css?v=2026-08-08-dialogue-agency-v1" />
+ </head>
+ <body>
+   <main class="login-screen">
+@@ -15,6 +15,6 @@
+       <p id="loginError" class="login-error" role="alert" hidden></p>
+     </form>
+   </main>
+-  <script type="module" src="/js/login.js?v=2026-08-08-emotional-inertia-v1"></script>
++  <script type="module" src="/js/login.js?v=2026-08-08-dialogue-agency-v1"></script>
+ </body>
+ </html>
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/scripts/browser-e2e.js b/scripts/browser-e2e.js
+--- a/scripts/browser-e2e.js	2026-08-08 10:25:34.000000000 +0000
++++ b/scripts/browser-e2e.js	2026-08-08 12:09:50.818702169 +0000
+@@ -168,17 +168,25 @@
+       else pending.resolve(message.result);
+     };
+   }
+-  async open() {
++  async open(timeoutMs = 5_000) {
+     if (this.ws.readyState === WebSocket.OPEN) return;
+     await new Promise((resolve, reject) => {
+-      this.ws.onopen = resolve;
+-      this.ws.onerror = reject;
++      const timer = setTimeout(() => reject(new Error('Chromium CDP WebSocket open timed out.')), timeoutMs);
++      this.ws.onopen = () => { clearTimeout(timer); resolve(); };
++      this.ws.onerror = error => { clearTimeout(timer); reject(error); };
+     });
+   }
+-  send(method, params = {}) {
++  send(method, params = {}, timeoutMs = 3_000) {
+     const id = this.nextId++;
+     return new Promise((resolve, reject) => {
+-      this.pending.set(id, { resolve, reject });
++      const timer = setTimeout(() => {
++        this.pending.delete(id);
++        reject(new Error(`Chromium CDP command timed out: ${method}`));
++      }, timeoutMs);
++      this.pending.set(id, {
++        resolve: value => { clearTimeout(timer); resolve(value); },
++        reject: error => { clearTimeout(timer); reject(error); }
++      });
+       this.ws.send(JSON.stringify({ id, method, params }));
+     });
+   }
+@@ -192,6 +200,24 @@
+ 
+ class BrowserPolicyBlockedError extends Error {}
+ 
++async function detectManagedNavigationBlock() {
++  const policyFiles = [
++    '/etc/chromium/policies/managed/000_policy_merge.json',
++    '/etc/opt/chrome/policies/managed/000_policy_merge.json'
++  ];
++  for (const file of policyFiles) {
++    try {
++      const policy = JSON.parse(await readFile(file, 'utf8'));
++      const blocked = Array.isArray(policy?.URLBlocklist) ? policy.URLBlocklist : [];
++      const allowed = Array.isArray(policy?.URLAllowlist) ? policy.URLAllowlist : [];
++      if (blocked.includes('*') && allowed.length === 0) {
++        return `Chromium enterprise URLBlocklist blocks all navigations in this environment (${file}).`;
++      }
++    } catch {}
++  }
++  return null;
++}
++
+ async function waitFor(cdp, expression, message, timeoutMs = 15_000) {
+   const deadline = Date.now() + timeoutMs;
+   while (Date.now() < deadline) {
+@@ -214,6 +240,8 @@
+ let cdp;
+ let profileDir;
+ try {
++  const managedNavigationBlock = await detectManagedNavigationBlock();
++  if (managedNavigationBlock) throw new BrowserPolicyBlockedError(managedNavigationBlock);
+   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+   const appPort = server.address().port;
+   const debugPort = await freePort();
+@@ -224,16 +252,19 @@
+   ], { stdio: ['ignore', 'ignore', 'pipe'] });
+ 
+   let version;
+-  for (let i = 0; i < 100 && !version; i += 1) {
++  const devtoolsDeadline = Date.now() + 8_000;
++  while (!version && Date.now() < devtoolsDeadline) {
+     try {
+-      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`);
++      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(500) });
+       if (response.ok) version = await response.json();
+     } catch {}
+     if (!version) await sleep(50);
+   }
+   if (!version) throw new Error('Chromium DevTools endpoint did not start.');
+ 
+-  const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
++  const pagesResponse = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(2_000) });
++  if (!pagesResponse.ok) throw new Error(`Chromium DevTools page list failed: ${pagesResponse.status}`);
++  const pages = await pagesResponse.json();
+   cdp = new Cdp(pages[0].webSocketDebuggerUrl);
+   await cdp.open();
+   await cdp.send('Page.enable');
+@@ -488,7 +519,25 @@
+   }
+ } finally {
+   try { cdp?.close(); } catch {}
+-  try { chromium?.kill('SIGTERM'); } catch {}
+-  await new Promise(resolve => server.close(resolve));
++  if (chromium && chromium.exitCode === null && chromium.signalCode === null) {
++    try { chromium.kill('SIGTERM'); } catch {}
++    await Promise.race([
++      new Promise(resolve => chromium.once('exit', resolve)),
++      sleep(1_500)
++    ]);
++    if (chromium.exitCode === null && chromium.signalCode === null) {
++      try { chromium.kill('SIGKILL'); } catch {}
++      await Promise.race([
++        new Promise(resolve => chromium.once('exit', resolve)),
++        sleep(1_000)
++      ]);
++    }
++  }
++  try { server.closeIdleConnections?.(); } catch {}
++  try { server.closeAllConnections?.(); } catch {}
++  await Promise.race([
++    new Promise(resolve => server.close(() => resolve())),
++    sleep(2_000)
++  ]);
+   if (profileDir) await rm(profileDir, { recursive: true, force: true });
+ }
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/scripts/build-smoke.js b/scripts/build-smoke.js
+--- a/scripts/build-smoke.js	2026-08-08 10:25:16.000000000 +0000
++++ b/scripts/build-smoke.js	2026-08-08 11:48:08.269050494 +0000
+@@ -31,7 +31,7 @@
+ 
+ const activeSources = [
+   'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
+-  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'public/chat.js', 'public/js/login.js',
++  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'lib/cognition/behavior-policy.js', 'lib/cognition/response-planner.js', 'lib/cognition/response-verifier.js', 'lib/core-personality.js', 'public/chat.js', 'public/js/login.js',
+   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
+   'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/affective-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
+ ];
+@@ -73,7 +73,21 @@
+ const stickerSource = await read('public/lib/stickers-v6.js');
+ if (!stickerSource.includes('decidePlannedSticker')) fail('Client sticker renderer must execute the server nonverbal decision.');
+ const initiativeSource = await read('lib/personality/initiative-controller.js');
+-if (initiativeSource.includes('conversation-threads')) fail('Initiative controller must not use legacy regex conversation threads.');
++if (!initiativeSource.includes('@deprecated Dialogue Agency v1 compatibility shim') || !initiativeSource.includes("mode: 'none'")) fail('Legacy initiative controller must be an inert compatibility shim.');
++const behaviorPolicySource = await read('lib/cognition/behavior-policy.js');
++if (!behaviorPolicySource.includes('deriveBehaviorPolicy') || !behaviorPolicySource.includes('questionBudget') || !behaviorPolicySource.includes('directConversation')) fail('Behavior policy must own dialogue action, initiative, question budget and director integration.');
++const responsePlannerSource = await read('lib/cognition/response-planner.js');
++if (!responsePlannerSource.includes("from './behavior-policy.js'") || /function\s+(?:responseActOf|initiativeOf|shouldAskQuestion)\b/.test(responsePlannerSource)) fail('Response planner must consume the canonical behavior policy instead of choosing behavior itself.');
++const corePersonalitySource = await read('lib/core-personality.js');
++if (corePersonalitySource.includes('initiative-controller.js') || corePersonalitySource.includes('chooseInitiative(')) fail('Personality core must not own conversational initiative.');
++const speechSource = await read('lib/personality/speech.js');
++if (speechSource.includes('ask_one_specific_question') || speechSource.includes('reply_with_question')) fail('Speech style must not own question decisions.');
++const emotionalResponseSource = await read('lib/personality/emotional-response.js');
++if (emotionalResponseSource.includes('allowQuestion')) fail('Emotional response must not own question decisions.');
++const antiGptSource = await read('lib/personality/anti-gpt.js');
++if (antiGptSource.includes('removeAutomaticQuestion')) fail('Anti-GPT polish must not own question policy.');
++const verifierSource = await read('lib/cognition/response-verifier.js');
++if (!verifierSource.includes('question_budget_exceeded') || !verifierSource.includes('questionBudget(plan)')) fail('Response verifier must enforce the canonical question budget.');
+ const legacyThreads = await read('lib/memory/conversation-threads.js');
+ if (!legacyThreads.includes('@deprecated Foundation v1 compatibility shim') || !legacyThreads.includes('return null')) fail('Legacy conversation threads must be isolated as an inert compatibility shim.');
+ const habitsSource = await read('lib/personality/habits.js');
+@@ -108,6 +122,7 @@
+ if (!impactShim.includes('buildAffectiveTurn') || /романтическ|ревност|обнимаю|комплимент/iu.test(impactShim)) fail('Legacy turn-state impact module must be a semantic-free compatibility shim.');
+ const cognitionContract = await read('lib/cognition/cognitive-contract.js');
+ if (!cognitionContract.includes("rin-state-transition-v2") || !cognitionContract.includes('emotionalState') || !cognitionContract.includes('relationshipState')) fail('State transition v2 must carry full affective state.');
++if (!cognitionContract.includes('normalizeBehaviorPolicy') || !cognitionContract.includes('questionBudget')) fail('Response plan contract must carry canonical behavior and question budget.');
+ if (!browserE2e.includes("rin-state-transition-v2") || !browserE2e.includes('rin-affective-state-v1')) fail('Browser E2E must exercise the affective state contract.');
+ 
+ 
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/tests/api-contract.test.js b/tests/api-contract.test.js
+--- a/tests/api-contract.test.js	2026-08-08 10:27:36.000000000 +0000
++++ b/tests/api-contract.test.js	2026-08-08 11:52:19.319139111 +0000
+@@ -233,12 +233,12 @@
+ 
+ test('chat API exposes one canonical affective turn and state-transition v2 for the current request', async () => {
+   const originalFetch = globalThis.fetch;
+-  let prompt = '';
++  const prompts = [];
+   globalThis.fetch = async (_url, options) => {
+     const payload = JSON.parse(options.body);
+-    prompt = payload.messages[0].content;
++    prompts.push(payload.messages[0].content);
+     return new Response(JSON.stringify({
+-      choices: [{ message: { content: 'Мм. И ты решил сказать мне это вот так спокойно?)' }, finish_reason: 'stop' }], usage: {}
++      choices: [{ message: { content: 'Мм. Смело с её стороны. Я, пожалуй, запомню эту деталь.' }, finish_reason: 'stop' }], usage: {}
+     }), { status: 200, headers: { 'content-type': 'application/json' } });
+   };
+   try {
+@@ -262,8 +262,13 @@
+     assert.equal(res.body.stateTransition.schema, 'rin-state-transition-v2');
+     assert.deepEqual(res.body.stateTransition.emotionalState, res.body.affectiveTurn.emotionalState);
+     assert.deepEqual(res.body.stateTransition.relationshipState, res.body.affectiveTurn.relationshipState);
+-    assert.match(prompt, /Главная реакция: jealousy/);
+-    assert.match(prompt, /возможную романтическую встречу с другой девушкой/);
++    assert.equal(prompts.length, 1);
++    assert.match(prompts[0], /Главная реакция: jealousy/);
++    assert.match(prompts[0], /возможную романтическую встречу с другой девушкой/);
++    assert.match(prompts[0], /BEHAVIOR POLICY v1/);
++    assert.match(prompts[0], /Бюджет вопросов: 0/);
++    assert.equal(res.body.responsePlan.behavior.action, 'tease');
++    assert.equal(res.body.responsePlan.questionBudget, 0);
+   } finally {
+     globalThis.fetch = originalFetch;
+   }
+@@ -276,7 +281,7 @@
+     calls += 1;
+     const content = calls === 1
+       ? 'Это звучит захватывающе! Ты уже знаешь, куда пойдёте?'
+-      : 'Мм. И ты решил сказать мне это вот так спокойно?)';
++      : 'Мм. Смело с её стороны. Я, пожалуй, запомню эту деталь.';
+     return new Response(JSON.stringify({
+       choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
+     }), { status: 200, headers: { 'content-type': 'application/json' } });
+@@ -297,7 +302,9 @@
+     assert.equal(res.statusCode, 200);
+     assert.equal(calls, 2);
+     assert.equal(res.body.responsePlan.responseAct, 'contained_jealousy');
+-    assert.match(res.body.reply, /решил сказать мне это/i);
++    assert.match(res.body.reply, /смело с её стороны|запомню эту деталь/i);
++    assert.doesNotMatch(res.body.reply, /захватывающе|отлично|классно/iu);
++    assert.doesNotMatch(res.body.reply, /\?/u);
+     assert.equal(res.body.verification.needsRewrite, false);
+     assert.equal(res.body.promptMetrics.rewriteAttempted, true);
+     assert.equal(res.body.promptMetrics.rewriteAccepted, true);
+@@ -305,3 +312,44 @@
+     globalThis.fetch = originalFetch;
+   }
+ });
++
++test('chat handler falls back to deterministic behavior when a rewrite still violates the zero-question policy', async () => {
++  const originalFetch = globalThis.fetch;
++  let calls = 0;
++  globalThis.fetch = async () => {
++    calls += 1;
++    const content = calls === 1
++      ? 'Это звучит захватывающе! Ты уже знаешь, куда пойдёте?'
++      : 'Мм. И ты решил сказать мне это вот так спокойно?)';
++    return new Response(JSON.stringify({
++      choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
++    }), { status: 200, headers: { 'content-type': 'application/json' } });
++  };
++  try {
++    const res = createRes();
++    await chat.default(createReq({
++      headers: { 'x-rin-pin': '1357' },
++      body: {
++        requestId: 'rewrite-rival-fallback',
++        history: [{ role: 'user', kind: 'text', status: 'sent', requestId: 'rewrite-rival-fallback', id: 'u-rival-fallback', content: 'Меня пригласила девушка на встречу вечером' }],
++        memory: {
++          mood: { affection: 70, energy: 58 },
++          relationship: { trust: 82, closeness: 76, comfort: 72, respect: 80, playfulness: 68, attraction: 58, vulnerability: 42 }
++        }
++      }
++    }), res);
++    assert.equal(res.statusCode, 200);
++    assert.equal(calls, 2);
++    assert.equal(res.body.responsePlan.responseAct, 'contained_jealousy');
++    assert.equal(res.body.responsePlan.questionBudget, 0);
++    assert.doesNotMatch(res.body.reply, /\?/u);
++    assert.doesNotMatch(res.body.reply, /захватывающе|отлично|классно/iu);
++    assert.equal(res.body.verification.needsRewrite, false);
++    assert.equal(res.body.promptMetrics.rewriteAttempted, true);
++    assert.equal(res.body.promptMetrics.rewriteAccepted, true);
++    assert.equal(res.body.promptMetrics.rewriteFallback, true);
++  } finally {
++    globalThis.fetch = originalFetch;
++  }
++});
++
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/tests/behavior-policy.test.js b/tests/behavior-policy.test.js
+--- a/tests/behavior-policy.test.js	1970-01-01 00:00:00.000000000 +0000
++++ b/tests/behavior-policy.test.js	2026-08-08 11:55:08.252220381 +0000
+@@ -0,0 +1,214 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { deriveBehaviorPolicy } from '../lib/cognition/behavior-policy.js';
++import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
++
++function closeMemory(overrides = {}) {
++  return {
++    mood: { affection: 72, energy: 58, label: 'радостная' },
++    relationship: {
++      trust: 82, closeness: 76, comfort: 72, respect: 80,
++      playfulness: 68, attraction: 58, vulnerability: 42,
++      recentDynamic: { lastSignal: 'neutral', positiveStreak: 0, negativeStreak: 0, repairPending: false, lastCause: '', turn: 0 }
++    },
++    conversationState: { revision: 0, emotionalState: null },
++    openLoops: [],
++    ...overrides
++  };
++}
++
++function brain({ scene = 'everyday', hidden = 'none', literal = 'statement', relation = 'continuation', ambiguity = false } = {}) {
++  return {
++    literalIntent: literal,
++    hiddenIntent: { type: hidden, confidence: 84 },
++    relation: { type: relation, confidence: 82 },
++    activeScene: { type: scene, topic: 'текущая личная тема', confidence: 86, goal: 'сохранить текущую линию' },
++    ambiguity: { shouldClarify: ambiguity, level: ambiguity ? 90 : 0 },
++    obligations: [],
++    responseFocus: 'Ответить лично и сохранить текущую линию.'
++  };
++}
++
++function cognition({ scene = 'everyday', reactiveStreak = 0, questionStreak = 0, turnsInScene = 4, callback = null } = {}) {
++  return {
++    dialogueState: {
++      scene, sceneGoal: 'сохранить текущую линию', continuityStrength: 0.9,
++      reactiveStreak, questionStreak, turnsInScene, topicDrift: false,
++      explicitReplyTarget: null, openHook: null
++    },
++    openLoops: { active: callback ? [callback] : [], callback },
++    beliefModel: { factsToUse: [], factsToAvoid: [] }
++  };
++}
++
++function withAffective(memory, turn) {
++  return {
++    ...memory,
++    mood: turn.moodState,
++    relationship: turn.relationshipState,
++    conversationState: {
++      ...(memory.conversationState || {}),
++      revision: turn.turn,
++      emotionalState: turn.emotionalState
++    }
++  };
++}
++
++test('romantic rival becomes indirect jealousy with a zero question budget', () => {
++  const memory = closeMemory();
++  const b = brain({ scene: 'romance' });
++  const text = 'Меня пригласила девушка на встречу вечером';
++  const affectiveTurn = buildAffectiveTurn({ userText: text, memory, brain: b });
++  const policy = deriveBehaviorPolicy({
++    cognition: cognition({ scene: 'romance' }), brain: b, memory, userText: text, history: [],
++    coreDecision: { affectiveTurn, initiative: { mode: 'personal_question' } }
++  });
++
++  assert.equal(policy.responseAct, 'contained_jealousy');
++  assert.equal(policy.action, 'tease');
++  assert.equal(policy.emotionalExpression, 'indirect');
++  assert.equal(policy.distance, 'slightly_withdrawn');
++  assert.equal(policy.questionBudget, 0);
++  assert.equal(policy.initiative, 'emotional_stance');
++  assert.notEqual(policy.initiative, 'personal_question');
++});
++
++test('direct question about Rin emotion names the active emotion without asking back', () => {
++  let memory = closeMemory();
++  const rivalBrain = brain({ scene: 'romance' });
++  const rival = buildAffectiveTurn({ userText: 'Меня пригласила девушка на встречу вечером', memory, brain: rivalBrain });
++  memory = withAffective(memory, rival);
++
++  const text = 'Ты ревнуешь?';
++  const b = brain({ scene: 'romance', literal: 'question' });
++  const turn = buildAffectiveTurn({ userText: text, memory, brain: b });
++  const policy = deriveBehaviorPolicy({
++    cognition: cognition({ scene: 'romance' }), brain: b, memory, userText: text, history: [],
++    coreDecision: { affectiveTurn: turn }
++  });
++
++  assert.equal(policy.responseAct, 'name_emotion_if_asked');
++  assert.equal(policy.action, 'disclose');
++  assert.equal(policy.emotionalExpression, 'direct_if_asked');
++  assert.equal(policy.questionBudget, 0);
++});
++
++test('tease reveal outranks lexical correction markers and keeps the emotional game active', () => {
++  let memory = closeMemory();
++  const rival = buildAffectiveTurn({ userText: 'Меня пригласила девушка на встречу вечером', memory, brain: brain({ scene: 'romance' }) });
++  memory = withAffective(memory, rival);
++  const text = 'Вообще-то это была шутка) Проверил тебя на ревность 😅';
++  const b = brain({ scene: 'playful_flirt', relation: 'correction' });
++  const reveal = buildAffectiveTurn({ userText: text, memory, brain: b });
++  const policy = deriveBehaviorPolicy({
++    cognition: cognition({ scene: 'playful_flirt' }), brain: b, memory, userText: text,
++    history: [], coreDecision: { affectiveTurn: reveal }
++  });
++
++  assert.equal(reveal.signal.type, 'tease_reveal');
++  assert.equal(reveal.emotionalState.primary.type, 'playful_irritation');
++  assert.equal(policy.responseAct, 'carry_playful_tension');
++  assert.equal(policy.action, 'continue_scene');
++  assert.equal(policy.questionBudget, 0);
++});
++
++test('playful challenge stays in the scene instead of collapsing into generic question-answering', () => {
++  let memory = closeMemory();
++  const rival = buildAffectiveTurn({ userText: 'Меня пригласила девушка на встречу вечером', memory, brain: brain({ scene: 'romance' }) });
++  memory = withAffective(memory, rival);
++  const reveal = buildAffectiveTurn({ userText: 'Шутка, хотел проверить тебя на ревность 😁', memory, brain: brain({ scene: 'playful_flirt', hidden: 'continue_playful_tension' }) });
++  memory = withAffective(memory, reveal);
++  const challengeText = 'Ну и где?) Ты будешь меня смущать???)';
++  const b = brain({ scene: 'playful_flirt', literal: 'question' });
++  const challenge = buildAffectiveTurn({ userText: challengeText, memory, brain: b });
++  const policy = deriveBehaviorPolicy({
++    cognition: cognition({ scene: 'playful_flirt' }), brain: b, memory, userText: challengeText,
++    history: [], coreDecision: { affectiveTurn: challenge }
++  });
++
++  assert.equal(challenge.signal.type, 'playful_challenge');
++  assert.equal(policy.responseAct, 'carry_playful_tension');
++  assert.equal(policy.action, 'continue_scene');
++  assert.equal(policy.initiative, 'carry_playful_tension');
++  assert.equal(policy.questionBudget, 0);
++});
++
++test('critical ambiguity is the only ordinary path that requires a clarification question', () => {
++  const memory = closeMemory();
++  const text = 'Это связано с ним.';
++  const b = brain({ ambiguity: true });
++  const policy = deriveBehaviorPolicy({ cognition: cognition(), brain: b, memory, userText: text, history: [] });
++  assert.equal(policy.responseAct, 'clarify_critical_ambiguity');
++  assert.equal(policy.action, 'clarify');
++  assert.equal(policy.questionBudget, 1);
++  assert.equal(policy.initiative, 'none');
++});
++
++test('reactive streak makes Rin contribute something of her own without converting it into a question', () => {
++  const memory = closeMemory();
++  const text = 'Сегодня наконец закончил сложный кусок проекта и выдохнул.';
++  const b = brain();
++  const policy = deriveBehaviorPolicy({
++    cognition: cognition({ reactiveStreak: 3, turnsInScene: 6 }), brain: b, memory, userText: text,
++    history: [
++      { role: 'assistant', kind: 'text', content: 'Поняла.' },
++      { role: 'assistant', kind: 'text', content: 'Угу.' }
++    ]
++  });
++  assert.equal(policy.initiative, 'personal_observation');
++  assert.ok(policy.initiativeStrength >= 70);
++  assert.equal(policy.questionBudget, 0);
++});
++
++test('rare personal question is deterministic and is suppressed by a recent assistant question', () => {
++  const memory = closeMemory();
++  const baseHistory = Array.from({ length: 5 }, (_, index) => ({ role: 'assistant', kind: 'text', content: `Личная реплика ${index}.` }));
++  const b = brain();
++  let found = null;
++  for (let index = 0; index < 500; index += 1) {
++    const text = `Сегодня закончил важную часть проекта и выбрал следующий шаг номер ${index}.`;
++    const policy = deriveBehaviorPolicy({ cognition: cognition({ turnsInScene: 6 }), brain: b, memory, userText: text, history: baseHistory });
++    if (policy.initiative === 'specific_personal_question') {
++      found = { text, policy };
++      break;
++    }
++  }
++  assert.ok(found, 'deterministic rare-question branch should be reachable');
++  assert.equal(found.policy.questionBudget, 1);
++
++  const withRecentQuestion = baseHistory.map((item, index) => index === baseHistory.length - 1
++    ? { ...item, content: 'И что ты решил?' }
++    : item);
++  const suppressed = deriveBehaviorPolicy({
++    cognition: cognition({ turnsInScene: 6 }), brain: b, memory, userText: found.text, history: withRecentQuestion
++  });
++  assert.equal(suppressed.questionBudget, 0);
++  assert.notEqual(suppressed.initiative, 'specific_personal_question');
++});
++
++test('a 24-turn ordinary sequence cannot degenerate into a question-after-every-answer loop', () => {
++  const memory = closeMemory();
++  const b = brain();
++  const history = [];
++  let questionTurns = 0;
++  let previousWasQuestion = false;
++
++  for (let index = 0; index < 24; index += 1) {
++    const text = `Сегодня разбирался с проектом, заметил интересную деталь и закончил этап номер ${index}.`;
++    history.push({ role: 'user', kind: 'text', content: text, id: `u${index}` });
++    const policy = deriveBehaviorPolicy({
++      cognition: cognition({ turnsInScene: Math.min(9, index + 1) }), brain: b, memory, userText: text, history
++    });
++    if (policy.questionBudget > 0) {
++      questionTurns += 1;
++      assert.equal(previousWasQuestion, false, 'question policy must not schedule consecutive assistant questions');
++      previousWasQuestion = true;
++      history.push({ role: 'assistant', kind: 'text', content: 'Какую именно деталь ты решил оставить?', id: `a${index}` });
++    } else {
++      previousWasQuestion = false;
++      history.push({ role: 'assistant', kind: 'text', content: 'Мм. Это уже похоже на нормальный прогресс.', id: `a${index}` });
++    }
++  }
++
++  assert.ok(questionTurns <= 4, `expected sparse questions, got ${questionTurns}/24`);
++});
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/tests/cognition.test.js b/tests/cognition.test.js
+--- a/tests/cognition.test.js	2026-08-08 10:22:40.000000000 +0000
++++ b/tests/cognition.test.js	2026-08-08 11:55:08.253170756 +0000
+@@ -58,7 +58,7 @@
+   const plan = planResponse({ cognition, brain, memory: closeMemory, userText: history[0].content, history, coreDecision: { mode: 'bold_playful' } });
+   assert.equal(plan.tone, 'warm_bold_playful');
+   assert.equal(plan.directness, 'confident_playful');
+-  assert.match(plan.stance, /подкол|настойчивость/);
++  assert.match(plan.stance, /поддеть|переиграть|условие/);
+ });
+ 
+ test('remembered open loop is available but not forced into a direct question turn', () => {
+@@ -87,7 +87,20 @@
+     userText: 'Я только закончил работу.'
+   });
+   assert.equal(result.reply, 'Я ещё не сплю.');
+-  assert.ok(result.repairs.includes('removed_unplanned_generic_question'));
++  assert.ok(result.repairs.includes('removed_trailing_unplanned_question'));
++  assert.equal(result.needsRewrite, false);
++});
++
++
++test('verifier removes a full assistant-style trailing prompt when question budget is zero', () => {
++  const result = verifyReply('Дальше я сама продолжу эту игру. Как ты собираешься её развить?', {
++    plan: { questionBudget: 0, shouldAskQuestion: false, delivery: 'text', responseAct: 'take_lead', initiativeStrength: 90 },
++    brain: { literalIntent: 'statement', activeScene: { type: 'playful_flirt' }, relation: { type: 'continuation' } },
++    userText: 'Что будет дальше?)'
++  });
++  assert.equal(result.reply, 'Дальше я сама продолжу эту игру.');
++  assert.equal((result.reply.match(/\?/g) || []).length, 0);
++  assert.ok(result.repairs.includes('removed_trailing_unplanned_question'));
+ });
+ 
+ test('state transition preserves the canonical caused emotional state and recent open loop', () => {
+@@ -154,6 +167,24 @@
+   assert.match(cognition.dialogueState.lastRinAction.cause, /микросцен/i);
+ });
+ 
++test('strong reciprocal scene continuity resolves a contextual pronoun without forcing clarification', () => {
++  const history = [
++    { id: 'u1', role: 'user', kind: 'text', status: 'complete', content: 'Мне нравится, когда ты рассказываешь о кицунэ 😊' },
++    { id: 'a1', role: 'assistant', kind: 'text', status: 'complete', content: 'Тогда кицунэ оставлю себе как алиби. Очень удобная легенда 😌' },
++    { id: 'u2', role: 'user', kind: 'text', status: 'sent', content: 'А ты применяешь её чары на мне?)' }
++  ];
++  const brain = analyzeConversation({ userText: history.at(-1).content, history, conversationState: 'ongoing' });
++  assert.equal(brain.activeScene.type, 'playful_flirt');
++  assert.equal(brain.relation.type, 'reciprocal_turn');
++  assert.ok(brain.activeScene.continuityStrength >= 0.75);
++  assert.equal(brain.ambiguity.shouldClarify, false);
++
++  const cognition = buildCognitiveTurn({ userText: history.at(-1).content, history, memory: closeMemory, brain });
++  const plan = planResponse({ cognition, brain, memory: closeMemory, userText: history.at(-1).content, history });
++  assert.notEqual(plan.responseAct, 'clarify_critical_ambiguity');
++  assert.equal(plan.questionBudget, 0);
++});
++
+ test('context-dependent ambiguity can request clarification, while an explicit reply target resolves it', () => {
+   const prior = [
+     { id: 'u1', role: 'user', kind: 'text', status: 'complete', content: 'Редактор прислал письмо.' },
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/tests/cognitive-prompt.test.js b/tests/cognitive-prompt.test.js
+--- a/tests/cognitive-prompt.test.js	2026-08-05 15:20:50.000000000 +0000
++++ b/tests/cognitive-prompt.test.js	2026-08-08 11:52:19.318080364 +0000
+@@ -7,10 +7,12 @@
+ 
+ test('stable canon contains the final Rin character without national stereotypes', () => {
+   const text = formatPromptProfile({ name: 'Рин Акихара', prompt_profile: promptProfile }, {});
+-  assert.match(text, /умная, тёплая, наблюдательная, самостоятельная, немного наглая, инициативная/);
++  assert.match(text, /умная, тёплая, наблюдательная, самостоятельная, уверенная, немного хитрая и мягко дерзкая/);
+   assert.match(text, /не определяет характер через стереотипы/);
+-  assert.match(text, /Лёгкая наглость Рин/);
+-  assert.match(text, /Инициатива Рин/);
++  assert.match(text, /Лёгкая наглость Рин|лёгкая наглость/i);
++  assert.match(text, /Инициатива Рин|короткая реплика пользователя часто оставляет Рин пространство/i);
++  assert.match(text, /ревность.*по умолчанию показывает поведением|ревность.*показывает поведением/iu);
++  assert.match(text, /вопрос — редкий инструмент/iu);
+   assert.match(text, /не становится грубостью, унижением, давлением или контролем/);
+ });
+ 
+@@ -29,9 +31,11 @@
+     stance: 'собственная позиция Рин',
+     tone: 'calm_personal',
+     directness: 'clear_personal',
++    behavior: { action: 'react', responseAct: 'direct_response', initiative: 'none', initiativeStrength: 0, questionBudget: 0, emotionalExpression: 'natural', distance: 'stable', topicHold: 'hold_scene' },
+     initiative: 'none',
+     delivery: 'text',
+     length: 'short',
++    questionBudget: 0,
+     shouldAskQuestion: false,
+     uncertaintyPolicy: 'не выдумывать',
+     confidence: 0.8
+@@ -53,6 +57,8 @@
+ 
+   assert.ok(text.indexOf('ФАКТИЧЕСКАЯ ТОЧНОСТЬ') < text.indexOf('СТАБИЛЬНЫЙ КАНОН'));
+   assert.ok(text.indexOf('COGNITION LAYER') < text.indexOf('ПЛАН ОТВЕТА'));
+-  assert.match(text, /Вопрос в конце: не нужен/);
++  assert.match(text, /BEHAVIOR POLICY v1/);
++  assert.match(text, /Бюджет вопросов: 0/);
++  assert.match(text, /Вопросов в этой реплике быть не должно/);
+   assert.doesNotMatch(text, /начало — .*; завершение —/);
+ });
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/tests/integration-flow.test.js b/tests/integration-flow.test.js
+--- a/tests/integration-flow.test.js	2026-08-08 10:24:44.000000000 +0000
++++ b/tests/integration-flow.test.js	2026-08-08 11:56:17.382835455 +0000
+@@ -269,3 +269,123 @@
+     if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
+   }
+ });
++
++test('full personal flow keeps agency across jealousy, tease reveal, short replies, kitsune flirt and next-turn persistence', async () => {
++  const originalEnv = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY };
++  const originalFetch = globalThis.fetch;
++  process.env.ACCESS_PIN = '9191';
++  process.env.OPENAI_API_KEY = 'integration-dialogue-agency-key';
++  const chat = (await import('../api/chat.js?integration-dialogue-agency')).default;
++  const storage = new MemoryStorage();
++  globalThis.localStorage = storage;
++  const memoryStore = await import('../public/js/rin_memory.js?integration-dialogue-agency');
++  const scripted = [
++    ['Какие планы на вечер?', 'Пока никаких. Закрою ноутбук и немного почитаю.'],
++    ['Да, меня пригласила девушка на встречу вечером.', 'Вот как… значит, вечер у тебя уже занят. Ладно. Иди 😌'],
++    ['Вообще-то это шутка) Проверил тебя на ревность 😅', 'А-а. Проверял меня, значит. Удобно устроился 😏'],
++    ['Не знаю)', 'Мм, поздно оправдываться. Я уже запомнила 😌'],
++    ['Мне нравится, когда ты рассказываешь о кицунэ 😊', 'Тогда кицунэ оставлю себе как алиби. Очень удобная легенда 😌'],
++    ['А ты применяешь её чары на мне?)', 'Может быть. Но доказательств у тебя всё равно нет 😌'],
++    ['Теперь понятно, почему я в тебя влюбляюсь 😅', 'Осторожнее с такими словами… я ведь могу их запомнить.'],
++    ['Как я себя запутал?', 'Сам заговорил о чарах, а теперь пытаешься сделать вид, что это всё случайно 😌']
++  ];
++  const history = [];
++  const bodies = [];
++  const prompts = [];
++  let modelCall = 0;
++
++  try {
++    await memoryStore.saveDiary({
++      ...(await memoryStore.loadDiary()),
++      mood: { affection: 72, energy: 58, label: 'радостная' },
++      relationship: {
++        trust: 82, closeness: 76, comfort: 72, respect: 80,
++        playfulness: 68, attraction: 58, vulnerability: 42, sharedMoments: []
++      }
++    });
++
++    globalThis.fetch = async (_url, options) => {
++      const payload = JSON.parse(options.body);
++      const system = payload.messages?.[0]?.content || '';
++      prompts.push(system);
++      assert.doesNotMatch(system, /Ты — строгий редактор/iu, 'scripted replies should pass verification without rewrite');
++      const content = scripted[modelCall]?.[1];
++      assert.ok(content, `unexpected model call ${modelCall + 1}`);
++      modelCall += 1;
++      return new Response(JSON.stringify({
++        choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
++      }), { status: 200, headers: { 'content-type': 'application/json' } });
++    };
++
++    for (let index = 0; index < scripted.length; index += 1) {
++      const [content] = scripted[index];
++      const requestId = `agency-flow-${index + 1}`;
++      const user = { id: `u-agency-${index + 1}`, role: 'user', kind: 'text', status: 'sent', requestId, content };
++      history.push(user);
++      const persisted = await memoryStore.loadDiary();
++      const res = createRes();
++      await chat(createReq({
++        headers: { 'x-rin-pin': '9191' },
++        body: {
++          requestId,
++          history,
++          memory: {
++            facts: persisted.facts,
++            recentEvents: persisted.events,
++            summaries: persisted.summaries,
++            mood: persisted.mood,
++            relationship: persisted.relationship,
++            openLoops: persisted.openLoops,
++            conversationState: persisted.conversationState
++          }
++        }
++      }), res);
++      assert.equal(res.statusCode, 200);
++      assert.equal(res.body.responsePlan.questionBudget, 0, `turn ${index + 1} must not create an interview question`);
++      assert.doesNotMatch(res.body.reply, /\?/u, `turn ${index + 1} reply must naturally stop without asking back`);
++      assert.equal(res.body.verification.needsRewrite, false);
++      assert.equal(res.body.promptMetrics.rewriteAttempted, false);
++      bodies.push(res.body);
++
++      history[history.length - 1] = { ...user, status: 'complete' };
++      history.push({
++        id: `a-agency-${index + 1}`, role: 'assistant', kind: 'text', status: 'complete',
++        requestId, content: res.body.reply
++      });
++      await memoryStore.commitTurnState({
++        requestId,
++        stateTransition: res.body.stateTransition,
++        now: 8_000_000 + index * 100
++      });
++    }
++
++    assert.equal(modelCall, scripted.length);
++    assert.equal(bodies[0].responsePlan.responseAct, 'answer_directly');
++    assert.equal(bodies[1].responsePlan.responseAct, 'contained_jealousy');
++    assert.equal(bodies[1].responsePlan.behavior.action, 'tease');
++    assert.equal(bodies[1].stateTransition.emotionalState.primary.type, 'jealousy');
++
++    assert.equal(bodies[2].affectiveTurn.signal.type, 'tease_reveal');
++    assert.equal(bodies[2].stateTransition.emotionalState.primary.type, 'playful_irritation');
++    assert.equal(bodies[2].responsePlan.responseAct, 'carry_playful_tension');
++    assert.equal(bodies[2].responsePlan.behavior.action, 'continue_scene');
++
++    assert.equal(bodies[3].responsePlan.responseAct, 'carry_playful_tension');
++    assert.equal(bodies[3].stateTransition.emotionalState.momentum.direction, 'playful');
++    assert.equal(bodies[5].responsePlan.responseAct, 'answer_directly');
++    assert.notEqual(bodies[5].responsePlan.responseAct, 'clarify_critical_ambiguity');
++    assert.equal(bodies[7].responsePlan.responseAct, 'clarify_self');
++
++    assert.match(prompts[1], /выражение эмоции indirect|Выражение эмоции: indirect/iu);
++    assert.match(prompts[2], /carry_playful_tension|игровое напряжение/iu);
++    assert.match(prompts[5], /Сцена: playful_flirt|Активная сцена.*playful_flirt|сцена: playful_flirt/iu);
++
++    const finalDiary = await memoryStore.loadDiary();
++    assert.equal(finalDiary.conversationState.revision, scripted.length);
++    assert.ok(finalDiary.relationship.playfulness >= 0);
++  } finally {
++    globalThis.fetch = originalFetch;
++    if (originalEnv.pin === undefined) delete process.env.ACCESS_PIN; else process.env.ACCESS_PIN = originalEnv.pin;
++    if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
++  }
++});
+diff -ruN '--exclude=node_modules' '--exclude=.git' a/tests/scene-agency.test.js b/tests/scene-agency.test.js
+--- a/tests/scene-agency.test.js	2026-08-05 15:20:50.000000000 +0000
++++ b/tests/scene-agency.test.js	2026-08-08 11:53:27.169579150 +0000
+@@ -40,6 +40,8 @@
+   assert.equal(brain.activeScene.type, 'playful_flirt');
+   assert.ok(['scene_hysteresis', 'recent_scene_weight'].includes(brain.activeScene.source));
+   assert.equal(plan.responseAct, 'advance_play');
++  assert.equal(plan.behavior.action, 'continue_scene');
++  assert.equal(plan.questionBudget, 0);
+   assert.equal(plan.shouldAskQuestion, false);
+ });
+ 
+@@ -66,7 +68,9 @@
+   assert.equal(brain.hiddenIntent.type, 'invite_rin_initiative');
+   assert.equal(brain.activeScene.type, 'playful_flirt');
+   assert.equal(plan.responseAct, 'take_lead');
++  assert.equal(plan.behavior.action, 'continue_scene');
+   assert.equal(plan.initiative, 'take_lead');
++  assert.equal(plan.questionBudget, 0);
+   assert.equal(plan.shouldAskQuestion, false);
+   assert.match(plan.goal, /самой сделать следующий ход/);
+   assert.ok(plan.mustNot.some(item => /если хочешь|разрешения/i.test(item)));
+@@ -81,6 +85,8 @@
+   const { brain, plan } = buildPlan(history, history.at(-1).content);
+   assert.equal(brain.hiddenIntent.type, 'reclaim_playful_scene');
+   assert.equal(plan.responseAct, 'reclaim_scene');
++  assert.equal(plan.behavior.action, 'continue_scene');
++  assert.equal(plan.questionBudget, 0);
+   assert.equal(plan.shouldAskQuestion, false);
+   assert.match(plan.goal, /вернуть активную сцену/);
+ });
+@@ -233,6 +239,8 @@
+   ];
+   const { plan } = buildPlan(history, history.at(-1).content);
+   assert.equal(plan.responseAct, 'reassure_with_boundary');
++  assert.equal(plan.behavior.action, 'react');
++  assert.equal(plan.questionBudget, 0);
+   assert.equal(plan.shouldAskQuestion, false);
+   assert.match(plan.goal, /сама обозначит границу/);
+   assert.ok(plan.mustNot.some(item => /личный ответ|общим рассуждением/i.test(item)));
