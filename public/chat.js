@@ -566,7 +566,7 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage, data, prep
     now: Date.now()
   });
   if (preparedLore) loreModule?.commitLorePayload?.(preparedLore);
-  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; action=${behavior?.action || 'react'}; q=${Number(data?.responsePlan?.questionBudget) || 0}`);
+  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${committed.conversationState?.rinIntent?.status || 'none'}:${committed.conversationState?.rinIntent?.goal || '-'}; action=${behavior?.action || 'react'}; q=${Number(data?.responsePlan?.questionBudget) || 0}`);
   return committed;
 }
 
