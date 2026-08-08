@@ -120,7 +120,7 @@ const server = createServer(async (req, res) => {
               sharedMoments: previousRelationship.sharedMoments || []
             },
             emotionalState,
-            rinIntent: reveal ? { schema:'rin-persistent-intent-v2', id:'intent-e2e-play', status:'active', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'shared_playful_scene', scene:'playful_flirt', priority:82, commitment:82, progress:0.48, nextMove:'tease_or_advance', completionCondition:'после нескольких конкретных ходов', abandonmentCondition:'явный отказ или farewell', startedAtTurn:11, updatedAtTurn:11, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' } : body.memory?.conversationState?.rinIntent || null,
+            rinIntent: reveal ? { schema:'rin-persistent-intent-v3', id:'intent-e2e-play', status:'active', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease', sceneBinding:{key:'playful_tease',kind:'playful',subject:'поддразнивание',anchor:'сам начал',source:'last_rin_action'}, scene:'playful_flirt', priority:82, commitment:82, progress:0.48, nextMove:'make_specific_teasing_move', completionCondition:'после нескольких конкретных ходов', abandonmentCondition:'явный отказ или farewell', startedAtTurn:11, updatedAtTurn:11, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' } : body.memory?.conversationState?.rinIntent || null,
             emotionalState, emotionalTrace: emotionalState?.primary ? { emotion: emotionalState.primary.type, cause: emotionalState.primary.cause, intensity: emotionalState.primary.intensity, resolution: emotionalState.primary.resolution, expiresAfterTurns: emotionalState.primary.expiresAfterTurns, remainingTurns: emotionalState.primary.remainingTurns } : null,
             moodDelta: { affection: 0, energy: 0 }, relationshipDelta: { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0, attraction: 0, vulnerability: 0 }
           };
@@ -516,6 +516,7 @@ try {
   await send('Да я и не собирался выкручиваться 😏');
   await waitFor(cdp, completedUsers(12), 'persistent intent next turn');
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.id === 'intent-e2e-play', 'next browser request must restore the committed persistent Rin intent');
+  assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.sceneBinding?.key === 'playful_tease', 'next browser request must restore the concrete intent scene binding');
 
   const lifecycle = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');

@@ -134,15 +134,15 @@ if (!serverAffective.includes("export * from '../public/lib/affective-contract.j
 const sharedIntent = await read('public/lib/intent-contract.js');
 const serverIntent = await read('lib/intent-contract.js');
 const persistentIntentEngine = await read('lib/cognition/persistent-intent.js');
-if (!sharedIntent.includes("RIN_INTENT_SCHEMA = 'rin-persistent-intent-v2'") || !sharedIntent.includes('completionCondition') || !sharedIntent.includes('abandonmentCondition') || !sharedIntent.includes('progressState') || !sharedIntent.includes('expectedOutcome') || !sharedIntent.includes('completionEvidence')) fail('Shared persistent intent contract is incomplete.');
+if (!sharedIntent.includes("RIN_INTENT_SCHEMA = 'rin-persistent-intent-v3'") || !sharedIntent.includes('completionCondition') || !sharedIntent.includes('abandonmentCondition') || !sharedIntent.includes('progressState') || !sharedIntent.includes('expectedOutcome') || !sharedIntent.includes('completionEvidence') || !sharedIntent.includes('sceneBinding')) fail('Shared persistent intent contract is incomplete.');
 if (!serverIntent.includes("export * from '../public/lib/intent-contract.js'")) fail('Server and browser must share one persistent intent contract source.');
-if (!persistentIntentEngine.includes('advancePersistentIntent') || !persistentIntentEngine.includes('persistentIntentInstruction') || !persistentIntentEngine.includes('finalizePersistentIntentAfterReply')) fail('Persistent intent engine must own intent lifecycle and prompt instruction.');
+if (!persistentIntentEngine.includes('advancePersistentIntent') || !persistentIntentEngine.includes('persistentIntentInstruction') || !persistentIntentEngine.includes('finalizePersistentIntentAfterReply') || !persistentIntentEngine.includes('deriveSceneBinding') || !persistentIntentEngine.includes('sceneBinding')) fail('Persistent intent engine must own intent lifecycle and prompt instruction.');
 if (!affectiveEngine.includes('buildAffectiveTurn') || !affectiveEngine.includes('deriveRelationshipState')) fail('Canonical affective engine must own emotion and relationship transitions.');
 if (!impactShim.includes('buildAffectiveTurn') || /романтическ|ревност|обнимаю|комплимент/iu.test(impactShim)) fail('Legacy turn-state impact module must be a semantic-free compatibility shim.');
 const cognitionContract = await read('lib/cognition/cognitive-contract.js');
 if (!cognitionContract.includes("rin-state-transition-v3") || !cognitionContract.includes('emotionalState') || !cognitionContract.includes('relationshipState') || !cognitionContract.includes('rinIntent')) fail('State transition v3 must carry affective and persistent intent state.');
 if (!cognitionContract.includes('normalizeBehaviorPolicy') || !cognitionContract.includes('questionBudget')) fail('Response plan contract must carry canonical behavior and question budget.');
-if (!browserE2e.includes("rin-state-transition-v3") || !browserE2e.includes('rin-affective-state-v1') || !browserE2e.includes('rin-persistent-intent-v2')) fail('Browser E2E must exercise affective and persistent-intent state contracts.');
+if (!browserE2e.includes("rin-state-transition-v3") || !browserE2e.includes('rin-affective-state-v1') || !browserE2e.includes('rin-persistent-intent-v3') || !browserE2e.includes('sceneBinding')) fail('Browser E2E must exercise affective and persistent-intent state contracts.');
 
 
 
