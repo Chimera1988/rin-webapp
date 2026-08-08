@@ -7,7 +7,8 @@
     "validate": "node scripts/validate-json.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "build": "node scripts/build-smoke.js",
-    "check": "npm run syntax && npm run validate && npm test && npm run build",
-    "e2e:browser": "node scripts/browser-e2e.js"
+    "check": "npm run check:node && npm run e2e:browser",
+    "e2e:browser": "node scripts/browser-e2e.js",
+    "check:node": "npm run syntax && npm run validate && npm test && npm run build"
   }
 }
