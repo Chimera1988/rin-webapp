@@ -59,8 +59,8 @@ test('persistent intent expires after bounded number of turns instead of becomin
   for (let revision = 11; revision <= 15 && intent?.status === 'active'; revision += 1) {
     intent = advancePersistentIntent({ memory: memoryWith(intent, revision), characterIntent: playfulCandidate, dialogueState: playfulState, brain: baseBrain, userText: 'Ага 😏' });
   }
-  assert.equal(intent.status, 'completed');
-  assert.match(intent.completionReason, /достаточно|продвинута/iu);
+  assert.equal(intent.status, 'cancelled');
+  assert.match(intent.completionReason, /истекла без подтверждённого выполнения/iu);
 });
 
 test('behavior policy advances an active intent and keeps question budget at zero', () => {
@@ -88,5 +88,44 @@ test('verifier rejects generic topic handoff while Rin has an unfinished goal', 
 test('completed or cancelled intent does not immediately resurrect from the same scene candidate', () => {
   const completed = normalizeRinIntent({ goal:'продвинуть уже начатую игровую линию собственным ходом Рин', motive:'play', target:'shared_playful_scene', scene:'playful_flirt', priority:86, commitment:80, progress:.9, nextMove:'tease_or_advance', startedAtTurn:8, updatedAtTurn:10, turnCount:4, minTurns:2, maxTurns:4, status:'completed', completionReason:'done' });
   const next = advancePersistentIntent({ memory: memoryWith(completed, 10), characterIntent: playfulCandidate, dialogueState: playfulState, brain: baseBrain, userText:'Ага)' });
+  assert.equal(next, null);
+});
+
+test('guessing-game promise becomes a concrete reveal nextMove after user guess', () => {
+  const active = normalizeRinIntent({ goal:'продвинуть уже начатую игровую линию собственным ходом Рин', motive:'play', target:'shared_playful_scene', scene:'playful_flirt', priority:86, commitment:84, progress:.45, nextMove:'tease_or_advance', startedAtTurn:16, updatedAtTurn:17, turnCount:2, minTurns:2, maxTurns:4, status:'active', semanticKey:'continue_playful_tension|shared_playful_scene|playful_flirt' });
+  const state = { ...playfulState, lastRinAction:{ kind:'text', meaning:'Я скажу тебе что-то особенное, если ты сможешь угадать, что именно.' } };
+  const next = advancePersistentIntent({ memory:memoryWith(active, 18), characterIntent:playfulCandidate, dialogueState:state, brain:baseBrain, userText:'Наверное это про любовь? 🤔' });
+  assert.equal(next.status, 'active');
+  assert.equal(next.nextMove, 'reveal_promised_special_thing');
+  assert.equal(next.progressState, 'guess_received');
+  assert.match(next.completionCondition, /явно прозвучало обещанное/iu);
+});
+
+test('promised reveal cannot complete from turn count or progress alone', () => {
+  const active = normalizeRinIntent({ goal:'завершить обещанную игру', target:'shared_playful_scene', scene:'playful_flirt', commitment:90, progress:.95, nextMove:'reveal_promised_special_thing', progressState:'guess_received', expectedOutcome:'раскрыть обещанное', completionCondition:'явное раскрытие', startedAtTurn:10, updatedAtTurn:12, turnCount:3, minTurns:1, maxTurns:5, status:'active', semanticKey:'guessing_reveal|shared_playful_scene' });
+  const next = advancePersistentIntent({ memory:memoryWith(active, 12), characterIntent:playfulCandidate, dialogueState:playfulState, brain:baseBrain, userText:'Ну так что это было?' });
+  assert.equal(next.status, 'active');
+});
+
+test('verifier rejects another question instead of promised reveal', () => {
+  const intent = normalizeRinIntent({ goal:'завершить обещанную игру', target:'shared_playful_scene', scene:'playful_flirt', commitment:90, progress:.7, nextMove:'reveal_promised_special_thing', progressState:'guess_received', expectedOutcome:'раскрыть обещанное', completionCondition:'явное раскрытие', startedAtTurn:10, updatedAtTurn:11, turnCount:2, status:'active', semanticKey:'guessing_reveal|shared_playful_scene' });
+  const result = verifyReply('Может быть, это и правда про любовь… 😉 Но что ты думаешь об этом?', { plan:{ responseAct:'advance_persistent_intent', questionBudget:0, rinIntent:intent }, brain:baseBrain, userText:'Наверное это про любовь?' });
+  assert.equal(result.needsRewrite, true);
+  assert.ok(result.warnings.includes('persistent_intent_next_move_not_fulfilled'));
+});
+
+test('post-reply evidence completes promised reveal only after Rin actually reveals it', async () => {
+  const { finalizePersistentIntentAfterReply } = await import('../lib/cognition/persistent-intent.js');
+  const intent = normalizeRinIntent({ goal:'завершить обещанную игру', target:'shared_playful_scene', scene:'playful_flirt', commitment:90, progress:.7, nextMove:'reveal_promised_special_thing', progressState:'guess_received', expectedOutcome:'раскрыть обещанное', completionCondition:'явное раскрытие', startedAtTurn:10, updatedAtTurn:11, turnCount:2, status:'active', semanticKey:'guessing_reveal|shared_playful_scene' });
+  assert.equal(finalizePersistentIntentAfterReply(intent, 'Может быть… а как ты думаешь?').status, 'active');
+  const done = finalizePersistentIntentAfterReply(intent, 'Да. Я хотела сказать, что мне очень нравится эта близость между нами.');
+  assert.equal(done.status, 'completed');
+  assert.equal(done.progressState, 'fulfilled');
+  assert.ok(done.completionEvidence);
+});
+
+test('semantic cooldown blocks same completed intent for eight turns', () => {
+  const completed = normalizeRinIntent({ goal:'продвинуть уже начатую игровую линию собственным ходом Рин', target:'shared_playful_scene', scene:'playful_flirt', commitment:80, progress:1, nextMove:'tease_or_advance', startedAtTurn:8, updatedAtTurn:10, turnCount:3, status:'completed', semanticKey:'continue_playful_tension|shared_playful_scene|playful_flirt', completionReason:'fulfilled' });
+  const next = advancePersistentIntent({ memory:memoryWith(completed, 15), characterIntent:playfulCandidate, dialogueState:playfulState, brain:baseBrain, userText:'Ага)' });
   assert.equal(next, null);
 });
