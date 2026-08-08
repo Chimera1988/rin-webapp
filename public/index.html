@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" class="chat-root">
+<html lang="ru" class="chat-root theme-dark">
 <head>
   <meta charset="utf-8" />
   <title>Рин Акихара — твой компаньон</title>
@@ -15,10 +15,8 @@
       const K='rin-theme';
       let t=null;
       try{t=localStorage.getItem(K)}catch{}
-      if(!t){
-        const prefersDark=window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        t = prefersDark ? 'theme-dark' : 'theme-light';
-      }
+      t = t === 'theme-light' ? 'theme-light' : 'theme-dark';
+      document.documentElement.classList.remove('theme-dark','theme-light');
       document.documentElement.classList.add(t);
       window.__rinSetTheme = function(next, persist=true){
         document.documentElement.classList.remove('theme-dark','theme-light');
@@ -29,7 +27,7 @@
   </script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-08-08-dialogue-agency-v1" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-08-dialogue-agency-v1.1" />
 </head>
 <body class="chat-app">
 
@@ -404,7 +402,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-08-dialogue-agency-v1"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-08-dialogue-agency-v1.1"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

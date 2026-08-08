@@ -36,6 +36,7 @@ const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
 const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
 const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'
+const DEFAULT_DEBUG_ENABLED = true;
 
 function safeLocalGet(key, fallback = '') {
   try {
@@ -222,7 +223,7 @@ async function fetchRinWeather(){
 }
 
 /* === Debug helpers (в панели настроек) === */
-let _debugOn = safeLocalGet(LS_DEBUG_ENABLED) === '1';
+let _debugOn = safeLocalGet(LS_DEBUG_ENABLED, DEFAULT_DEBUG_ENABLED ? '1' : '0') !== '0';
 function dbg(line){
   if (!_debugOn) return;
   try{
@@ -247,6 +248,7 @@ if (debugToggle){
     dbg('debug enabled');
   };
 }
+if (_debugOn) dbg('debug enabled');
 
 /* Данные */
 const resetApp      = document.getElementById('resetApp');
