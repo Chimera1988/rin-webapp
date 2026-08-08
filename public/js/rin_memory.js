@@ -1,9 +1,17 @@
+import {
+  defaultRelationshipState,
+  emotionalStateFromLegacyTrace,
+  normalizeEmotionalState,
+  normalizeRelationshipState,
+  relationshipStage as canonicalRelationshipStage
+} from '../lib/affective-contract.js';
+
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
-const DIARY_SCHEMA_VERSION = 3;
+const DIARY_SCHEMA_VERSION = 4;
 
 export const BASE_RULES = `
 Ты — Рин Акихара (женский род). Обращайся к собеседнику в мужском роде.
@@ -173,17 +181,7 @@ function defaultMood(now = Date.now()) {
 }
 
 function defaultRelationship(now = Date.now()) {
-  return {
-    trust: 55,
-    closeness: 42,
-    comfort: 52,
-    respect: 68,
-    playfulness: 45,
-    stage: 'растущее доверие',
-    sharedMoments: [],
-    lastInteractionAt: now,
-    updatedAt: now
-  };
+  return defaultRelationshipState(now);
 }
 
 function defaultInnerLife() {
@@ -196,18 +194,18 @@ function defaultInnerLife() {
 
 function defaultConversationState() {
   return {
-    schema: 'rin-conversation-state-v1',
+    schema: 'rin-conversation-state-v2',
     revision: 0,
     dialogueState: null,
     beliefs: [],
     openLoops: [],
-    emotionalTrace: null,
+    emotionalState: normalizeEmotionalState({}),
     lastCommittedRequestId: null,
     updatedAt: 0
   };
 }
 
-function normalizeConversationState(value = {}, legacyTrace = null) {
+function normalizeConversationState(value = {}, legacyTrace = null, context = {}) {
   const source = value && typeof value === 'object' ? value : {};
   const beliefs = (Array.isArray(source.beliefs) ? source.beliefs : [])
     .filter(item => item && typeof item === 'object' && cleanText(item.id, 120))
@@ -215,17 +213,17 @@ function normalizeConversationState(value = {}, legacyTrace = null) {
   const loops = (Array.isArray(source.openLoops) ? source.openLoops : [])
     .filter(item => item && typeof item === 'object' && cleanText(item.id, 120))
     .slice(-24);
-  const trace = source.emotionalTrace && typeof source.emotionalTrace === 'object'
-    ? source.emotionalTrace
-    : legacyTrace && typeof legacyTrace === 'object' ? legacyTrace : null;
+  const emotionalState = source.emotionalState && typeof source.emotionalState === 'object'
+    ? normalizeEmotionalState(source.emotionalState, context)
+    : emotionalStateFromLegacyTrace(source.emotionalTrace || legacyTrace, context);
   return {
     ...defaultConversationState(),
-    ...source,
+    schema: 'rin-conversation-state-v2',
     revision: Math.max(0, Math.round(finiteNumber(source.revision, 0))),
     dialogueState: source.dialogueState && typeof source.dialogueState === 'object' ? source.dialogueState : null,
     beliefs,
     openLoops: loops,
-    emotionalTrace: trace,
+    emotionalState,
     lastCommittedRequestId: cleanText(source.lastCommittedRequestId, 120) || null,
     updatedAt: finiteNumber(source.updatedAt, 0)
   };
@@ -318,11 +316,7 @@ function normalizeSummary(item = {}, index = 0) {
 }
 
 function relationshipStage(value = {}) {
-  if (value.closeness >= 82 && value.trust >= 80) return 'глубокая устойчивая близость';
-  if (value.closeness >= 66 && value.trust >= 65) return 'сформировавшаяся близость';
-  if (value.closeness >= 48 && value.trust >= 50) return 'растущее доверие';
-  if (value.closeness >= 30) return 'осторожное сближение';
-  return 'начало знакомства';
+  return canonicalRelationshipStage(value);
 }
 
 function moodLabel(mood = {}) {
@@ -343,20 +337,16 @@ function normalizeDiary(input = {}) {
   const relationSource = source.relationship && typeof source.relationship === 'object' ? source.relationship : {};
 
   // Миграция v1: trust/playfulness жили одновременно в mood и relationship.
-  const relationship = {
-    ...defaultRelationship(now),
+  const relationship = normalizeRelationshipState({
     ...relationSource,
-    trust: clamp(relationSource.trust ?? moodSource.trust ?? 55),
-    closeness: clamp(relationSource.closeness ?? 42),
-    comfort: clamp(relationSource.comfort ?? 52),
-    respect: clamp(relationSource.respect ?? 68),
-    playfulness: clamp(relationSource.playfulness ?? moodSource.playfulness ?? 45),
+    trust: relationSource.trust ?? moodSource.trust ?? 55,
+    playfulness: relationSource.playfulness ?? moodSource.playfulness ?? 45,
     sharedMoments: (Array.isArray(relationSource.sharedMoments) ? relationSource.sharedMoments : [])
       .map(normalizeMoment).filter(Boolean).slice(-20),
     lastInteractionAt: finiteNumber(relationSource.lastInteractionAt, now),
     updatedAt: finiteNumber(relationSource.updatedAt, now)
-  };
-  relationship.stage = relationshipStage(relationship);
+  }, now);
+
 
   const mood = {
     ...defaultMood(now),
@@ -395,7 +385,7 @@ function normalizeDiary(input = {}) {
     relationship,
     openLoops: uniqueLoops,
     summaries: uniqueSummaries,
-    conversationState: normalizeConversationState(source.conversationState, source.emotionalTrace),
+    conversationState: normalizeConversationState(source.conversationState, source.emotionalTrace, { relationship, mood }),
     _updated_at: finiteNumber(source._updated_at, now)
   };
 }
@@ -560,8 +550,8 @@ function applyMoodDecay(currentInput = {}, now = Date.now()) {
   return current;
 }
 
-function mergeTransitionState(currentInput = {}, transition = null, requestId = '', now = Date.now()) {
-  const current = normalizeConversationState(currentInput);
+function mergeTransitionState(currentInput = {}, transition = null, requestId = '', now = Date.now(), context = {}) {
+  const current = normalizeConversationState(currentInput, null, context);
   if (!transition || typeof transition !== 'object') {
     return { ...current, revision: current.revision + 1, lastCommittedRequestId: requestId || null, updatedAt: now };
   }
@@ -574,6 +564,13 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
     if (loop?.id) loops.set(loop.id, loop);
   }
   for (const id of Array.isArray(transition.resolvedLoopIds) ? transition.resolvedLoopIds : []) loops.delete(String(id));
+
+  const emotionalState = transition.emotionalState && typeof transition.emotionalState === 'object'
+    ? normalizeEmotionalState(transition.emotionalState, context)
+    : transition.emotionalTrace && typeof transition.emotionalTrace === 'object'
+      ? emotionalStateFromLegacyTrace(transition.emotionalTrace, context)
+      : current.emotionalState;
+
   return normalizeConversationState({
     ...current,
     revision: current.revision + 1,
@@ -582,18 +579,10 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
       : current.dialogueState,
     beliefs: [...beliefs.values()].slice(-32),
     openLoops: [...loops.values()].filter(item => !['resolved', 'cancelled', 'stale'].includes(item?.status)).slice(-24),
-    emotionalTrace: (() => {
-      if (transition.emotionalTrace && typeof transition.emotionalTrace === 'object') {
-        const expiresAfterTurns = clamp(transition.emotionalTrace.expiresAfterTurns ?? 4, 1, 20);
-        return { ...transition.emotionalTrace, expiresAfterTurns, remainingTurns: expiresAfterTurns, updatedAt: now };
-      }
-      if (!current.emotionalTrace || current.emotionalTrace.resolution === 'resolved') return null;
-      const remaining = Math.max(0, finiteNumber(current.emotionalTrace.remainingTurns, current.emotionalTrace.expiresAfterTurns || 1) - 1);
-      return remaining > 0 ? { ...current.emotionalTrace, remainingTurns: remaining, updatedAt: now } : null;
-    })(),
+    emotionalState,
     lastCommittedRequestId: requestId || null,
     updatedAt: now
-  });
+  }, null, context);
 }
 
 export async function commitTurnState({
@@ -616,24 +605,39 @@ export async function commitTurnState({
     if (spontaneous) diary.innerLife = { ...defaultInnerLife(), ...(diary.innerLife || {}), lastSpontaneousAt: now };
 
     const mood = applyMoodDecay(diary.mood, now);
-    mood.affection = clamp(mood.affection + finiteNumber(moodDelta?.affection, 0));
-    mood.energy = clamp(mood.energy + finiteNumber(moodDelta?.energy, 0));
+    if (stateTransition?.moodState && typeof stateTransition.moodState === 'object') {
+      mood.affection = clamp(stateTransition.moodState.affection ?? mood.affection);
+      mood.energy = clamp(stateTransition.moodState.energy ?? mood.energy);
+    } else {
+      mood.affection = clamp(mood.affection + finiteNumber(moodDelta?.affection, 0));
+      mood.energy = clamp(mood.energy + finiteNumber(moodDelta?.energy, 0));
+    }
     mood.lastInteractionAt = now;
     mood.updatedAt = now;
     mood.label = moodLabel(mood);
     diary.mood = mood;
 
-    const relationship = { ...defaultRelationship(now), ...(diary.relationship || {}) };
-    for (const key of ['trust', 'closeness', 'comfort', 'respect', 'playfulness']) {
-      relationship[key] = clamp(finiteNumber(relationship[key], 0) + finiteNumber(relationshipDelta?.[key], 0));
-    }
-    relationship.stage = relationshipStage(relationship);
-    relationship.lastInteractionAt = now;
-    relationship.updatedAt = now;
-    relationship.sharedMoments = Array.isArray(relationship.sharedMoments) ? relationship.sharedMoments : [];
+    const storedRelationship = normalizeRelationshipState(diary.relationship || {}, now);
+    const relationship = stateTransition?.relationshipState && typeof stateTransition.relationshipState === 'object'
+      ? normalizeRelationshipState({
+          ...stateTransition.relationshipState,
+          sharedMoments: storedRelationship.sharedMoments,
+          lastInteractionAt: now,
+          updatedAt: now
+        }, now)
+      : (() => {
+          const next = { ...storedRelationship };
+          for (const key of ['trust', 'closeness', 'comfort', 'respect', 'playfulness', 'attraction', 'vulnerability']) {
+            next[key] = clamp(finiteNumber(next[key], 0) + finiteNumber(relationshipDelta?.[key], 0));
+          }
+          next.stage = relationshipStage(next);
+          next.lastInteractionAt = now;
+          next.updatedAt = now;
+          return normalizeRelationshipState(next, now);
+        })();
     diary.relationship = relationship;
 
-    diary.conversationState = mergeTransitionState(currentState, stateTransition, wantedRequest, now);
+    diary.conversationState = mergeTransitionState(currentState, stateTransition, wantedRequest, now, { relationship, mood });
     return {
       applied: true,
       duplicate: false,
@@ -782,7 +786,7 @@ export async function updateRelationship(delta = {}) {
   return mutateDiary(diary => {
     const current = { ...defaultRelationship(), ...(diary.relationship || {}) };
     const next = { ...current };
-    for (const key of ['trust', 'closeness', 'comfort', 'respect', 'playfulness']) {
+    for (const key of ['trust', 'closeness', 'comfort', 'respect', 'playfulness', 'attraction', 'vulnerability']) {
       next[key] = clamp(finiteNumber(current[key], 0) + finiteNumber(delta[key], 0));
     }
     next.stage = relationshipStage(next);
@@ -862,46 +866,45 @@ export async function consolidateDiary() {
 
 
 export async function rememberStickerEmotion(event = {}) {
-  const normalized = {
-    emotion: cleanText(event.emotion, 80),
-    cause: cleanText(event.cause, 280),
-    intensity: clamp(event.intensity ?? 50),
-    resolution: 'unresolved',
-    expiresAfterTurns: clamp(event.expiresAfterTurns ?? 1, 1, 20),
-    remainingTurns: clamp(event.expiresAfterTurns ?? 1, 1, 20),
-    explanation: cleanText(event.explanation, 300) || null,
-    updatedAt: Date.now()
-  };
-  if (!normalized.emotion) return false;
+  // Compatibility only. Normal model turns persist the server-owned emotionalState
+  // through commitTurnState; this path exists for old/manual callers.
   return mutateDiary(diary => {
-    const state = normalizeConversationState(diary.conversationState);
-    state.emotionalTrace = normalized;
+    const state = normalizeConversationState(diary.conversationState, null, { relationship: diary.relationship, mood: diary.mood });
+    const expiresAfterTurns = clamp(event.expiresAfterTurns ?? 1, 1, 20);
+    state.emotionalState = normalizeEmotionalState({
+      ...state.emotionalState,
+      primary: {
+        type: cleanText(event.emotion, 80) || 'interest',
+        cause: cleanText(event.cause, 280),
+        target: 'situation',
+        intensity: clamp(event.intensity ?? 50),
+        expiresAfterTurns,
+        remainingTurns: expiresAfterTurns,
+        resolution: 'unresolved',
+        source: 'legacy_sticker'
+      },
+      updatedAtTurn: state.revision
+    }, { relationship: diary.relationship, mood: diary.mood });
     state.updatedAt = Date.now();
     diary.conversationState = state;
-    return clone(normalized);
+    return clone(state.emotionalState.primary);
   });
 }
 
 export async function advanceStickerEmotion() {
-  return mutateDiary(diary => {
-    const state = normalizeConversationState(diary.conversationState);
-    const trace = state.emotionalTrace;
-    if (!trace || trace.resolution === 'resolved') return null;
-    trace.remainingTurns = Math.max(0, finiteNumber(trace.remainingTurns, trace.expiresAfterTurns || 1) - 1);
-    if (trace.remainingTurns === 0) trace.resolution = 'resolved';
-    state.emotionalTrace = trace;
-    state.updatedAt = Date.now();
-    diary.conversationState = state;
-    return clone(trace);
-  });
+  // Canonical emotional decay is computed by the server on the next turn.
+  const diary = await loadDiary();
+  return clone(diary.conversationState?.emotionalState?.primary || null);
 }
 
 export async function resolveStickerEmotion() {
   return mutateDiary(diary => {
-    const state = normalizeConversationState(diary.conversationState);
-    if (!state.emotionalTrace) return false;
-    state.emotionalTrace.resolution = 'resolved';
-    state.emotionalTrace.remainingTurns = 0;
+    const state = normalizeConversationState(diary.conversationState, null, { relationship: diary.relationship, mood: diary.mood });
+    if (!state.emotionalState?.primary) return false;
+    state.emotionalState.primary = null;
+    state.emotionalState.secondary = null;
+    state.emotionalState.tension = 0;
+    state.emotionalState.momentum = { direction: 'steady', strength: 0 };
     state.updatedAt = Date.now();
     diary.conversationState = state;
     return true;
