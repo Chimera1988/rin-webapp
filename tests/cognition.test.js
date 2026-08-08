@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCognitiveTurn, buildStateTransition, planResponse, verifyReply } from '../lib/cognition/index.js';
+import { normalizeResponsePlan } from '../lib/cognition/cognitive-contract.js';
+import { analyzeConversation } from '../lib/conversation-brain.js';
+import { polishRinReply } from '../lib/personality/anti-gpt.js';
+import { createChatMessage } from '../public/js/chat_store.js';
 
 const closeMemory = {
   facts: { user: { name: 'Алексей', project: 'Rin' } },
@@ -126,4 +130,112 @@ test('verifier removes an embedded nonverbal service block without deleting natu
   assert.equal(result.reply, 'Поняла тебя.');
   assert.equal(result.nonverbalLeak?.metaOnly, false);
   assert.ok(result.repairs.includes('removed_internal_nonverbal_meta'));
+});
+
+
+test('intentional silence is a first-class prior action on the next user turn', () => {
+  const history = [
+    { id: 'a-silence', role: 'assistant', kind: 'silence', status: 'complete', content: '', silence: { reason: 'не стала растягивать закрытую микросцену', scene: 'everyday' } },
+    { id: 'u-after-silence', role: 'user', kind: 'text', status: 'sent', content: 'Обиделась?' }
+  ];
+  const brain = analyzeConversation({ userText: 'Обиделась?', history });
+  assert.equal(brain.hiddenIntent.type, 'ask_about_previous_nonverbal');
+  assert.match(brain.activeScene.topic, /промолчала/i);
+  const cognition = buildCognitiveTurn({ userText: 'Обиделась?', history, memory: closeMemory, brain });
+  assert.equal(cognition.dialogueState.lastRinAction.kind, 'silence');
+  assert.match(cognition.dialogueState.lastRinAction.cause, /микросцен/i);
+});
+
+test('context-dependent ambiguity can request clarification, while an explicit reply target resolves it', () => {
+  const prior = [
+    { id: 'u1', role: 'user', kind: 'text', status: 'complete', content: 'Редактор прислал письмо.' },
+    { id: 'a1', role: 'assistant', kind: 'text', status: 'complete', content: 'Ты ещё упоминал коллегу.' },
+    { id: 'u2', role: 'user', kind: 'text', status: 'complete', content: 'И переводчик был недоволен.' },
+    { id: 'a2', role: 'assistant', kind: 'text', status: 'complete', content: 'Там уже три разные линии.' }
+  ];
+  const ambiguousTurn = { id: 'u3', role: 'user', kind: 'text', status: 'sent', content: 'Это связано с ним.' };
+  const ambiguous = analyzeConversation({ userText: ambiguousTurn.content, history: [...prior, ambiguousTurn] });
+  assert.ok(ambiguous.referents.includes('context_dependent_reference'));
+  assert.equal(ambiguous.ambiguity.shouldClarify, true);
+  assert.ok(ambiguous.ambiguity.level >= 75);
+
+  const explicitTurn = {
+    ...ambiguousTurn, id: 'u4', inReplyTo: 'a1',
+    replySnapshot: { messageId: 'a1', role: 'assistant', kind: 'text', excerpt: 'Ты ещё упоминал коллегу.' }
+  };
+  const resolved = analyzeConversation({ userText: explicitTurn.content, history: [...prior, explicitTurn] });
+  assert.equal(resolved.ambiguity.shouldClarify, false);
+  assert.equal(resolved.ambiguity.level, 18);
+});
+
+test('long reply paragraphs survive polish, verification and chat persistence', () => {
+  const source = 'Я сначала отвечу на сам вопрос. Здесь есть две части, и обе важны.\n\nВо второй части я бы оставила именно эту формулировку. Она точнее сохраняет интонацию.';
+  const polished = polishRinReply(source, { replyStyle: 'direct', intent: 'connection' });
+  assert.match(polished, /важны\.\n\nВо второй/);
+  const verified = verifyReply(polished, {
+    plan: { shouldAskQuestion: false, delivery: 'text', length: 'long' },
+    brain: { literalIntent: 'statement', relation: { type: 'continuation' } },
+    userText: 'Расскажи подробнее.'
+  });
+  assert.match(verified.reply, /важны\.\n\nВо второй/);
+  const stored = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: verified.reply });
+  assert.match(stored.content, /важны\.\n\nВо второй/);
+});
+
+test('response plan preserves exact nonverbal delivery instead of collapsing it to text', () => {
+  assert.equal(normalizeResponsePlan({ delivery: 'sticker_only' }).delivery, 'sticker_only');
+  assert.equal(normalizeResponsePlan({ delivery: 'before_text' }).delivery, 'before_text');
+  assert.equal(normalizeResponsePlan({ delivery: 'after_text' }).delivery, 'after_text');
+});
+
+test('canonical cognition open loop can drive callback initiative without legacy thread heuristics', () => {
+  const brain = {
+    literalIntent: 'statement', hiddenIntent: { type: 'none', confidence: 35 }, relation: { type: 'continuation', confidence: 60 },
+    activeScene: { type: 'everyday', topic: 'вечер', confidence: 75 }, ambiguity: { shouldClarify: false }, obligations: [], responseFocus: 'Продолжить разговор.'
+  };
+  const history = [
+    { role: 'assistant', kind: 'text', content: 'Один.' }, { role: 'user', kind: 'text', content: 'Да.' },
+    { role: 'assistant', kind: 'text', content: 'Два.' }, { role: 'user', kind: 'text', content: 'Угу.' },
+    { role: 'assistant', kind: 'text', content: 'Три.' }, { role: 'user', kind: 'text', content: 'Я потом покажу письмо редактора.' }
+  ];
+  const cognition = {
+    dialogueState: { scene: 'everyday', reactiveStreak: 2, questionStreak: 0, continuityStrength: 0.8 },
+    beliefModel: { factsToUse: [], factsToAvoid: [] },
+    openLoops: { active: [{ id: 'letter', subject: 'Я потом покажу письмо редактора.', importance: 80, confidence: 0.9 }], callback: { id: 'letter', subject: 'Я потом покажу письмо редактора.', importance: 80, confidence: 0.9 } }
+  };
+  const plan = planResponse({ cognition, brain, coreDecision: { initiative: { mode: 'none' }, mode: 'calm' }, memory: closeMemory, userText: 'Я наконец освободился.', history });
+  assert.equal(plan.initiative, 'return_to_open_loop');
+});
+
+test('state transition owns persistent mood and relationship deltas on the server side', () => {
+  const transition = buildStateTransition({ cognition: { beliefModel: {}, openLoops: { active: [] }, dialogueState: null }, coreDecision: null, userText: 'Спасибо, я доверяю тебе и обнимаю.' });
+  assert.ok(transition.moodDelta.affection > 0);
+  assert.ok(transition.relationshipDelta.trust > 0);
+  assert.ok(transition.relationshipDelta.closeness > 0);
+});
+
+
+test('persisted dialogue snapshot restores continuity fields when recent history is pruned', () => {
+  const previousState = {
+    topic: 'письмо редактору',
+    scene: 'practical_task',
+    sceneAnchor: { messageId: 'u-old', role: 'user', kind: 'text', excerpt: 'Я отправлю письмо вечером.' },
+    openHook: { messageId: 'u-hook', role: 'user', kind: 'text', excerpt: 'Потом покажу ответ редактора.' },
+    entities: ['редактор', 'письмо'],
+    corrections: ['Нет, отправлю именно вечером.'],
+    lastRinAction: { kind: 'silence', meaning: 'Рин осознанно промолчала', cause: 'дала пользователю закончить задачу' }
+  };
+  const memory = { ...closeMemory, conversationState: { dialogueState: previousState, beliefs: [], openLoops: [] } };
+  const history = [{ id: 'u-new', role: 'user', kind: 'text', status: 'sent', content: 'Ну вот, готово.' }];
+  const brain = {
+    literalIntent: 'statement', hiddenIntent: { type: 'none' }, relation: { type: 'continuation' },
+    activeScene: { type: 'practical_task', topic: 'письмо редактору', confidence: 80 }, referents: [],
+    ambiguity: { shouldClarify: false }, obligations: [], responseFocus: 'Продолжить.'
+  };
+  const cognition = buildCognitiveTurn({ userText: 'Ну вот, готово.', history, memory, brain });
+  assert.equal(cognition.dialogueState.sceneAnchor.messageId, 'u-old');
+  assert.equal(cognition.dialogueState.openHook.messageId, 'u-hook');
+  assert.ok(cognition.dialogueState.entities.includes('редактор'));
+  assert.match(cognition.dialogueState.corrections.at(-1), /вечером/);
+  assert.equal(cognition.dialogueState.lastRinAction.kind, 'silence');
 });

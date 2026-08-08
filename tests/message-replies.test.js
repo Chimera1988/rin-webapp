@@ -99,14 +99,15 @@ test('an explicit user reply becomes the primary cognitive frame', () => {
   assert.match(responsePlanInstruction(plan), /вручную выбрал сообщение/);
 });
 
-test('Rin can rarely target an earlier meaningful user message for a callback', () => {
+test('canonical open loop can target an earlier meaningful user message for a callback', () => {
   const history = [
     { role: 'user', kind: 'text', status: 'complete', id: 'u-music', content: 'Иногда я слушаю Linkin Park, когда нужно освободить голову.' },
     { role: 'assistant', kind: 'text', status: 'complete', id: 'a-music', content: 'Понимаю этот ритм.' },
     { role: 'user', kind: 'text', status: 'complete', id: 'u-now', content: 'А вечером снова займусь проектом.' }
   ];
   const cognition = buildCognitiveTurn({ userText: history.at(-1).content, history, memory, brain });
-  cognition.openLoops.callback = { subject: 'музыка Linkin Park', text: 'музыка Linkin Park' };
+  cognition.openLoops.callback = { id: 'loop-music', subject: 'музыка Linkin Park', text: 'музыка Linkin Park', importance: 75, confidence: 0.9 };
+  cognition.dialogueState.reactiveStreak = 2;
   const plan = planResponse({
     cognition,
     brain,

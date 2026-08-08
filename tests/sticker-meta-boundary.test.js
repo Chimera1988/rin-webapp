@@ -34,7 +34,8 @@ test('sticker UI inherits the message bubble border, surface and tail', async ()
 test('client has a final leak barrier and forced sticker recovery', async () => {
   const chat = await read('public/chat.js');
   assert.match(chat, /isInternalNonverbalMetaText\(reply\)/);
-  assert.match(chat, /responseMeta\?\.delivery\?\.type === 'sticker'/);
-  assert.match(chat, /mode:\s*forcedDelivery \? 'always'/);
+  assert.match(chat, /responseMeta\?\.delivery\?\.nonverbal/);
+  assert.match(chat, /decidePlannedSticker/);
+  assert.doesNotMatch(chat, /forcedDelivery/);
   assert.match(chat, /const sent = await commitStickerDecision\(stickerDecision,\s*plannedReplyLink\)/);
 });

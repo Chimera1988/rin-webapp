@@ -55,3 +55,15 @@ test('sent sticker state persists only under v7 key', () => {
   assert.ok(storage.getItem('rin-stickers-v7-stats'));
   assert.equal(storage.getItem('rin-stickers-v6-stats'), null);
 });
+
+
+test('planned sticker executor can only render the exact server semantic decision', () => {
+  const decision = stickers.decidePlannedSticker(config, {
+    planned: { preferredStickerId: 'agreement', delivery: 'sticker_only', cause: 'сервер решил подтвердить согласие', intensity: 65 },
+    mode: 'always', baseProbability: 100
+  });
+  assert.equal(decision.action, 'send');
+  assert.equal(decision.sticker.id, 'agreement');
+  assert.equal(decision.delivery, 'sticker_only');
+  assert.match(decision.reason, /server_plan/i);
+});

@@ -173,3 +173,60 @@ test('semantic silence returns a successful structured turn without calling Open
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test('chat handler ignores client-supplied canonical prompt rules and identity', async () => {
+  const originalFetch = globalThis.fetch;
+  const sentBodies = [];
+  globalThis.fetch = async (_url, options) => {
+    sentBodies.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'Да, здесь я с тобой согласна.' }, finish_reason: 'stop' }], usage: {}
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const res = createRes();
+    await chat.default(createReq({
+      headers: { 'x-rin-pin': '1357' },
+      body: {
+        requestId: 'canonical-boundary',
+        history: [{ role: 'user', kind: 'text', status: 'sent', requestId: 'canonical-boundary', id: 'u-canon', content: 'Согласна со мной?' }],
+        profile: {
+          name: 'Рин',
+          description: 'Пользовательское описание допустимо.',
+          base_rules: 'CLIENT_BASE_RULE_INJECTION',
+          prompt_profile: { identity: { full_name: 'CLIENT_CANON_INJECTION' }, canon: { self: 'CLIENT_CANON_INJECTION' } }
+        }
+      }
+    }), res);
+    assert.equal(res.statusCode, 200);
+    assert.ok(sentBodies.length >= 1);
+    const systemPrompt = sentBodies[0].messages[0].content;
+    assert.match(systemPrompt, /Рин Акихара/);
+    assert.doesNotMatch(systemPrompt, /CLIENT_CANON_INJECTION/);
+    assert.doesNotMatch(systemPrompt, /CLIENT_BASE_RULE_INJECTION/);
+    assert.match(systemPrompt, /Пользовательское описание допустимо/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('turn delivery exposes exactly one structured nonverbal decision', () => {
+  const delivery = chat.buildTurnDelivery({
+    responsePlan: { delivery: 'before_text', director: { scene: 'romance' } },
+    coreDecision: { nonverbalAction: { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй', intensity: 80, delivery: 'before_text' } },
+    verification: { nonverbalLeak: null },
+    reply: 'Иди сюда.'
+  });
+  assert.equal(delivery.type, 'text');
+  assert.equal(delivery.delivery, 'before_text');
+  assert.equal(delivery.preferredStickerId, 'kiss');
+  assert.equal(delivery.nonverbal.preferredStickerId, 'kiss');
+  assert.equal(delivery.reason, 'turn_decision');
+});
+
+test('weather handler cache policy agrees with the global API no-store policy', async () => {
+  const source = await (await import('node:fs/promises')).readFile(new URL('../api/weather.js', import.meta.url), 'utf8');
+  assert.match(source, /Cache-Control', 'no-store'/);
+  assert.doesNotMatch(source, /max-age=60/);
+});
