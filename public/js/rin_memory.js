@@ -7,6 +7,7 @@ import {
 } from '../lib/affective-contract.js';
 import { beliefSlot, normalizeBelief } from '../lib/epistemic-contract.js';
 import { normalizeRinIntent } from '../lib/intent-contract.js';
+import { normalizeInnerLife } from '../lib/inner-life-contract.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
@@ -187,11 +188,7 @@ function defaultRelationship(now = Date.now()) {
 }
 
 function defaultInnerLife() {
-  return {
-    activity: '', trace: '', focus: '', privateThought: '', part: '',
-    startedAt: 0, expiresAt: 0, lastSpontaneousAt: 0, lastUserAt: 0,
-    interactionCount: 0, recentActivities: []
-  };
+  return normalizeInnerLife({});
 }
 
 function defaultConversationState() {
@@ -380,13 +377,7 @@ function normalizeDiary(input = {}) {
     events: uniqueEvents,
     anchors: source.anchors && typeof source.anchors === 'object' ? source.anchors : {},
     mood,
-    innerLife: {
-      ...defaultInnerLife(),
-      ...(source.innerLife && typeof source.innerLife === 'object' ? source.innerLife : {}),
-      recentActivities: Array.isArray(source.innerLife?.recentActivities)
-        ? source.innerLife.recentActivities.map(item => cleanText(item, 180)).filter(Boolean).slice(-6)
-        : []
-    },
+    innerLife: normalizeInnerLife(source.innerLife || {}),
     relationship,
     openLoops: uniqueLoops,
     summaries: uniqueSummaries,
@@ -463,24 +454,24 @@ export async function getRecentEvents(limit = 20, filterFn = null) {
 
 const INNER_LIFE_POOLS = {
   morning: [
-    { activity: 'просматривает рабочие заметки за чаем', trace: 'на столе лежит открытый блокнот', focus: 'спокойно войти в рабочий ритм' },
-    { activity: 'собирается начать работу', trace: 'проверяет заметки перед первым текстом', focus: 'не распыляться с самого утра' },
-    { activity: 'приводит в порядок рабочий стол', trace: 'переставила чашку подальше от ноутбука', focus: 'освободить место для работы' }
+    { activity: 'просматривает рабочие заметки за чаем', trace: 'на столе лежит открытый блокнот', focus: 'спокойно войти в рабочий ритм', activityGoal: 'выбрать первую задачу без спешки' },
+    { activity: 'собирается начать работу', trace: 'проверяет заметки перед первым текстом', focus: 'не распыляться с самого утра', activityGoal: 'начать с одного конкретного текста' },
+    { activity: 'приводит в порядок рабочий стол', trace: 'переставила чашку подальше от ноутбука', focus: 'освободить место для работы', activityGoal: 'подготовить спокойное рабочее место' }
   ],
   day: [
-    { activity: 'редактирует перевод', trace: 'задержалась на одной формулировке', focus: 'сохранить естественный ритм текста' },
-    { activity: 'работает с текстом за ноутбуком', trace: 'несколько раз перечитала один абзац', focus: 'найти точное, но не тяжёлое слово' },
-    { activity: 'сделала короткую паузу между задачами', trace: 'чай рядом уже немного остыл', focus: 'дать голове переключиться' }
+    { activity: 'редактирует перевод', trace: 'задержалась на одной формулировке', focus: 'сохранить естественный ритм текста', activityGoal: 'довести текущий абзац до естественного звучания' },
+    { activity: 'работает с текстом за ноутбуком', trace: 'несколько раз перечитала один абзац', focus: 'найти точное, но не тяжёлое слово', activityGoal: 'закончить одну формулировку' },
+    { activity: 'сделала короткую паузу между задачами', trace: 'чай рядом уже немного остыл', focus: 'дать голове переключиться', activityGoal: 'не возвращаться к работе несколько минут' }
   ],
   evening: [
-    { activity: 'заваривает чай после работы', trace: 'слушает, как за окном стихает город', focus: 'отпустить рабочий день' },
-    { activity: 'читает несколько страниц книги', trace: 'иногда возвращается к одной строке', focus: 'никуда не торопиться' },
-    { activity: 'разбирает заметки на рабочем столе', trace: 'нашла старую запись и на секунду задумалась', focus: 'закончить мелкие дела' }
+    { activity: 'заваривает чай после работы', trace: 'слушает, как за окном стихает город', focus: 'отпустить рабочий день', activityGoal: 'переключиться с работы на вечер' },
+    { activity: 'перечитывает свои старые заметки', trace: 'задержалась на одной короткой записи', focus: 'никуда не торопиться', activityGoal: 'разобрать одну мысль до сна' },
+    { activity: 'разбирает заметки на рабочем столе', trace: 'нашла старую запись и на секунду задумалась', focus: 'закончить мелкие дела', activityGoal: 'оставить стол свободным к утру' }
   ],
   night: [
-    { activity: 'готовится ко сну', trace: 'оставила только мягкий свет', focus: 'успокоить мысли' },
-    { activity: 'сидит в тишине с остывающим чаем', trace: 'день ещё не совсем отпустил', focus: 'не затягивать ночь' },
-    { activity: 'дочитывает страницу перед сном', trace: 'уже начинает уставать', focus: 'остановиться на хорошем месте' }
+    { activity: 'готовится ко сну', trace: 'оставила только мягкий свет', focus: 'успокоить мысли', activityGoal: 'не затягивать ночь' },
+    { activity: 'сидит в тишине с остывающим чаем', trace: 'день ещё не совсем отпустил', focus: 'не затягивать ночь', activityGoal: 'дать дню спокойно закончиться' },
+    { activity: 'листает свои заметки перед сном', trace: 'уже начинает уставать', focus: 'не затягивать ночь', activityGoal: 'закрыть день без нового дела' }
   ]
 };
 
@@ -511,9 +502,11 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
     for (let offset = 0; offset < pool.length && recent.has(pool[index].activity); offset += 1) index = (index + 1) % pool.length;
     const selected = pool[index];
     Object.assign(current, selected, {
-      privateThought: '', part, startedAt: now,
-      expiresAt: now + (35 + (Number.parseInt(hash(selected.activity), 36) % 70)) * 60000,
-      recentActivities: [...(current.recentActivities || []), selected.activity].slice(-6)
+      privateThought: '', part, startedAt: now, lastChangedAt: now,
+      continuityKey: `${part}:${contentKey(selected.activity)}`,
+      energy: part === 'night' ? 42 : part === 'evening' ? 55 : 66,
+      expiresAt: now + (45 + (Number.parseInt(hash(selected.activity), 36) % 80)) * 60000,
+      recentActivities: [...(current.recentActivities || []), selected.activity].slice(-8)
     });
   }
   current.lastUserAt = now;
@@ -528,7 +521,8 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
           ? 'интересно, как по-разному могут звучать простые слова'
           : 'иногда маленькая деталь меняет настроение сильнее большого события';
   }
-  return current;
+  if (current.privateThought && !current.recentThoughts?.includes(current.privateThought)) current.recentThoughts = [...(current.recentThoughts || []), current.privateThought].slice(-6);
+  return normalizeInnerLife(current);
 }
 
 export async function prepareInnerLife(env = {}, userText = '', now = Date.now()) {
@@ -623,8 +617,8 @@ export async function commitTurnState({
       return { applied: false, duplicate: true, diary: clone(diary) };
     }
 
-    if (innerLife && typeof innerLife === 'object') diary.innerLife = { ...defaultInnerLife(), ...clone(innerLife) };
-    if (spontaneous) diary.innerLife = { ...defaultInnerLife(), ...(diary.innerLife || {}), lastSpontaneousAt: now };
+    if (innerLife && typeof innerLife === 'object') diary.innerLife = normalizeInnerLife(clone(innerLife));
+    if (spontaneous) diary.innerLife = normalizeInnerLife({ ...(diary.innerLife || {}), lastSpontaneousAt: now });
 
     const mood = applyMoodDecay(diary.mood, now);
     if (stateTransition?.moodState && typeof stateTransition.moodState === 'object') {
@@ -673,7 +667,7 @@ export async function commitTurnState({
 
 export async function markInnerLifeSpontaneous() {
   return mutateDiary(diary => {
-    diary.innerLife = { ...defaultInnerLife(), ...(diary.innerLife || {}), lastSpontaneousAt: Date.now() };
+    diary.innerLife = normalizeInnerLife({ ...(diary.innerLife || {}), lastSpontaneousAt: Date.now() });
     return clone(diary.innerLife);
   });
 }
