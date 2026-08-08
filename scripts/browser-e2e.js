@@ -48,7 +48,7 @@ const server = createServer(async (req, res) => {
       await readBody(req);
       await sleep(300);
       return json(res, 200, {
-        schemaVersion: 4,
+        schemaVersion: 3,
         facts: [{ path: 'user.name', value: 'Алексей', confidence: 0.99 }],
         events: [], openLoops: [], resolvedLoops: [], sharedMoments: []
       });
@@ -85,7 +85,16 @@ const server = createServer(async (req, res) => {
             confidence: 0.9
           }
         } : null,
-        coreDecision: { initiative: { mode: 'none' }, nonverbalAction: current.includes('Целую тебя') ? { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 } : null, emotionalResponse: { intensity: current.includes('Целую тебя') ? 90 : 40 } }, conversationBrain: { activeScene: { type: current.includes('Целую тебя') ? 'romance' : 'everyday' }, hiddenIntent: { type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none' } }
+        coreDecision: { initiative: { mode: 'none' }, nonverbalAction: current.includes('Целую тебя') ? { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 } : null, emotionalResponse: { intensity: current.includes('Целую тебя') ? 90 : 40 } },
+        delivery: current.includes('Целую тебя')
+          ? { type: 'sticker', preferredStickerId: 'kiss', delivery: 'sticker_only', nonverbal: { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 }, reason: 'turn_decision' }
+          : { type: 'text' },
+        stateTransition: {
+          schema: 'rin-state-transition-v1',
+          dialogueState: { scene: current.includes('Целую тебя') ? 'romance' : 'everyday', topic: current, relationToPreviousTurn: 'continuation' },
+          beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [], emotionalTrace: null
+        },
+        conversationBrain: { activeScene: { type: current.includes('Целую тебя') ? 'romance' : 'everyday' }, hiddenIntent: { type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none' } }
       });
     }
     if (url.pathname === '/api/tts') return json(res, 503, { error: 'disabled', code: 'TTS_NOT_CONFIGURED' });
@@ -314,7 +323,7 @@ try {
     document.querySelector('#form').requestSubmit();
     return true;
   })()`);
-  const completedUsers = count => `JSON.parse(localStorage.getItem('rin-history-v4') || '[]').filter(m => m.role === 'user' && m.status === 'complete').length >= ${count}`;
+  const completedUsers = count => `JSON.parse(localStorage.getItem('rin-history-v5') || '[]').filter(m => m.role === 'user' && m.status === 'complete').length >= ${count}`;
 
   await send('Меня зовут Алексей. Мой проект называется Rin.');
   await waitFor(cdp, completedUsers(1), 'first completed user turn');
@@ -327,8 +336,27 @@ try {
   const rapid = chatBodies.slice(-2).map(body => [...body.history].reverse().find(item => item.role === 'user')?.content);
   assert(rapid[0] === 'Быстрый ход один' && rapid[1] === 'Быстрый ход два', `rapid send order changed: ${rapid.join(' / ')}`);
 
+  const beforeFailedTurnState = await cdp.evaluate(`(() => {
+    const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
+    return {
+      revision: diary.conversationState?.revision || 0,
+      interactionCount: diary.innerLife?.interactionCount || 0,
+      affection: diary.mood?.affection,
+      trust: diary.relationship?.trust
+    };
+  })()`);
   await send('FAIL_ONCE');
   await waitFor(cdp, "Boolean(document.querySelector('.message-retry'))", 'failed message retry control');
+  const afterFailedTurnState = await cdp.evaluate(`(() => {
+    const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
+    return {
+      revision: diary.conversationState?.revision || 0,
+      interactionCount: diary.innerLife?.interactionCount || 0,
+      affection: diary.mood?.affection,
+      trust: diary.relationship?.trust
+    };
+  })()`);
+  assert(JSON.stringify(afterFailedTurnState) === JSON.stringify(beforeFailedTurnState), 'failed request must not mutate committed conversation/persona state');
   const beforeRetry = chatBodies.length;
   await cdp.evaluate("document.querySelector('.message-retry').click(); true");
   await waitFor(cdp, completedUsers(5), 'retried user turn');
@@ -337,9 +365,9 @@ try {
   assert([...retryBody.history].at(-1)?.content === 'FAIL_ONCE', 'retried turn must be the final current context item');
 
   await send('Целую тебя 💋');
-  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v4') || '[]').some(m => m.kind === 'sticker' && m.sticker?.id === 'kiss')", 'standalone kiss sticker');
+  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v5') || '[]').some(m => m.kind === 'sticker' && m.sticker?.id === 'kiss')", 'standalone kiss sticker');
   const kissTurn = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
     const sticker = history.find(m => m.kind === 'sticker' && m.sticker?.id === 'kiss');
     const rows = [...document.querySelectorAll('#chat .row')];
     return { sticker, lastHasText: rows.at(-1)?.querySelector('.bubble')?.textContent?.includes('Ответ на: Целую тебя') || false };
@@ -369,7 +397,7 @@ try {
   assert(manualReply?.inReplyTo === selectedReply.sourceId, 'manual reply must preserve inReplyTo in the API history');
   assert(manualReply?.replySnapshot?.role === 'assistant', 'manual reply must preserve a public snapshot of the selected assistant message');
   const manualUi = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
     const message = [...history].reverse().find(item => item.role === 'user' && item.content === 'Я отвечаю именно на эту реплику.');
     const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
     return { linked: message?.inReplyTo || null, quoteVisible: Boolean(row?.querySelector('.reply-quote')) };
@@ -379,7 +407,7 @@ try {
   await send('RIN_REPLY_TARGET');
   await waitFor(cdp, completedUsers(9), 'planned Rin reply target');
   const rinReply = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
     const message = [...history].reverse().find(item => item.role === 'assistant' && item.replySnapshot);
     const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
     return {
@@ -391,17 +419,19 @@ try {
   assert(rinReply.linked && /Мой проект называется Rin/.test(rinReply.targetContent) && rinReply.quoteVisible, 'Rin planned reply must quote a specific earlier user message');
 
   const lifecycle = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v4') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
     return {
-      allTyped: history.every(m => m.id && m.schemaVersion === 4 && m.kind && m.status),
+      allTyped: history.every(m => m.id && m.schemaVersion === 5 && m.kind && m.status),
       failed: history.filter(m => m.status === 'failed').length,
       pending: history.filter(m => ['pending','sent'].includes(m.status)).length,
-      peer: document.querySelector('#peerStatus')?.textContent
+      peer: document.querySelector('#peerStatus')?.textContent,
+      conversationRevision: JSON.parse(localStorage.getItem('rin-diary-v1') || '{}').conversationState?.revision || 0
     };
   })()`);
-  assert(lifecycle.allTyped, 'all persisted chat events must use schema v4');
+  assert(lifecycle.allTyped, 'all persisted chat events must use schema v5');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
+  assert(lifecycle.conversationRevision >= 9, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
 
   console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker, manual reply and planned Rin reply; ${chatBodies.length} chat requests.`);
 } catch (error) {

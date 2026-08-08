@@ -31,9 +31,9 @@ if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js o
 
 const activeSources = [
   'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
-  'lib/server/http.js', 'public/chat.js', 'public/js/login.js',
+  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'public/chat.js', 'public/js/login.js',
   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
-  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
+  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
 ];
 const forbidden = ['stickers-v4', 'stickers-v5.test', 'response_postprocessor', '/data/rin_persona.json', '/data/rin_mind.json', '/data/rin_reasoning.json', '/data/rin_speaking_habits.json'];
 for (const file of activeSources) {
@@ -62,13 +62,41 @@ if ((chat.match(/fetchWithTimeout\('\/api\/chat'/g) || []).length !== 1) fail('C
 if (!chat.includes('shouldRefreshEnvironment')) fail('Environment refresh must feed the unified chat pipeline.');
 if (!chat.includes('await memoryJobRunner.drain();')) fail('The next request must wait for prior semantic-memory work.');
 if (!chat.includes('function selectReplyMessage(') || !chat.includes('replyLinkFromResponsePlan(')) fail('Chat must support manual and planned message replies.');
+if (!chat.includes('prepareInnerLife') || !chat.includes('commitSuccessfulTurnState')) fail('Chat must prepare state without mutation and commit it only after a successful response.');
+if (chat.includes('analyzeUserMoodImpact')) fail('Browser must not own persistent mood/relationship semantics.');
+if (chat.includes('stickersLib.decideSticker(STICKERS_CFG')) fail('Active chat must not run a second local semantic sticker classifier.');
+if (chat.includes('loadPromptProfileForChat')) fail('Browser must not load or submit the canonical prompt profile.');
+const apiChatSource = await read('api/chat.js');
+if (!apiChatSource.includes('buildServerProfile(body.profile)')) fail('Chat API must reconstruct the canonical profile on the server.');
+const canonicalProfileSource = await read('lib/server/canonical-profile.js');
+if (!canonicalProfileSource.includes('rin_prompt_profile.json')) fail('Server canonical-profile loader must own the prompt profile source.');
+const stickerSource = await read('public/lib/stickers-v6.js');
+if (!stickerSource.includes('decidePlannedSticker')) fail('Client sticker renderer must execute the server nonverbal decision.');
+const initiativeSource = await read('lib/personality/initiative-controller.js');
+if (initiativeSource.includes('conversation-threads')) fail('Initiative controller must not use legacy regex conversation threads.');
+const legacyThreads = await read('lib/memory/conversation-threads.js');
+if (!legacyThreads.includes('@deprecated Foundation v1 compatibility shim') || !legacyThreads.includes('return null')) fail('Legacy conversation threads must be isolated as an inert compatibility shim.');
+const habitsSource = await read('lib/personality/habits.js');
+const reactionsSource = await read('lib/personality/micro-reactions.js');
+if (habitsSource.includes('Это приятно.') || reactionsSource.includes('Это приятно.')) fail('Upstream voice layers must not emit phrases rejected by the downstream voice policy.');
+const weatherSource = await read('api/weather.js');
+if (!weatherSource.includes("'no-store'") || weatherSource.includes('max-age=60')) fail('Weather API cache policy must agree with the API no-store contract.');
+const browserE2e = await read('scripts/browser-e2e.js');
+if (browserE2e.includes('rin-history-v4') || browserE2e.includes('schema v4') || !browserE2e.includes('rin-history-v5')) fail('Browser E2E must enforce chat schema v5.');
+const packageJson = JSON.parse(await read('package.json'));
+if (!String(packageJson.scripts?.check || '').includes('e2e:browser')) fail('npm run check must invoke browser E2E.');
 const chatStore = await read('public/js/chat_store.js');
-if (!/CHAT_SCHEMA_VERSION\s*=\s*5/.test(chatStore) || !chatStore.includes('replySnapshot')) fail('Chat storage must use schema v5 reply snapshots.');
+const sharedChatContract = await read('public/lib/chat-contract.js');
+const serverChatContract = await read('lib/chat-contract.js');
+if (!/CHAT_SCHEMA_VERSION\s*=\s*5/.test(sharedChatContract) || !sharedChatContract.includes('replySnapshot')) fail('Shared ChatEvent contract must use schema v5 reply snapshots.');
+if (!serverChatContract.includes("export * from '../public/lib/chat-contract.js'")) fail('Server and browser must share one ChatEvent contract source.');
+if (!chatStore.includes("from '../lib/chat-contract.js'")) fail('Chat store must consume the shared ChatEvent contract.');
 if (await exists('public/js/response_postprocessor.js')) fail('Legacy response postprocessor must be removed.');
 if (await exists('lib/stickers-v4.js') || await exists('public/lib/stickers-v4.js')) fail('Legacy stickers v4 entrypoint must be removed.');
 if (!await exists('public/data/legacy/README.md')) fail('Legacy canon must be isolated and documented.');
 const memorySource = await read('public/js/rin_memory.js');
 if (!memorySource.includes('navigator?.locks')) fail('Diary writes must use a cross-tab lock when the browser supports Web Locks.');
+if (!/DIARY_SCHEMA_VERSION\s*=\s*3/.test(memorySource) || !memorySource.includes('commitTurnState')) fail('Diary must use transactional conversation state schema v3.');
 
 
 
