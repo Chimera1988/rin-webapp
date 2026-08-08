@@ -554,10 +554,11 @@ setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
 async function commitSuccessfulTurnState({ memoryModule, userMessage = null, requestId = null, data, preparedInnerLife, loreModule, preparedLore }) {
   const transition = data?.stateTransition || null;
   const behavior = data?.responsePlan?.behavior || null;
+  const committedRequestId = requestId || userMessage?.requestId || null;
   const spontaneous = ['personal_observation', 'return_to_open_loop'].includes(behavior?.initiative)
     || ['callback', 'challenge'].includes(behavior?.action);
   const committed = await memoryModule?.commitTurnState?.({
-    requestId: requestId || userMessage?.requestId,
+    requestId: committedRequestId,
     innerLife: preparedInnerLife,
     stateTransition: transition,
     moodDelta: transition?.moodDelta || null,
@@ -565,7 +566,18 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
     spontaneous,
     now: Date.now()
   });
-  if (preparedLore) loreModule?.commitLorePayload?.(preparedLore);
+
+  // ConversationState is the authoritative commit. Lore recency is a secondary
+  // bookkeeping side effect and must never turn an already committed turn into
+  // a failed/retriable request.
+  if (preparedLore) {
+    try {
+      await loreModule?.commitLorePayload?.(preparedLore);
+    } catch (error) {
+      dbg(`post-commit lore bookkeeping failed: request=${committedRequestId || '-'}; ${error?.message || error}`);
+    }
+  }
+
   if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${committed.conversationState?.rinIntent?.status || 'none'}:${committed.conversationState?.rinIntent?.goal || '-'}; action=${behavior?.action || 'react'}; q=${Number(data?.responsePlan?.questionBudget) || 0}`);
   return committed;
 }
@@ -1362,10 +1374,11 @@ function stickerSemanticText(decision) {
   return `[Невербальный жест Рин: ${meaning}${cause}]`;
 }
 
-async function commitStickerDecision(decision, replyLink = null) {
-  if (decision?.action !== 'send' || !decision?.sticker) return false;
-  const message = createChatMessage({
+function createStickerChatMessage(decision, replyLink = null, requestId = null) {
+  if (decision?.action !== 'send' || !decision?.sticker) return null;
+  return createChatMessage({
     role: 'assistant', kind: 'sticker', status: 'complete', content: stickerSemanticText(decision),
+    requestId: requestId || null,
     inReplyTo: replyLink?.inReplyTo || null,
     replySnapshot: replyLink?.replySnapshot || null,
     sticker: {
@@ -1375,10 +1388,17 @@ async function commitStickerDecision(decision, replyLink = null) {
       expiresAfterTurns: decision.expiresAfterTurns
     }
   });
+}
+
+async function commitStickerDecision(decision, replyLink = null, { requestId = null, preparedMessage = null } = {}) {
+  if (decision?.action !== 'send' || !decision?.sticker) return false;
+  const message = preparedMessage || createStickerChatMessage(decision, replyLink, requestId);
+  if (!message) return false;
   const rendered = await addStickerBubble(decision.sticker.src, 'assistant', decision.utterance, message.ts, { message });
   if (!rendered) return false;
   stickersLib?.markStickerSent?.(decision.sticker);
-  history.push(message); saveHistory(history);
+  if (!history.some(item => item?.id === message.id)) history.push(message);
+  saveHistory(history);
   dbg(`sticker send: id=${decision.sticker.id}; delivery=${decision.delivery}; reason=${decision.reason}`);
   return true;
 }
@@ -1421,12 +1441,177 @@ async function requestChatTurn(payload = {}) {
   }, 45_000);
 }
 
+function markUserMessageComplete(userMessage = null) {
+  if (!userMessage?.id) return;
+  updateMessage(history, userMessage.id, { status: 'complete', errorCode: null });
+  const userRow = findMessageRow(userMessage.id);
+  if (userRow) {
+    userRow.dataset.status = 'complete';
+    userRow.querySelector('.message-retry')?.remove();
+  }
+}
+
+function persistAssistantMessageOnce(message = null) {
+  if (!message) return false;
+  if (!history.some(item => item?.id === message.id)) history.push(message);
+  saveHistory(history);
+  return true;
+}
+
+async function prepareAssistantDelivery({ data, requestId, userText = '', defaultInReplyTo = null } = {}) {
+  const intentionalSilence = data?.delivery?.type === 'silence';
+  if (intentionalSilence) {
+    return {
+      type: 'silence',
+      reply: '',
+      message: createChatMessage({
+        role: 'assistant',
+        kind: 'silence',
+        status: 'complete',
+        content: '',
+        requestId,
+        inReplyTo: defaultInReplyTo,
+        silence: { reason: data?.delivery?.reason, scene: data?.delivery?.scene }
+      }),
+      stickerDecision: null,
+      stickerMessage: null,
+      fallbackMessage: null,
+      audioUrl: null
+    };
+  }
+
+  let reply = typeof data?.reply === 'string' ? data.reply.trim() : '';
+  if (isInternalNonverbalMetaText(reply)) {
+    dbg('blocked internal nonverbal meta reply on client');
+    reply = String(data?.delivery?.fallbackText || 'Мм.').trim();
+  }
+  if (!reply) {
+    const error = new Error('Empty response');
+    error.code = 'EMPTY_MODEL_RESPONSE';
+    throw error;
+  }
+
+  const stickerDecision = await maybeSticker(userText, reply, data, { render: false });
+  const stickerOnly = stickerDecision?.action === 'send' && stickerDecision?.delivery === 'sticker_only';
+  const plannedReplyLink = replyLinkFromResponsePlan(data?.responsePlan);
+  const inReplyTo = plannedReplyLink?.inReplyTo || defaultInReplyTo || null;
+  const replySnapshot = plannedReplyLink?.replySnapshot || null;
+  const audioUrl = !stickerOnly && shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
+  const assistantMessage = stickerOnly ? null : createChatMessage({
+    role: 'assistant',
+    kind: audioUrl ? 'voice' : 'text',
+    status: 'complete',
+    content: reply,
+    requestId,
+    inReplyTo,
+    replySnapshot
+  });
+  const stickerMessage = stickerDecision?.action === 'send'
+    ? createStickerChatMessage(stickerDecision, plannedReplyLink, requestId)
+    : null;
+  const fallbackMessage = stickerOnly ? createChatMessage({
+    role: 'assistant',
+    kind: 'text',
+    status: 'complete',
+    content: reply,
+    requestId,
+    inReplyTo,
+    replySnapshot
+  }) : null;
+
+  return {
+    type: stickerOnly ? 'sticker' : (audioUrl ? 'voice' : 'text'),
+    reply,
+    stickerOnly,
+    stickerDecision,
+    stickerMessage,
+    plannedReplyLink,
+    assistantMessage,
+    fallbackMessage,
+    audioUrl
+  };
+}
+
+async function deliverCommittedAssistantTurn(prepared, { userMessage = null } = {}) {
+  // Everything in this function runs after the authoritative ConversationState
+  // commit. UI/storage failures here are delivery problems, never a reason to make
+  // the semantic turn retriable.
+  try {
+    if (userMessage) markUserMessageComplete(userMessage);
+
+    if (prepared?.type === 'silence') {
+      persistAssistantMessageOnce(prepared.message);
+      return 'silence';
+    }
+
+    const decision = prepared?.stickerDecision || null;
+    const stickerOptions = {
+      requestId: prepared?.assistantMessage?.requestId || prepared?.fallbackMessage?.requestId || prepared?.stickerMessage?.requestId || null,
+      preparedMessage: prepared?.stickerMessage || null
+    };
+
+    if (!prepared?.stickerOnly && decision?.timing === 'before_reply') {
+      try {
+        await commitStickerDecision(decision, prepared.plannedReplyLink, stickerOptions);
+      } catch (error) {
+        dbg(`post-commit sticker delivery failed: ${error?.message || error}`);
+      }
+    }
+
+    if (prepared?.stickerOnly) {
+      let stickerSent = false;
+      try {
+        stickerSent = await commitStickerDecision(decision, prepared.plannedReplyLink, stickerOptions);
+      } catch (error) {
+        dbg(`post-commit sticker delivery failed: ${error?.message || error}`);
+      }
+      if (!stickerSent) {
+        persistAssistantMessageOnce(prepared.fallbackMessage);
+        try {
+          addBubble(prepared.reply, 'assistant', prepared.fallbackMessage.ts, { message: prepared.fallbackMessage });
+        } catch (error) {
+          dbg(`post-commit fallback render failed: ${error?.message || error}`);
+        }
+        return 'text';
+      }
+      return 'sticker';
+    }
+
+    // Persist the assistant event before rendering. A DOM/media failure must not
+    // erase an already committed model turn or make the user retry it.
+    persistAssistantMessageOnce(prepared.assistantMessage);
+    try {
+      if (prepared.type === 'voice') addVoiceBubble(prepared.audioUrl, prepared.reply, 'assistant', prepared.assistantMessage.ts, { message: prepared.assistantMessage });
+      else addBubble(prepared.reply, 'assistant', prepared.assistantMessage.ts, { message: prepared.assistantMessage });
+    } catch (error) {
+      dbg(`post-commit message render failed: ${error?.message || error}`);
+    }
+
+    if (decision?.timing !== 'before_reply') {
+      try {
+        await commitStickerDecision(decision, prepared.plannedReplyLink, stickerOptions);
+      } catch (error) {
+        dbg(`post-commit sticker delivery failed: ${error?.message || error}`);
+      }
+    }
+    return prepared.type;
+  } catch (error) {
+    dbg(`post-commit delivery failed: ${error?.message || error}`);
+    if (userMessage) markUserMessageComplete(userMessage);
+    if (prepared?.fallbackMessage) persistAssistantMessageOnce(prepared.fallbackMessage);
+    else if (prepared?.assistantMessage) persistAssistantMessageOnce(prepared.assistantMessage);
+    else if (prepared?.message) persistAssistantMessageOnce(prepared.message);
+    return prepared?.type || 'text';
+  }
+}
+
 async function requestAssistantInitiative({ type = 'scheduled', reason = '', hint = '', pool = null } = {}) {
   if (activeRequests > 0 || hasBlockingTurn(history)) return false;
   const requestId = newRequestId();
   activeRequests += 1;
   let typingRow = null;
   let presenceFinished = false;
+  let stateCommitted = false;
   const presenceTurn = presence.beginTurn({
     userInitiated: false,
     onTyping: () => { if (!typingRow) typingRow = addTyping(); }
@@ -1474,52 +1659,28 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '', hin
       dbg(`proactive request failed: ${data?.code || response.status || 'mismatch'}`);
       return false;
     }
+
+    // Validate and materialize the complete client delivery before touching
+    // persistent semantic state.
+    const preparedDelivery = await prepareAssistantDelivery({
+      data,
+      requestId,
+      userText: '',
+      defaultInReplyTo: null
+    });
+
     if (typingRow?.isConnected) typingRow.remove();
     await commitSuccessfulTurnState({ memoryModule, requestId, data, preparedInnerLife, loreModule, preparedLore });
-
-    if (data?.delivery?.type === 'silence') {
-      const silenceMessage = createChatMessage({
-        role: 'assistant', kind: 'silence', status: 'complete', content: '', requestId,
-        silence: { reason: data.delivery.reason, scene: data.delivery.scene }
-      });
-      history.push(silenceMessage); saveHistory(history);
-      dbg(`proactive complete: request=${requestId}; kind=silence; build=${RIN_BUILD_VERSION}`);
-      return true;
-    }
-
-    let reply = typeof data.reply === 'string' ? data.reply.trim() : '';
-    if (isInternalNonverbalMetaText(reply)) reply = String(data?.delivery?.fallbackText || 'Мм.').trim();
-    if (!reply) return false;
-    const stickerDecision = await maybeSticker('', reply, data, { render: false });
-    const stickerOnly = stickerDecision?.action === 'send' && stickerDecision?.delivery === 'sticker_only';
-    const plannedReplyLink = replyLinkFromResponsePlan(data?.responsePlan);
-    if (!stickerOnly && stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision, plannedReplyLink);
-    let kind = stickerOnly ? 'sticker' : 'text';
-    const audioUrl = !stickerOnly && shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
-    const assistantMessage = stickerOnly ? null : createChatMessage({
-      role: 'assistant', kind: audioUrl ? 'voice' : 'text', status: 'complete', content: reply,
-      requestId, inReplyTo: plannedReplyLink?.inReplyTo || null, replySnapshot: plannedReplyLink?.replySnapshot || null
-    });
-    if (stickerOnly) {
-      const sent = await commitStickerDecision(stickerDecision, plannedReplyLink);
-      if (!sent) {
-        const fallbackMessage = createChatMessage({ role:'assistant', kind:'text', status:'complete', content:reply, requestId });
-        addBubble(reply, 'assistant', fallbackMessage.ts, { message: fallbackMessage });
-        history.push(fallbackMessage); kind = 'text';
-      }
-    } else if (audioUrl) {
-      addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
-      history.push(assistantMessage); kind = 'voice';
-    } else {
-      addBubble(reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
-      history.push(assistantMessage); kind = 'text';
-    }
-    saveHistory(history);
-    if (!stickerOnly && stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
+    stateCommitted = true;
+    const kind = await deliverCommittedAssistantTurn(preparedDelivery);
     dbg(`proactive complete: request=${requestId}; kind=${kind}; trigger=${type}; build=${RIN_BUILD_VERSION}`);
     return true;
   } catch (error) {
     if (typingRow?.isConnected) typingRow.remove();
+    if (stateCommitted) {
+      dbg(`post-commit proactive delivery failed: request=${requestId}; ${error?.message || error}`);
+      return true;
+    }
     dbg(`proactive request failed: ${error?.code || error?.message || error}`);
     return false;
   } finally {
@@ -1641,6 +1802,8 @@ async function processUserMessage(messageId) {
   activeRequests += 1;
   let typingRow = null;
   let presenceFinished = false;
+  let stateCommitted = false;
+  let preparedDelivery = null;
   const presenceTurn = presence.beginTurn({
     userInitiated: true,
     onTyping: () => { if (!typingRow) typingRow = addTyping(); }
@@ -1695,85 +1858,44 @@ async function processUserMessage(messageId) {
       error.code = 'MISMATCHED_RESPONSE';
       throw error;
     }
-    const intentionalSilence = data?.delivery?.type === 'silence';
-    if (intentionalSilence) {
-      if (typingRow?.isConnected) typingRow.remove();
-      await commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore });
-      const silenceMessage = createChatMessage({
-        role: 'assistant', kind: 'silence', status: 'complete', content: '',
-        requestId: requestId || userMessage?.requestId, inReplyTo: userMessage.id,
-        silence: { reason: data.delivery.reason, scene: data.delivery.scene }
-      });
-      updateMessage(history, userMessage.id, { status: 'complete' });
-      const userRow = findMessageRow(userMessage.id);
-      if (userRow) userRow.dataset.status = 'complete';
-      history.push(silenceMessage);
-      saveHistory(history);
-      finishPresence();
-      dbg(`reply complete: request=${userMessage.requestId}; kind=silence; reason=${data.delivery.reason || 'semantic'}; build=${RIN_BUILD_VERSION}`);
-      return;
-    }
-    let reply = typeof data.reply === 'string' ? data.reply.trim() : '';
-    if (isInternalNonverbalMetaText(reply)) {
-      dbg('blocked internal nonverbal meta reply on client');
-      reply = String(data?.delivery?.fallbackText || 'Мм.').trim();
-    }
-    if (!reply) {
-      const error = new Error('Empty response');
-      error.code = 'EMPTY_MODEL_RESPONSE';
-      throw error;
-    }
+
+    // The full assistant event is validated/materialized before the authoritative
+    // state commit. Any error above this boundary leaves the turn safely retriable.
+    preparedDelivery = await prepareAssistantDelivery({
+      data,
+      requestId: userMessage.requestId,
+      userText: userMessage.content,
+      defaultInReplyTo: userMessage.id
+    });
 
     if (typingRow?.isConnected) typingRow.remove();
     await commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore });
-    const stickerDecision = await maybeSticker(userMessage.content, reply, data, { render: false });
-    const stickerOnly = stickerDecision?.action === 'send' && stickerDecision?.delivery === 'sticker_only';
-    const plannedReplyLink = replyLinkFromResponsePlan(data?.responsePlan);
-    if (!stickerOnly && stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision);
+    stateCommitted = true;
 
-    let kind = stickerOnly ? 'sticker' : 'text';
-    const audioUrl = !stickerOnly && shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
-    const assistantMessage = stickerOnly ? null : createChatMessage({
-      role: 'assistant',
-      kind: audioUrl ? 'voice' : 'text',
-      status: 'complete',
-      content: reply,
-      requestId: requestId || userMessage?.requestId,
-      inReplyTo: plannedReplyLink?.inReplyTo || userMessage.id,
-      replySnapshot: plannedReplyLink?.replySnapshot || null
-    });
-    if (assistantMessage) kind = assistantMessage.kind;
-    if (stickerOnly) {
-      const sent = await commitStickerDecision(stickerDecision, plannedReplyLink);
-      if (!sent) {
-        const fallbackMessage = createChatMessage({
-          role: 'assistant', kind: 'text', status: 'complete', content: reply,
-          requestId: requestId || userMessage?.requestId,
-          inReplyTo: plannedReplyLink?.inReplyTo || userMessage.id,
-          replySnapshot: plannedReplyLink?.replySnapshot || null
-        });
-        addBubble(reply, 'assistant', fallbackMessage.ts, { message: fallbackMessage });
-        history.push(fallbackMessage);
-        kind = 'text';
-      }
-    } else if (audioUrl) addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
-    else addBubble(reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
-
-    updateMessage(history, userMessage.id, { status: 'complete' });
-    const userRow = findMessageRow(userMessage.id);
-    if (userRow) userRow.dataset.status = 'complete';
-    if (assistantMessage) history.push(assistantMessage);
+    const kind = await deliverCommittedAssistantTurn(preparedDelivery, { userMessage });
     saveHistory(history);
-    if (!stickerOnly && stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
     finishPresence();
 
-    if (shouldAnalyzeConversationForMemory(userMessage.content)) {
-      enqueueMemoryJob({ id: userMessage.id, userText: userMessage.content, assistantText: reply }, localStorage);
+    if (preparedDelivery.type !== 'silence' && shouldAnalyzeConversationForMemory(userMessage.content)) {
+      enqueueMemoryJob({ id: userMessage.id, userText: userMessage.content, assistantText: preparedDelivery.reply }, localStorage);
       void memoryJobRunner.drain();
     }
-    dbg(`reply complete: request=${userMessage.requestId}; kind=${kind}; build=${RIN_BUILD_VERSION}`);
+    dbg(`reply complete: request=${userMessage.requestId}; kind=${kind}${preparedDelivery.type === 'silence' ? `; reason=${data?.delivery?.reason || 'semantic'}` : ''}; build=${RIN_BUILD_VERSION}`);
   } catch (error) {
     if (typingRow?.isConnected) typingRow.remove();
+
+    // Once ConversationState committed, the server turn succeeded. Never make it
+    // retriable because of a later DOM/media/local-storage side effect.
+    if (stateCommitted) {
+      markUserMessageComplete(userMessage);
+      if (preparedDelivery?.fallbackMessage) persistAssistantMessageOnce(preparedDelivery.fallbackMessage);
+      else if (preparedDelivery?.assistantMessage) persistAssistantMessageOnce(preparedDelivery.assistantMessage);
+      else if (preparedDelivery?.message) persistAssistantMessageOnce(preparedDelivery.message);
+      finishPresence();
+      dbg(`post-commit delivery failed: request=${userMessage.requestId}; ${error?.message || error}`);
+      return;
+    }
+
     const code = error?.name === 'AbortError' ? 'UPSTREAM_TIMEOUT' : error?.code || 'CHAT_REQUEST_FAILED';
     const failed = updateMessage(history, userMessage.id, { status: 'failed', errorCode: code });
     saveHistory(history);
