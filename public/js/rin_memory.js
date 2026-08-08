@@ -5,6 +5,7 @@ import {
   normalizeRelationshipState,
   relationshipStage as canonicalRelationshipStage
 } from '../lib/affective-contract.js';
+import { beliefSlot, normalizeBelief } from '../lib/epistemic-contract.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
@@ -209,7 +210,8 @@ function normalizeConversationState(value = {}, legacyTrace = null, context = {}
   const source = value && typeof value === 'object' ? value : {};
   const beliefs = (Array.isArray(source.beliefs) ? source.beliefs : [])
     .filter(item => item && typeof item === 'object' && cleanText(item.id, 120))
-    .slice(-32);
+    .map(normalizeBelief)
+    .slice(-48);
   const loops = (Array.isArray(source.openLoops) ? source.openLoops : [])
     .filter(item => item && typeof item === 'object' && cleanText(item.id, 120))
     .slice(-24);
@@ -555,10 +557,26 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
   if (!transition || typeof transition !== 'object') {
     return { ...current, revision: current.revision + 1, lastCommittedRequestId: requestId || null, updatedAt: now };
   }
-  const beliefs = new Map(current.beliefs.map(item => [item.id, item]));
-  for (const belief of Array.isArray(transition.beliefUpdates) ? transition.beliefUpdates : []) {
-    if (belief?.id) beliefs.set(belief.id, belief);
+  const beliefList = current.beliefs.map(normalizeBelief);
+  for (const raw of Array.isArray(transition.beliefUpdates) ? transition.beliefUpdates : []) {
+    if (!raw?.id) continue;
+    const existingIndex = beliefList.findIndex(item => item.id === raw.id);
+    // A correction may intentionally update only status/correctedBy of an existing belief.
+    if (existingIndex >= 0) beliefList[existingIndex] = normalizeBelief({ ...beliefList[existingIndex], ...raw });
+    else beliefList.push(normalizeBelief(raw));
   }
+  // One current assertion per semantic slot. Explicit user statements/facts supersede
+  // weaker hypotheses/observations about the same property instead of coexisting.
+  const strongestBySlot = new Map();
+  for (const belief of beliefList) {
+    if (['superseded','rejected'].includes(belief.status)) continue;
+    const slot = beliefSlot(belief);
+    const rank = belief.kind === 'fact' || belief.kind === 'user_statement' ? 4 : belief.kind === 'observation' ? 3 : belief.kind === 'rin_opinion' ? 2 : 1;
+    const prev = strongestBySlot.get(slot);
+    if (!prev || rank > prev.rank || (rank === prev.rank && belief.confidence >= prev.belief.confidence)) strongestBySlot.set(slot, { rank, belief });
+  }
+  const winnerIds = new Set([...strongestBySlot.values()].map(entry => entry.belief.id));
+  const beliefs = beliefList.map(item => (!['rejected','superseded'].includes(item.status) && !winnerIds.has(item.id)) ? normalizeBelief({ ...item, status: 'superseded' }) : item);
   const loops = new Map(current.openLoops.map(item => [item.id, item]));
   for (const loop of Array.isArray(transition.openLoopUpdates) ? transition.openLoopUpdates : []) {
     if (loop?.id) loops.set(loop.id, loop);
@@ -577,7 +595,7 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
     dialogueState: transition.dialogueState && typeof transition.dialogueState === 'object'
       ? transition.dialogueState
       : current.dialogueState,
-    beliefs: [...beliefs.values()].slice(-32),
+    beliefs: beliefs.slice(-48),
     openLoops: [...loops.values()].filter(item => !['resolved', 'cancelled', 'stale'].includes(item?.status)).slice(-24),
     emotionalState,
     lastCommittedRequestId: requestId || null,
@@ -713,6 +731,22 @@ export async function upsertFact(path, value) {
         cursor = cursor[part];
       }
     });
+    return true;
+  });
+}
+
+export async function removeFact(path) {
+  const parts = String(path || '').split('.').map(item => item.trim()).filter(Boolean);
+  if (!parts.length || parts[0] !== 'user') return false;
+  return mutateDiary(diary => {
+    let cursor = diary.facts;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      cursor = cursor?.[parts[index]];
+      if (!cursor || typeof cursor !== 'object') return false;
+    }
+    const key = parts.at(-1);
+    if (!Object.prototype.hasOwnProperty.call(cursor, key)) return false;
+    delete cursor[key];
     return true;
   });
 }
