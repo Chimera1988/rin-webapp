@@ -551,13 +551,13 @@ setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
 /* НАСТРОЕНИЕ РИН */
 /* ============================= */
 
-async function commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore }) {
+async function commitSuccessfulTurnState({ memoryModule, userMessage = null, requestId = null, data, preparedInnerLife, loreModule, preparedLore }) {
   const transition = data?.stateTransition || null;
   const behavior = data?.responsePlan?.behavior || null;
   const spontaneous = ['personal_observation', 'return_to_open_loop'].includes(behavior?.initiative)
     || ['callback', 'challenge'].includes(behavior?.action);
   const committed = await memoryModule?.commitTurnState?.({
-    requestId: userMessage.requestId,
+    requestId: requestId || userMessage?.requestId,
     innerLife: preparedInnerLife,
     stateTransition: transition,
     moodDelta: transition?.moodDelta || null,
@@ -1320,21 +1320,15 @@ async function greet() {
   try {
     const part = currentEnv?.partOfDay;
     const pool = part === 'утро' ? 'morning' : part === 'вечер' ? 'evening' : part === 'ночь' ? 'night' : 'day';
-    let greeting = null;
+    let hint = null;
     try {
       const lore = await ensureLoreReady();
-      greeting = chooseConfiguredStarter(profile);
-      if (!greeting) greeting = await lore?.pickGreeting?.(pool, nowInTz(RIN_TZ));
+      hint = chooseConfiguredStarter(profile);
+      if (!hint) hint = await lore?.pickGreeting?.(pool, nowInTz(RIN_TZ));
     } catch (error) {
-      dbg('greeting phrase failed: ' + (error?.message || error));
+      dbg('greeting hint failed: ' + (error?.message || error));
     }
-    if (!greeting) greeting = pool === 'morning' ? 'Доброе утро. Как ты?' : pool === 'evening' ? 'Добрый вечер. Как твой день?' : pool === 'night' ? 'Тихая ночь тут… ты как?' : 'Привет. Как ты?';
-
-    const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: greeting });
-    addBubble(greeting, 'assistant', message.ts, { message });
-    history.push(message);
-    saveHistory(history);
-    return true;
+    return await requestAssistantInitiative({ type:'greeting', reason:`начало нового контакта; часть суток ${pool}`, hint:hint || '', pool });
   } finally {
     greetingActive = false;
   }
@@ -1410,13 +1404,127 @@ async function maybeSticker(userText, replyText, responseMeta = null, options = 
       return decision;
     }
 
-    // Proactive/greeting messages do not yet pass through /api/chat. Foundation v1
-    // therefore keeps them text-only rather than reviving a second semantic sticker
-    // classifier. Their full TurnDecision migration belongs to the autonomy stage.
+    // Calls without server response metadata are display-only legacy calls. All real
+    // reactive and proactive conversation turns must carry the server TurnDecision.
     return null;
   } catch (error) {
     dbg('stickers error: ' + (error?.message || error));
     return null;
+  }
+}
+
+async function requestChatTurn(payload = {}) {
+  return fetchWithTimeout('/api/chat', {
+    method: 'POST',
+    headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload)
+  }, 45_000);
+}
+
+async function requestAssistantInitiative({ type = 'scheduled', reason = '', hint = '', pool = null } = {}) {
+  if (activeRequests > 0 || hasBlockingTurn(history)) return false;
+  const requestId = newRequestId();
+  activeRequests += 1;
+  let typingRow = null;
+  let presenceFinished = false;
+  const presenceTurn = presence.beginTurn({
+    userInitiated: false,
+    onTyping: () => { if (!typingRow) typingRow = addTyping(); }
+  });
+  const finishPresence = () => {
+    if (presenceFinished) return;
+    presenceFinished = true;
+    presence.finishTurn(presenceTurn);
+  };
+  try {
+    await memoryJobRunner.drain();
+    const memoryModule = await ensureMemoryReady();
+    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, '');
+    const [memory, activeProfile, loreModule] = await Promise.all([
+      buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
+      ensureActiveProfile(),
+      ensureLoreReady()
+    ]);
+    const loreCue = String(hint || reason || '').trim();
+    const preparedLore = await loreModule?.buildLorePayload?.(loreCue);
+    const lore = loreModule?.lorePayloadForApi?.(preparedLore) || null;
+    const response = await requestChatTurn({
+      requestId,
+      history: toApiHistory(history),
+      trigger: { type, reason, hint: hint || undefined, pool: pool || undefined },
+      env: currentEnv || undefined,
+      profile: activeProfile || undefined,
+      memory: memory || undefined,
+      lore: lore || undefined,
+      client: {
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+        sentAt: Date.now(),
+        build: RIN_BUILD_VERSION,
+        proactive: true
+      }
+    });
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (response.status === 401) {
+      removeStoredPin();
+      window.location.replace('/login');
+      return false;
+    }
+    if (!response.ok || (data.requestId && data.requestId !== requestId)) {
+      dbg(`proactive request failed: ${data?.code || response.status || 'mismatch'}`);
+      return false;
+    }
+    if (typingRow?.isConnected) typingRow.remove();
+    await commitSuccessfulTurnState({ memoryModule, requestId, data, preparedInnerLife, loreModule, preparedLore });
+
+    if (data?.delivery?.type === 'silence') {
+      const silenceMessage = createChatMessage({
+        role: 'assistant', kind: 'silence', status: 'complete', content: '', requestId,
+        silence: { reason: data.delivery.reason, scene: data.delivery.scene }
+      });
+      history.push(silenceMessage); saveHistory(history);
+      dbg(`proactive complete: request=${requestId}; kind=silence; build=${RIN_BUILD_VERSION}`);
+      return true;
+    }
+
+    let reply = typeof data.reply === 'string' ? data.reply.trim() : '';
+    if (isInternalNonverbalMetaText(reply)) reply = String(data?.delivery?.fallbackText || 'Мм.').trim();
+    if (!reply) return false;
+    const stickerDecision = await maybeSticker('', reply, data, { render: false });
+    const stickerOnly = stickerDecision?.action === 'send' && stickerDecision?.delivery === 'sticker_only';
+    const plannedReplyLink = replyLinkFromResponsePlan(data?.responsePlan);
+    if (!stickerOnly && stickerDecision?.timing === 'before_reply') await commitStickerDecision(stickerDecision, plannedReplyLink);
+    let kind = stickerOnly ? 'sticker' : 'text';
+    const audioUrl = !stickerOnly && shouldVoiceFor(reply) ? await getTTSUrl(reply) : null;
+    const assistantMessage = stickerOnly ? null : createChatMessage({
+      role: 'assistant', kind: audioUrl ? 'voice' : 'text', status: 'complete', content: reply,
+      requestId, inReplyTo: plannedReplyLink?.inReplyTo || null, replySnapshot: plannedReplyLink?.replySnapshot || null
+    });
+    if (stickerOnly) {
+      const sent = await commitStickerDecision(stickerDecision, plannedReplyLink);
+      if (!sent) {
+        const fallbackMessage = createChatMessage({ role:'assistant', kind:'text', status:'complete', content:reply, requestId });
+        addBubble(reply, 'assistant', fallbackMessage.ts, { message: fallbackMessage });
+        history.push(fallbackMessage); kind = 'text';
+      }
+    } else if (audioUrl) {
+      addVoiceBubble(audioUrl, reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
+      history.push(assistantMessage); kind = 'voice';
+    } else {
+      addBubble(reply, 'assistant', assistantMessage.ts, { message: assistantMessage });
+      history.push(assistantMessage); kind = 'text';
+    }
+    saveHistory(history);
+    if (!stickerOnly && stickerDecision?.timing !== 'before_reply') await commitStickerDecision(stickerDecision);
+    dbg(`proactive complete: request=${requestId}; kind=${kind}; trigger=${type}; build=${RIN_BUILD_VERSION}`);
+    return true;
+  } catch (error) {
+    if (typingRow?.isConnected) typingRow.remove();
+    dbg(`proactive request failed: ${error?.code || error?.message || error}`);
+    return false;
+  } finally {
+    activeRequests = Math.max(0, activeRequests - 1);
+    finishPresence();
   }
 }
 
@@ -1428,49 +1536,22 @@ async function tryInitiateBySchedule() {
   const date = nowInTz(RIN_TZ);
   const dateKey = fmtDateKey(date);
   if (getInitCountFor(dateKey) >= policy.maxPerDay) return false;
-
   const windows = policy.windows;
   const window = windows.find(item => inWindow(date, item.from, item.to) && Math.random() < Number(item.probability ?? 0.35));
   if (!window) return false;
-
   const last = [...history].reverse().find(item => ['text', 'voice', 'sticker', 'silence'].includes(item?.kind || 'text'));
-  const silenceMinutes = policy.minimumSilenceMinutes;
-  if (!last || last.role !== 'assistant' || Date.now() - Number(last.ts || Date.now()) < silenceMinutes * 60_000) return false;
-
-  let text = chooseConfiguredStarter(profile);
-  if (!text) text = await lore?.pickInitiationPhrase?.(window.pool || 'day', date);
-  if (!text) return false;
-
-  await new Promise(resolve => setTimeout(resolve, 450));
+  if (!last || last.role !== 'assistant' || Date.now() - Number(last.ts || Date.now()) < policy.minimumSilenceMinutes * 60_000) return false;
+  let hint = chooseConfiguredStarter(profile);
+  if (!hint) hint = await lore?.pickInitiationPhrase?.(window.pool || 'day', date);
   if (!canAutoInitiate({ profile, history, greetingActive, activeRequests })) return false;
-  let typing = null;
-  let resolveTypingStarted;
-  const typingStarted = new Promise(resolve => { resolveTypingStarted = resolve; });
-  const presenceTurn = presence.beginTurn({
-    userInitiated: false,
-    onTyping: () => {
-      if (!typing) typing = addTyping();
-      resolveTypingStarted();
-    }
+  const sent = await requestAssistantInitiative({
+    type:'scheduled',
+    reason:`окно самостоятельной инициативы ${window.pool || 'day'} после ${policy.minimumSilenceMinutes}+ минут тишины`,
+    hint:hint || '',
+    pool:window.pool || 'day'
   });
-  if (presenceTurn == null) {
-    await new Promise(resolve => setTimeout(resolve, 500));
-  } else {
-    await Promise.race([
-      typingStarted,
-      new Promise(resolve => setTimeout(resolve, 6_500))
-    ]);
-    await new Promise(resolve => setTimeout(resolve, 350));
-  }
-  if (typing?.isConnected) typing.remove();
-
-  const message = createChatMessage({ role: 'assistant', kind: 'text', status: 'complete', content: text });
-  addBubble(text, 'assistant', message.ts, { message });
-  history.push(message);
-  saveHistory(history);
-  bumpInitCount(dateKey);
-  presence.finishTurn(presenceTurn);
-  return true;
+  if (sent) bumpInitCount(dateKey);
+  return sent;
 }
 
 formEl.addEventListener('submit', event => {
@@ -1584,23 +1665,19 @@ async function processUserMessage(messageId) {
     ]);
     const preparedLore = await loreModule?.buildLorePayload?.(userMessage.content);
     const lore = loreModule?.lorePayloadForApi?.(preparedLore) || null;
-    const response = await fetchWithTimeout('/api/chat', {
-      method: 'POST',
-      headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        requestId: userMessage.requestId,
-        history: toApiHistory(history, userMessage.requestId),
-        env: currentEnv || undefined,
-        profile: activeProfile || undefined,
-        memory: memory || undefined,
-        lore: lore || undefined,
-        client: {
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
-          sentAt: Date.now(),
-          build: RIN_BUILD_VERSION
-        }
-      })
-    }, 45_000);
+    const response = await requestChatTurn({
+      requestId: userMessage.requestId,
+      history: toApiHistory(history, userMessage.requestId),
+      env: currentEnv || undefined,
+      profile: activeProfile || undefined,
+      memory: memory || undefined,
+      lore: lore || undefined,
+      client: {
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+        sentAt: Date.now(),
+        build: RIN_BUILD_VERSION
+      }
+    });
     let data = {};
     try { data = await response.json(); } catch {}
     if (response.status === 401) {
@@ -1624,7 +1701,7 @@ async function processUserMessage(messageId) {
       await commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore });
       const silenceMessage = createChatMessage({
         role: 'assistant', kind: 'silence', status: 'complete', content: '',
-        requestId: userMessage.requestId, inReplyTo: userMessage.id,
+        requestId: requestId || userMessage?.requestId, inReplyTo: userMessage.id,
         silence: { reason: data.delivery.reason, scene: data.delivery.scene }
       });
       updateMessage(history, userMessage.id, { status: 'complete' });
@@ -1661,7 +1738,7 @@ async function processUserMessage(messageId) {
       kind: audioUrl ? 'voice' : 'text',
       status: 'complete',
       content: reply,
-      requestId: userMessage.requestId,
+      requestId: requestId || userMessage?.requestId,
       inReplyTo: plannedReplyLink?.inReplyTo || userMessage.id,
       replySnapshot: plannedReplyLink?.replySnapshot || null
     });
@@ -1671,7 +1748,7 @@ async function processUserMessage(messageId) {
       if (!sent) {
         const fallbackMessage = createChatMessage({
           role: 'assistant', kind: 'text', status: 'complete', content: reply,
-          requestId: userMessage.requestId,
+          requestId: requestId || userMessage?.requestId,
           inReplyTo: plannedReplyLink?.inReplyTo || userMessage.id,
           replySnapshot: plannedReplyLink?.replySnapshot || null
         });
