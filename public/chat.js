@@ -546,7 +546,9 @@ setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
 
 async function commitSuccessfulTurnState({ memoryModule, userMessage, data, preparedInnerLife, loreModule, preparedLore }) {
   const transition = data?.stateTransition || null;
-  const spontaneous = data?.coreDecision?.initiative?.mode === 'small_observation';
+  const behavior = data?.responsePlan?.behavior || null;
+  const spontaneous = ['personal_observation', 'return_to_open_loop'].includes(behavior?.initiative)
+    || ['callback', 'challenge'].includes(behavior?.action);
   const committed = await memoryModule?.commitTurnState?.({
     requestId: userMessage.requestId,
     innerLife: preparedInnerLife,
@@ -557,7 +559,7 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage, data, prep
     now: Date.now()
   });
   if (preparedLore) loreModule?.commitLorePayload?.(preparedLore);
-  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}`);
+  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; action=${behavior?.action || 'react'}; q=${Number(data?.responsePlan?.questionBudget) || 0}`);
   return committed;
 }
 
