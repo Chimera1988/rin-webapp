@@ -141,6 +141,57 @@ export function decideSticker(config, { userText = '', replyText = '', mood = {}
   };
 }
 
+export function decidePlannedSticker(config, {
+  planned = null,
+  mode = 'smart',
+  baseProbability = 50,
+  safeMode = false
+} = {}) {
+  const preferredStickerId = String(planned?.preferredStickerId || '').trim();
+  if (!planned || !preferredStickerId) return { action: 'none', reason: 'no_server_plan' };
+  if (mode === 'off') return { action: 'none', reason: 'mode_off' };
+  const sticker = (config?.stickers || []).find(item => item.id === preferredStickerId);
+  if (!sticker) return { action: 'none', reason: 'planned_sticker_missing' };
+  const delivery = sticker.responseModes?.includes(planned.delivery)
+    ? planned.delivery
+    : planned.standalone !== false && sticker.responseModes?.includes('sticker_only')
+      ? 'sticker_only'
+      : sticker.responseModes?.includes('after_text') ? 'after_text' : sticker.responseModes?.[0];
+  if (!delivery) return { action: 'none', reason: 'planned_delivery_unsupported' };
+  if (safeMode && SERIOUS_SCENES.has(planned.scene || '')) return { action: 'none', reason: 'safe_mode_scene' };
+
+  const stats = loadStats();
+  stats.turns += 1;
+  stats.turnsSinceSticker += 1;
+  stats.outcomes = [...stats.outcomes, false].slice(-50);
+  saveStats(stats);
+
+  const explicit = planned.standalone === true || delivery === 'sticker_only';
+  const minGap = explicit ? Number(config.defaults?.explicitGestureMinGap ?? 1) : Number(config.defaults?.minGapMessages ?? 2);
+  if (mode !== 'always' && stats.turnsSinceSticker <= minGap) return { action: 'none', reason: 'global_cooldown' };
+  const probability = mode === 'always' ? 100 : clamp(baseProbability, 0, 100);
+  if (mode !== 'always' && Math.random() >= probability / 100) {
+    return { action: 'none', reason: 'probability_gate', probability, candidate: sticker.id };
+  }
+  const follow = sticker.followUp || {};
+  return {
+    action: 'send',
+    sticker,
+    delivery,
+    timing: delivery === 'before_text' ? 'before_reply' : 'after_reply',
+    semanticAction: planned.emotion || sticker.emotion,
+    utterance: sticker.utterances?.[0] || null,
+    meaning: planned.meaning || sticker.meaning,
+    cause: planned.cause || null,
+    intensity: clamp(planned.intensity ?? 50, 0, 100),
+    canExplain: follow.canExplain !== false,
+    expiresAfterTurns: Number(planned.expiresAfterTurns ?? follow.maxTurns ?? 0),
+    explanation: follow.explanation || null,
+    probability,
+    reason: `server_plan=${sticker.id}|delivery=${delivery}`
+  };
+}
+
 export function markStickerSent(sticker) {
   if (!sticker?.src || !isAllowedStickerSrc(sticker.src)) return;
   const stats = loadStats();
