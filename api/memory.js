@@ -17,12 +17,13 @@ const confidence = value => {
 
 export function createEmptyMemoryResult() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     facts: [],
     events: [],
     openLoops: [],
     resolvedLoops: [],
-    sharedMoments: []
+    sharedMoments: [],
+    factRetractions: []
   };
 }
 
@@ -76,6 +77,10 @@ export function sanitizeMemoryResult(value) {
       importance: clamp(item?.importance, 1, 10, 6)
     });
   }
+  for (const item of list(value?.factRetractions, 5)) {
+    const path = clean(item?.path, 100);
+    if (/^user\.[a-zA-Z0-9_.-]+$/.test(path)) result.factRetractions.push({ path });
+  }
   return result;
 }
 
@@ -88,6 +93,8 @@ async function extractMemory({ userText, assistantText, existingMemory }) {
 Эмоциональное состояние и отношения здесь не анализируй: они обновляются отдельным единым детерминированным контуром на клиенте.
 
 Для openLoops переиспользуй id существующей линии, если она уже есть. Для resolvedLoops возвращай прежде всего стабильный id существующей линии; text используй только если id отсутствует. sharedMoments должны быть редкими и значимыми.
+
+Если пользователь прямо исправляет ранее сохранённый факт о себе, верни старый путь в factRetractions и новую версию в facts. Не выводи factRetractions для догадок ассистента, которых не было в facts.
 
 Формат:
 {"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"openLoops":[{"id":"existing-id-or-empty","text":"...","type":"plan","importance":7}],"resolvedLoops":[{"id":"existing-id","text":""}],"sharedMoments":[]}

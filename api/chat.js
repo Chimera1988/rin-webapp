@@ -330,6 +330,10 @@ Behavior policy: действие ${plan?.behavior?.action || 'react'}; рече
 Смысловые обязательства, которые нельзя потерять:
 ${obligations || '- Ответить на текущую реплику по смыслу.'}
 
+Разрешённые подтверждённые сведения о пользователе:
+${(plan?.factsToUse || []).map(item => `- ${item}`).join('\n') || '- Нет релевантных подтверждённых сведений.'}
+Если черты пользователя нет в этом списке, не изобретай её даже для красивого объяснения.
+
 Нужно исправить:
 ${guidance || '- Сделать реплику конкретной и личной.'}
 
@@ -471,12 +475,12 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-stage5-dialogue-agency-v1.1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-stage6-epistemic-beliefs-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
         affectiveTurn,
-        verification: { version: 'rin-response-verifier-v7-agency-follow-through', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
+        verification: { version: 'rin-response-verifier-v8-epistemic', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
         delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
         stateTransition,
         coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, reason: coreDecision.reason }
@@ -517,7 +521,7 @@ export default async function handler(req, res) {
     const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-stage5-dialogue-agency-v1.1',
+      promptVersion: 'rin-stage6-epistemic-beliefs-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
