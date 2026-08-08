@@ -305,6 +305,15 @@ function deterministicAgencyFallback(plan = {}, userText = '') {
       'Мм, поздно оправдываться. Я уже запомнила 😌',
       'Не-не. Теперь не выкручивайся — сам начал.',
       'Угу. А теперь живи с тем, что я это тебе ещё припомню.'
+    ],
+    advance_persistent_intent: plan?.rinIntent?.target === 'relationship_state' ? [
+      'Нет, эту мысль я пока не отпустила.',
+      'Я всё ещё помню, что меня задело — не буду делать вид, что уже прошло.',
+      'Пока нет. Мне нужно ещё немного времени, чтобы это отпустить.'
+    ] : [
+      'Тогда правило простое: первым смутишься ты 😏',
+      'Не-не. Я ещё не закончила — теперь твоя задача не выдать себя слишком быстро 😏',
+      'Раз уж начал, продолжу: попробуй теперь не улыбнуться первым.'
     ]
   };
   const pool = variants[plan?.responseAct];
@@ -325,6 +334,7 @@ function rewriteMessages({ draft = '', verification = null, plan = null, brain =
 Активная сцена: ${brain?.activeScene?.type || 'everyday'}. Цель сцены: ${plan?.sceneGoal || brain?.activeScene?.goal || 'ответить конкретно'}.
 Behavior policy: действие ${plan?.behavior?.action || 'react'}; речевой акт ${plan?.responseAct || 'direct_response'}; инициатива ${plan?.initiative || 'none'}; выражение эмоции ${plan?.behavior?.emotionalExpression || 'natural'}; дистанция ${plan?.behavior?.distance || 'stable'}.
 Эмоциональная линия: ${plan?.emotionalIntent?.primary?.type || 'neutral'}; динамика ${plan?.emotionalIntent?.momentum?.direction || 'steady'}. ${plan?.emotionalIntent?.momentum?.direction === 'playful' ? 'Игровая линия уже активна: сохрани игровое напряжение и не уходи в нейтральную безопасную тему.' : ''}
+Persistent intent: ${plan?.rinIntent?.status === 'active' ? `${plan.rinIntent.goal}; следующий ход ${plan.rinIntent.nextMove}; commitment ${plan.rinIntent.commitment}/100` : 'нет активной долгоживущей цели'}. ${plan?.rinIntent?.status === 'active' ? 'Не отдавай выбор темы пользователю и не откладывай эту цель на потом.' : ''}
 Тон: ${plan?.tone || 'calm_personal'}. Длина: ${plan?.length || 'short'}. Бюджет вопросов: ${Number(plan?.questionBudget) || 0}. ${Number(plan?.questionBudget) > 0 ? 'Разрешён только один конкретный вопрос.' : 'Вопросительные предложения запрещены.'}
 
 Смысловые обязательства, которые нельзя потерять:
@@ -372,12 +382,12 @@ async function repairReplyIfNeeded({ model, draft, verification, plan, brain, us
   const fallback = deterministicAgencyFallback(plan, userText);
   const behavioralFallbackActs = new Set([
     'take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play',
-    'reassure_with_boundary', 'contained_jealousy', 'carry_playful_tension'
+    'reassure_with_boundary', 'contained_jealousy', 'carry_playful_tension', 'advance_persistent_intent'
   ]);
   if (fallback && (
     behavioralFallbackActs.has(plan?.responseAct)
     || ['missing_required_agency', 'scene_goal_drift', 'assistant_permission_seeking', 'meta_conversation_commentary',
-      'initiative_collapsed_into_assistant_voice', 'agency_deferred', 'emotional_state_contradiction', 'unplanned_question', 'question_budget_exceeded']
+      'initiative_collapsed_into_assistant_voice', 'agency_deferred', 'emotional_state_contradiction', 'persistent_intent_abandoned', 'persistent_intent_deferred', 'unplanned_question', 'question_budget_exceeded']
       .some(item => verification.warnings.includes(item))
   )) {
     const fallbackVerification = verifyReply(fallback, { plan, brain, userText });
@@ -467,7 +477,7 @@ export default async function handler(req, res) {
     const coreDecision = buildCoreDecision({ userText: userTurn, history: fullHistory, memory, conversationState, isLong, conversationBrain, affectiveTurn });
     const responsePlan = planResponse({ cognition, brain: conversationBrain, coreDecision, memory, userText: userTurn, history: fullHistory, isLong });
     if (responsePlan.delivery === 'silence') {
-      const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
+      const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn, responsePlan });
       return res.status(200).json({
         requestId,
         reply: '',
@@ -475,12 +485,12 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-stage6-epistemic-beliefs-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-stage6-persistent-intent-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
         affectiveTurn,
-        verification: { version: 'rin-response-verifier-v8-epistemic', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
+        verification: { version: 'rin-response-verifier-v9-persistent-intent', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
         delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
         stateTransition,
         coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, reason: coreDecision.reason }
@@ -518,10 +528,10 @@ export default async function handler(req, res) {
     const verification = repair.verification;
     const clean = repair.reply;
     const delivery = buildTurnDelivery({ responsePlan, coreDecision, verification, reply: clean });
-    const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
+    const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn, responsePlan });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-stage6-epistemic-beliefs-v1',
+      promptVersion: 'rin-stage6-persistent-intent-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
