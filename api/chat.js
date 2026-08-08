@@ -486,12 +486,12 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-stage6.1-intent-hardening-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-stage6.2-intent-specificity-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
         affectiveTurn,
-        verification: { version: 'rin-response-verifier-v9-persistent-intent', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
+        verification: { version: 'rin-response-verifier-v10-scene-bound-intent', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
         delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
         stateTransition,
         coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, reason: coreDecision.reason }
@@ -534,7 +534,7 @@ export default async function handler(req, res) {
     const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn, responsePlan: transitionPlan });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-stage6.1-intent-hardening-v1',
+      promptVersion: 'rin-stage6.2-intent-specificity-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
