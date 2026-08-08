@@ -159,6 +159,13 @@ const realitySource = await read('lib/cognition/reality-boundary.js');
 if (!realitySource.includes('unsupportedAutobiographicalClaim') || !apiChatSource.includes('buildRealityBoundary')) fail('Reality boundary must be enforced by the chat pipeline.');
 if (!chat.includes('requestAssistantInitiative') || !chat.includes('trigger: { type, reason')) fail('Greeting and scheduled initiative must use the unified server pipeline.');
 if ((chat.match(/fetchWithTimeout\('\/api\/chat'/g) || []).length !== 1 || !chat.includes('requestChatTurn')) fail('Reactive and proactive chat must share one client request helper.');
+if (/requestId:\s*requestId\s*\|\|\s*userMessage/u.test(chat)) fail('Reactive client must not reference an undeclared requestId alias.');
+if (!chat.includes('prepareAssistantDelivery') || !chat.includes('deliverCommittedAssistantTurn') || !chat.includes('let stateCommitted = false')) fail('Client must enforce an explicit prepare -> semantic commit -> delivery boundary.');
+const reactiveTurnSource = chat.slice(chat.indexOf('async function processUserMessage'), chat.indexOf('async function refreshRinEnv'));
+if (!(reactiveTurnSource.indexOf('preparedDelivery = await prepareAssistantDelivery') < reactiveTurnSource.indexOf('await commitSuccessfulTurnState') && reactiveTurnSource.indexOf('await commitSuccessfulTurnState') < reactiveTurnSource.indexOf('await deliverCommittedAssistantTurn'))) fail('Reactive turn must prepare all delivery artifacts before semantic commit and render only after commit.');
+const proactiveTurnSource = chat.slice(chat.indexOf('async function requestAssistantInitiative'), chat.indexOf('async function tryInitiateBySchedule'));
+if (!(proactiveTurnSource.indexOf('const preparedDelivery = await prepareAssistantDelivery') < proactiveTurnSource.indexOf('await commitSuccessfulTurnState') && proactiveTurnSource.indexOf('await commitSuccessfulTurnState') < proactiveTurnSource.indexOf('await deliverCommittedAssistantTurn'))) fail('Proactive turn must prepare all delivery artifacts before semantic commit and render only after commit.');
+if (!reactiveTurnSource.includes('if (stateCommitted)') || !reactiveTurnSource.includes('markUserMessageComplete(userMessage)')) fail('Post-commit client errors must not make a successful reactive turn retriable.');
 if (!persistentIntentEngine.includes('TERMINAL_HOLD_TURNS') || persistentIntentEngine.includes('bindingShift')) fail('Persistent intent must own terminal cooldown and forbid arbitrary in-place rebinding.');
 
 
