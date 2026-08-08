@@ -57,7 +57,7 @@ test('system prompt has an explicit cognitive hierarchy and deterministic respon
 
   assert.ok(text.indexOf('ФАКТИЧЕСКАЯ ТОЧНОСТЬ') < text.indexOf('СТАБИЛЬНЫЙ КАНОН'));
   assert.ok(text.indexOf('COGNITION LAYER') < text.indexOf('ПЛАН ОТВЕТА'));
-  assert.match(text, /BEHAVIOR POLICY v1/);
+  assert.match(text, /BEHAVIOR POLICY v2/);
   assert.match(text, /Бюджет вопросов: 0/);
   assert.match(text, /Вопросов в этой реплике быть не должно/);
   assert.doesNotMatch(text, /начало — .*; завершение —/);

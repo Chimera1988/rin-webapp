@@ -231,7 +231,7 @@ test('weather handler cache policy agrees with the global API no-store policy', 
   assert.doesNotMatch(source, /max-age=60/);
 });
 
-test('chat API exposes one canonical affective turn and state-transition v2 for the current request', async () => {
+test('chat API exposes one canonical affective turn and state-transition v3 for the current request', async () => {
   const originalFetch = globalThis.fetch;
   const prompts = [];
   globalThis.fetch = async (_url, options) => {
@@ -259,13 +259,13 @@ test('chat API exposes one canonical affective turn and state-transition v2 for 
     assert.equal(res.body.affectiveTurn.schema, 'rin-affective-turn-v1');
     assert.equal(res.body.affectiveTurn.turn, 5);
     assert.equal(res.body.affectiveTurn.emotionalState.primary.type, 'jealousy');
-    assert.equal(res.body.stateTransition.schema, 'rin-state-transition-v2');
+    assert.equal(res.body.stateTransition.schema, 'rin-state-transition-v3');
     assert.deepEqual(res.body.stateTransition.emotionalState, res.body.affectiveTurn.emotionalState);
     assert.deepEqual(res.body.stateTransition.relationshipState, res.body.affectiveTurn.relationshipState);
     assert.equal(prompts.length, 1);
     assert.match(prompts[0], /Главная реакция: jealousy/);
     assert.match(prompts[0], /возможную романтическую встречу с другой девушкой/);
-    assert.match(prompts[0], /BEHAVIOR POLICY v1/);
+    assert.match(prompts[0], /BEHAVIOR POLICY v2/);
     assert.match(prompts[0], /Бюджет вопросов: 0/);
     assert.equal(res.body.responsePlan.behavior.action, 'tease');
     assert.equal(res.body.responsePlan.questionBudget, 0);

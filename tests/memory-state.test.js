@@ -225,3 +225,32 @@ test('removeFact retracts a stale explicit user fact without touching other fact
   assert.equal(await memory.getFact('user.trait.selfCritical', null), null);
   assert.equal(await memory.getFact('user.name'), 'Алексей');
 });
+
+test('persistent Rin intent survives transactional commit and reload exactly', async () => {
+  const rinIntent = {
+    schema: 'rin-persistent-intent-v1', id: 'intent-persist', status: 'active',
+    goal: 'продвинуть игровую линию', motive: 'пользователь поддержал игру', target: 'shared_playful_scene', scene: 'playful_flirt',
+    priority: 82, commitment: 80, progress: 0.42, nextMove: 'tease_or_advance',
+    completionCondition: 'после нескольких конкретных ходов', abandonmentCondition: 'явный отказ или farewell',
+    startedAtTurn: 2, updatedAtTurn: 3, turnCount: 1, minTurns: 2, maxTurns: 4, source: 'character_intent'
+  };
+  await memory.commitTurnState({ requestId: 'intent-persist-r1', now: 12_000_000, stateTransition: { rinIntent } });
+  const first = await memory.loadDiary();
+  assert.equal(first.conversationState.schema, 'rin-conversation-state-v3');
+  assert.equal(first.conversationState.rinIntent.id, 'intent-persist');
+  assert.equal(first.conversationState.rinIntent.status, 'active');
+  assert.equal(first.conversationState.rinIntent.progress, 0.42);
+  const reloaded = await memory.loadDiary();
+  assert.deepEqual(reloaded.conversationState.rinIntent, first.conversationState.rinIntent);
+});
+
+
+test('duplicate request cannot advance persistent intent twice', async () => {
+  const intent = { schema:'rin-persistent-intent-v1', id:'intent-idempotent', status:'active', goal:'продвинуть игровую линию', motive:'play', target:'shared_playful_scene', scene:'playful_flirt', priority:80, commitment:80, progress:.3, nextMove:'tease_or_advance', completionCondition:'done', abandonmentCondition:'stop', startedAtTurn:1, updatedAtTurn:1, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' };
+  const first = await memory.commitTurnState({ requestId:'intent-idem-r1', now:14_000_000, stateTransition:{ rinIntent:intent } });
+  assert.equal(first.applied, true);
+  const snapshot = await memory.loadDiary();
+  const duplicate = await memory.commitTurnState({ requestId:'intent-idem-r1', now:14_000_100, stateTransition:{ rinIntent:{ ...intent, progress:.9, turnCount:4, status:'completed' } } });
+  assert.equal(duplicate.applied, false);
+  assert.deepEqual((await memory.loadDiary()).conversationState, snapshot.conversationState);
+});

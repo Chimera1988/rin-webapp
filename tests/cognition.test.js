@@ -119,13 +119,22 @@ test('state transition preserves the canonical caused emotional state and recent
     brain: { activeScene: { type: 'romance' }, hiddenIntent: { type: 'none' }, literalIntent: 'statement' }
   });
   const transition = buildStateTransition({ cognition, affectiveTurn });
-  assert.equal(transition.schema, 'rin-state-transition-v2');
+  assert.equal(transition.schema, 'rin-state-transition-v3');
   assert.equal(transition.emotionalState.primary.type, 'jealousy');
   assert.match(transition.emotionalState.primary.cause, /другой девушк/);
   assert.equal(transition.emotionalState.momentum.direction, 'tense');
   // Legacy mirror remains for one release, but it is derived from the canonical state.
   assert.equal(transition.emotionalTrace.emotion, 'jealousy');
   assert.equal(transition.openLoopUpdates.length, 1);
+});
+
+test('state transition v3 carries the response-plan persistent Rin intent', () => {
+  const cognition = { beliefModel:{ currentStatement:null, beliefs:[] }, openLoops:{ active:[] }, dialogueState:{ scene:'playful_flirt', topic:'игра' } };
+  const rinIntent = { schema:'rin-persistent-intent-v1', id:'intent-transition', status:'active', goal:'продвинуть игровую линию', motive:'play', target:'shared_playful_scene', scene:'playful_flirt', priority:80, commitment:78, progress:.35, nextMove:'tease_or_advance', completionCondition:'после нескольких ходов', abandonmentCondition:'явный отказ', startedAtTurn:2, updatedAtTurn:2, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' };
+  const transition = buildStateTransition({ cognition, responsePlan:{ rinIntent } });
+  assert.equal(transition.schema, 'rin-state-transition-v3');
+  assert.equal(transition.rinIntent.id, 'intent-transition');
+  assert.equal(transition.rinIntent.status, 'active');
 });
 
 

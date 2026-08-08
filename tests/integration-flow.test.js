@@ -243,7 +243,7 @@ test('jealousy → tease reveal → neutral bridge persists through API commit a
     let persisted = await memoryStore.loadDiary();
 
     const rival = await request('affect-r1', 'Меня пригласила девушка на встречу вечером', persisted);
-    assert.equal(rival.stateTransition.schema, 'rin-state-transition-v2');
+    assert.equal(rival.stateTransition.schema, 'rin-state-transition-v3');
     assert.equal(rival.stateTransition.emotionalState.primary.type, 'jealousy');
     assert.equal(rival.responsePlan.responseAct, 'contained_jealousy');
     assert.equal(rival.delivery.preferredStickerId, 'mild_jealousy');
@@ -511,4 +511,41 @@ test('unsupported user-trait hypothesis is rejected by correction and cannot ret
   const cognition=buildCognitiveTurn({ userText:'В общем спасибо)', history:[{role:'user',kind:'text',content:'В общем спасибо)'}], memory:{facts:persisted.facts,conversationState:persisted.conversationState}, brain });
   assert.equal(cognition.beliefModel.beliefs.find(x=>x.id==='trait-selfcrit').status,'rejected');
   assert.ok(!cognition.beliefModel.factsToUse.some(x=>/самокрит|self_critical/iu.test(x)));
+});
+
+test('persistent intent survives server transition, diary reload and changes the next response plan', async () => {
+  const originalEnv = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY };
+  const originalFetch = globalThis.fetch;
+  process.env.ACCESS_PIN = '9292';
+  process.env.OPENAI_API_KEY = 'persistent-intent-key';
+  const chat = (await import('../api/chat.js?persistent-intent-flow')).default;
+  const storage = new MemoryStorage();
+  globalThis.localStorage = storage;
+  const memoryStore = await import('../public/js/rin_memory.js?persistent-intent-flow');
+  let modelCall = 0;
+  const replies = ['Не-не. Теперь не выкручивайся — сам начал.', 'Поздно. Иди сюда — посмотрим, кто первый смутится 😏'];
+  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: replies[Math.min(modelCall++, replies.length - 1)] }, finish_reason: 'stop' }], usage: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
+  try {
+    await memoryStore.saveDiary({ ...(await memoryStore.loadDiary()), mood:{ affection:76, energy:60 }, relationship:{ trust:82, closeness:76, comfort:72, respect:80, playfulness:72, attraction:62, vulnerability:42, sharedMoments:[] } });
+    const firstRes = createRes();
+    await chat(createReq({ headers:{'x-rin-pin':'9292'}, body:{ requestId:'intent-flow-1', history:[{id:'u-i1',role:'user',kind:'text',status:'sent',requestId:'intent-flow-1',content:'Ну и где?) Ты будешь меня смущать???'}], memory: await memoryStore.loadDiary() } }), firstRes);
+    assert.equal(firstRes.statusCode, 200);
+    assert.equal(firstRes.body.stateTransition.schema, 'rin-state-transition-v3');
+    assert.equal(firstRes.body.stateTransition.rinIntent?.status, 'active');
+    await memoryStore.commitTurnState({ requestId:'intent-flow-1', stateTransition:firstRes.body.stateTransition, now:13_000_000 });
+    const persisted = await memoryStore.loadDiary();
+    assert.equal(persisted.conversationState.rinIntent?.status, 'active');
+
+    const secondRes = createRes();
+    await chat(createReq({ headers:{'x-rin-pin':'9292'}, body:{ requestId:'intent-flow-2', history:[{id:'a-i1',role:'assistant',kind:'text',status:'complete',content:firstRes.body.reply},{id:'u-i2',role:'user',kind:'text',status:'sent',requestId:'intent-flow-2',content:'Да я и не собирался выкручиваться 😏'}], memory:{ facts:persisted.facts, mood:persisted.mood, relationship:persisted.relationship, openLoops:persisted.openLoops, recentEvents:persisted.events, conversationState:persisted.conversationState } } }), secondRes);
+    assert.equal(secondRes.statusCode, 200);
+    assert.equal(secondRes.body.responsePlan.rinIntent?.id, persisted.conversationState.rinIntent.id);
+    assert.ok(['advance_persistent_intent','carry_playful_tension','tease_and_advance','advance_play'].includes(secondRes.body.responsePlan.responseAct));
+    assert.equal(secondRes.body.responsePlan.questionBudget, 0);
+    assert.ok(secondRes.body.responsePlan.rinIntent.progress > persisted.conversationState.rinIntent.progress);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalEnv.pin === undefined) delete process.env.ACCESS_PIN; else process.env.ACCESS_PIN = originalEnv.pin;
+    if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
+  }
 });
