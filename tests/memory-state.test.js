@@ -61,7 +61,7 @@ test('open loops resolve by stable id and do not fall back to broad substring ma
 test('corrupted memory falls back to a valid schema and quota failures are explicit', async () => {
   storage.setItem('rin-diary-v1', '{broken');
   const recovered = await memory.loadDiary();
-  assert.equal(recovered._schema, 3);
+  assert.equal(recovered._schema, 4);
   assert.deepEqual(recovered.events, []);
 
   const normalStorage = globalThis.localStorage;
@@ -101,7 +101,10 @@ test('prepareInnerLife is pure until a successful turn is committed', async () =
       beliefUpdates: [{ id: 'belief-project', kind: 'user_statement', subject: 'user', predicate: 'works_on', value: 'текст' }],
       openLoopUpdates: [{ id: 'loop-text', subject: 'закончить текст', status: 'waiting_for_user' }],
       resolvedLoopIds: [],
-      emotionalTrace: { emotion: 'focused', cause: 'совместная работа', intensity: 38, resolution: 'unresolved', expiresAfterTurns: 3 }
+      emotionalState: {
+        primary: { type: 'interest', cause: 'совместная работа', target: 'situation', intensity: 38, resolution: 'unresolved', expiresAfterTurns: 3, remainingTurns: 3 },
+        tension: 0, warmth: 58, vulnerability: 28, momentum: { direction: 'steady', strength: 38 }, updatedAtTurn: 1
+      }
     }
   });
   assert.equal(committed.applied, true);
@@ -111,7 +114,8 @@ test('prepareInnerLife is pure until a successful turn is committed', async () =
   assert.equal(diary.conversationState.dialogueState.scene, 'practical_task');
   assert.equal(diary.conversationState.beliefs[0].id, 'belief-project');
   assert.equal(diary.conversationState.openLoops[0].id, 'loop-text');
-  assert.equal(diary.conversationState.emotionalTrace.emotion, 'focused');
+  assert.equal(diary.conversationState.emotionalState.primary.type, 'interest');
+  assert.match(diary.conversationState.emotionalState.primary.cause, /совместная работа/);
   assert.equal(diary.innerLife.interactionCount, prepared.interactionCount);
 });
 
@@ -160,22 +164,48 @@ test('failed prepared turn leaves conversation, mood and relationship state unch
   assert.deepEqual(after.innerLife, before.innerLife);
 });
 
-test('emotional trace decays by committed turns and expires deterministically', async () => {
+test('client persists server-owned emotional state exactly and never performs independent decay', async () => {
+  const jealousy = {
+    primary: { type: 'jealousy', cause: 'контекст', target: 'relationship', intensity: 40, resolution: 'unresolved', expiresAfterTurns: 3, remainingTurns: 3 },
+    secondary: null, tension: 32, warmth: 52, vulnerability: 30, momentum: { direction: 'tense', strength: 40 }, updatedAtTurn: 1
+  };
   await memory.commitTurnState({
     requestId: 'emotion-1', now: 4_000_000,
     stateTransition: {
       dialogueState: { scene: 'everyday', topic: 'эмоция' }, beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [],
-      emotionalTrace: { emotion: 'mild_jealousy', cause: 'контекст', intensity: 40, resolution: 'unresolved', expiresAfterTurns: 2 }
+      emotionalState: jealousy
     }
   });
   let diary = await memory.loadDiary();
-  assert.equal(diary.conversationState.emotionalTrace.remainingTurns, 2);
+  assert.equal(diary.conversationState.emotionalState.primary.intensity, 40);
+  assert.equal(diary.conversationState.emotionalState.primary.remainingTurns, 3);
 
-  await memory.commitTurnState({ requestId: 'emotion-2', now: 4_000_100, stateTransition: { beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [], emotionalTrace: null } });
+  // A later server turn explicitly supplies the decayed state. The client stores it; it does not invent a second decay.
+  await memory.commitTurnState({
+    requestId: 'emotion-2', now: 4_000_100,
+    stateTransition: {
+      beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [],
+      emotionalState: { ...jealousy, primary: { ...jealousy.primary, intensity: 34, remainingTurns: 2, resolution: 'sustained' }, updatedAtTurn: 2 }
+    }
+  });
   diary = await memory.loadDiary();
-  assert.equal(diary.conversationState.emotionalTrace.remainingTurns, 1);
+  assert.equal(diary.conversationState.emotionalState.primary.intensity, 34);
+  assert.equal(diary.conversationState.emotionalState.primary.remainingTurns, 2);
 
-  await memory.commitTurnState({ requestId: 'emotion-3', now: 4_000_200, stateTransition: { beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [], emotionalTrace: null } });
-  diary = await memory.loadDiary();
-  assert.equal(diary.conversationState.emotionalTrace, null);
+  const reloaded = await memory.loadDiary();
+  assert.deepEqual(reloaded.conversationState.emotionalState, diary.conversationState.emotionalState);
+});
+
+test('legacy emotionalTrace migrates into the canonical emotional state once', async () => {
+  const diary = await memory.loadDiary();
+  diary.conversationState = {
+    ...diary.conversationState,
+    emotionalTrace: { emotion: 'mild_jealousy', cause: 'старая запись', intensity: 37, resolution: 'unresolved', expiresAfterTurns: 3, remainingTurns: 2 }
+  };
+  delete diary.conversationState.emotionalState;
+  storage.setItem('rin-diary-v1', JSON.stringify(diary));
+  const migrated = await memory.loadDiary();
+  assert.equal(migrated.conversationState.emotionalState.primary.type, 'jealousy');
+  assert.match(migrated.conversationState.emotionalState.primary.cause, /старая запись/);
+  assert.equal(migrated.conversationState.emotionalTrace, undefined);
 });

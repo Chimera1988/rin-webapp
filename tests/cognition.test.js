@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCognitiveTurn, buildStateTransition, planResponse, verifyReply } from '../lib/cognition/index.js';
+import { buildAffectiveTurn, buildCognitiveTurn, buildStateTransition, planResponse, verifyReply } from '../lib/cognition/index.js';
 import { normalizeResponsePlan } from '../lib/cognition/cognitive-contract.js';
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { polishRinReply } from '../lib/personality/anti-gpt.js';
@@ -90,20 +90,28 @@ test('verifier removes an unplanned generic trailing question', () => {
   assert.ok(result.repairs.includes('removed_unplanned_generic_question'));
 });
 
-test('state transition preserves a caused emotional trace and recent open loop', () => {
+test('state transition preserves the canonical caused emotional state and recent open loop', () => {
   const cognition = {
     beliefModel: { currentStatement: null },
     openLoops: {
       active: [{ id: 'later', subject: 'Пользователь позже покажет письмо', source: 'recent_dialogue', importance: 70 }]
     }
   };
-  const coreDecision = {
-    emotionalResponse: { feltEmotion: 'mild_jealousy', intensity: 45 },
-    nonverbalAction: { cause: 'упоминание другой девушки', intensity: 48, expiresAfterTurns: 4 }
+  const memory = {
+    mood: { affection: 68, energy: 55 },
+    relationship: { trust: 82, closeness: 76, comfort: 72, respect: 80, playfulness: 68, attraction: 58, vulnerability: 42 }
   };
-  const transition = buildStateTransition({ cognition, coreDecision });
-  assert.equal(transition.emotionalTrace.emotion, 'mild_jealousy');
-  assert.match(transition.emotionalTrace.cause, /другой девушки/);
+  const affectiveTurn = buildAffectiveTurn({
+    userText: 'Меня пригласила девушка на встречу вечером', memory,
+    brain: { activeScene: { type: 'romance' }, hiddenIntent: { type: 'none' }, literalIntent: 'statement' }
+  });
+  const transition = buildStateTransition({ cognition, affectiveTurn });
+  assert.equal(transition.schema, 'rin-state-transition-v2');
+  assert.equal(transition.emotionalState.primary.type, 'jealousy');
+  assert.match(transition.emotionalState.primary.cause, /другой девушк/);
+  assert.equal(transition.emotionalState.momentum.direction, 'tense');
+  // Legacy mirror remains for one release, but it is derived from the canonical state.
+  assert.equal(transition.emotionalTrace.emotion, 'jealousy');
   assert.equal(transition.openLoopUpdates.length, 1);
 });
 
@@ -207,11 +215,25 @@ test('canonical cognition open loop can drive callback initiative without legacy
   assert.equal(plan.initiative, 'return_to_open_loop');
 });
 
-test('state transition owns persistent mood and relationship deltas on the server side', () => {
-  const transition = buildStateTransition({ cognition: { beliefModel: {}, openLoops: { active: [] }, dialogueState: null }, coreDecision: null, userText: 'Спасибо, я доверяю тебе и обнимаю.' });
-  assert.ok(transition.moodDelta.affection > 0);
-  assert.ok(transition.relationshipDelta.trust > 0);
-  assert.ok(transition.relationshipDelta.closeness > 0);
+test('state transition owns full persistent affective and relationship state on the server side', () => {
+  const memory = {
+    mood: { affection: 65, energy: 55 },
+    relationship: { trust: 82, closeness: 76, comfort: 70, respect: 80, playfulness: 68, attraction: 55, vulnerability: 42 }
+  };
+  const affectiveTurn = buildAffectiveTurn({
+    userText: 'Спасибо, я доверяю тебе и обнимаю.', memory,
+    brain: { activeScene: { type: 'romance' }, hiddenIntent: { type: 'seek_closeness' }, literalIntent: 'affection' }
+  });
+  const transition = buildStateTransition({ cognition: { beliefModel: {}, openLoops: { active: [] }, dialogueState: null }, affectiveTurn });
+  assert.equal(transition.moodState.affection, 66);
+  assert.equal(transition.relationshipState.closeness, 77);
+  assert.equal(transition.relationshipState.comfort, 71);
+  assert.equal(transition.relationshipState.attraction, 56);
+  assert.equal(transition.emotionalState.primary.type, 'tenderness');
+  assert.equal(transition.emotionalState.secondary.type, 'shyness');
+  // Deltas are compatibility telemetry only and remain intentionally small.
+  assert.ok(transition.relationshipDelta.closeness <= 1);
+  assert.ok(transition.relationshipDelta.attraction <= 1);
 });
 
 

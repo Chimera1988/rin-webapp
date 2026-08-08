@@ -179,3 +179,93 @@ test('server transition → transactional commit → pruned next request restore
     if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
   }
 });
+
+test('jealousy → tease reveal → neutral bridge persists through API commit and influences the next request', async () => {
+  const originalEnv = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY };
+  const originalFetch = globalThis.fetch;
+  process.env.ACCESS_PIN = '8181';
+  process.env.OPENAI_API_KEY = 'integration-affective-key';
+  const chat = (await import('../api/chat.js?integration-affective')).default;
+  const storage = new MemoryStorage();
+  globalThis.localStorage = storage;
+  const memoryStore = await import('../public/js/rin_memory.js?integration-affective');
+  const prompts = [];
+  const replies = [
+    'Мм. И ты решил сказать мне это вот так спокойно?)',
+    'А-а. Проверял меня, значит? Удобно устроился 😏',
+    'Иногда? Тогда не жалуйся, если я это запомню 😏'
+  ];
+  let modelCall = 0;
+
+  const request = async (requestId, content, memory) => {
+    const res = createRes();
+    await chat(createReq({
+      headers: { 'x-rin-pin': '8181' },
+      body: {
+        requestId,
+        history: [{ id: `u-${requestId}`, role: 'user', kind: 'text', status: 'sent', requestId, content }],
+        memory: {
+          facts: memory.facts,
+          recentEvents: memory.events,
+          summaries: memory.summaries,
+          mood: memory.mood,
+          relationship: memory.relationship,
+          openLoops: memory.openLoops,
+          conversationState: memory.conversationState
+        }
+      }
+    }), res);
+    assert.equal(res.statusCode, 200);
+    return res.body;
+  };
+
+  try {
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      prompts.push(payload.messages?.[0]?.content || '');
+      const reply = replies[Math.min(modelCall, replies.length - 1)];
+      modelCall += 1;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: reply }, finish_reason: 'stop' }], usage: {}
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+
+    await memoryStore.saveDiary({
+      ...(await memoryStore.loadDiary()),
+      mood: { affection: 70, energy: 58, label: 'радостная' },
+      relationship: {
+        trust: 82, closeness: 76, comfort: 72, respect: 80,
+        playfulness: 68, attraction: 58, vulnerability: 42, sharedMoments: []
+      }
+    });
+    let persisted = await memoryStore.loadDiary();
+
+    const rival = await request('affect-r1', 'Меня пригласила девушка на встречу вечером', persisted);
+    assert.equal(rival.stateTransition.schema, 'rin-state-transition-v2');
+    assert.equal(rival.stateTransition.emotionalState.primary.type, 'jealousy');
+    assert.equal(rival.responsePlan.responseAct, 'contained_jealousy');
+    assert.equal(rival.delivery.preferredStickerId, 'mild_jealousy');
+    await memoryStore.commitTurnState({ requestId: 'affect-r1', stateTransition: rival.stateTransition, now: 6_000_000 });
+    persisted = await memoryStore.loadDiary();
+    assert.equal(persisted.conversationState.emotionalState.primary.type, 'jealousy');
+
+    const reveal = await request('affect-r2', 'Это была шутка, хотел тебя проверить на ревность 😁', persisted);
+    assert.equal(reveal.stateTransition.emotionalState.primary.type, 'playful_irritation');
+    assert.equal(reveal.stateTransition.emotionalState.secondary.type, 'relief');
+    assert.equal(reveal.stateTransition.emotionalState.momentum.direction, 'playful');
+    assert.match(prompts.at(-1), /playful_irritation|игривое раздражение/iu);
+    await memoryStore.commitTurnState({ requestId: 'affect-r2', stateTransition: reveal.stateTransition, now: 6_000_100 });
+    persisted = await memoryStore.loadDiary();
+
+    const bridge = await request('affect-r3', 'Иногда хочется 😅', persisted);
+    assert.equal(bridge.stateTransition.emotionalState.primary.type, 'playful_irritation');
+    assert.equal(bridge.stateTransition.emotionalState.momentum.direction, 'playful');
+    assert.ok(bridge.stateTransition.emotionalState.primary.intensity < reveal.stateTransition.emotionalState.primary.intensity);
+    assert.equal(bridge.responsePlan.responseAct, 'carry_playful_tension');
+    assert.match(prompts.at(-1), /Игровая линия уже активна|игровое напряжение/iu);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalEnv.pin === undefined) delete process.env.ACCESS_PIN; else process.env.ACCESS_PIN = originalEnv.pin;
+    if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
+  }
+});
