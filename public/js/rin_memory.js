@@ -6,6 +6,7 @@ import {
   relationshipStage as canonicalRelationshipStage
 } from '../lib/affective-contract.js';
 import { beliefSlot, normalizeBelief } from '../lib/epistemic-contract.js';
+import { normalizeRinIntent } from '../lib/intent-contract.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
@@ -195,12 +196,13 @@ function defaultInnerLife() {
 
 function defaultConversationState() {
   return {
-    schema: 'rin-conversation-state-v2',
+    schema: 'rin-conversation-state-v3',
     revision: 0,
     dialogueState: null,
     beliefs: [],
     openLoops: [],
     emotionalState: normalizeEmotionalState({}),
+    rinIntent: null,
     lastCommittedRequestId: null,
     updatedAt: 0
   };
@@ -220,12 +222,13 @@ function normalizeConversationState(value = {}, legacyTrace = null, context = {}
     : emotionalStateFromLegacyTrace(source.emotionalTrace || legacyTrace, context);
   return {
     ...defaultConversationState(),
-    schema: 'rin-conversation-state-v2',
+    schema: 'rin-conversation-state-v3',
     revision: Math.max(0, Math.round(finiteNumber(source.revision, 0))),
     dialogueState: source.dialogueState && typeof source.dialogueState === 'object' ? source.dialogueState : null,
     beliefs,
     openLoops: loops,
     emotionalState,
+    rinIntent: normalizeRinIntent(source.rinIntent),
     lastCommittedRequestId: cleanText(source.lastCommittedRequestId, 120) || null,
     updatedAt: finiteNumber(source.updatedAt, 0)
   };
@@ -598,6 +601,7 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
     beliefs: beliefs.slice(-48),
     openLoops: [...loops.values()].filter(item => !['resolved', 'cancelled', 'stale'].includes(item?.status)).slice(-24),
     emotionalState,
+    rinIntent: transition.rinIntent === undefined ? current.rinIntent : normalizeRinIntent(transition.rinIntent),
     lastCommittedRequestId: requestId || null,
     updatedAt: now
   }, null, context);

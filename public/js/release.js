@@ -1,1 +1,1 @@
-export const RIN_RELEASE_ID = '2026-08-08-epistemic-beliefs-v1';
+export const RIN_RELEASE_ID = '2026-08-08-persistent-intent-v1';
