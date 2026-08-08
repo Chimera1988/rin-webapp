@@ -1,3 +1,5 @@
+import { analyzeConversation } from '../lib/conversation-brain.js';
+import { buildCognitiveTurn } from '../lib/cognition/index.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -496,4 +498,17 @@ test('initiative handoff survives several turns, persistence and a repeated dema
     if (originalEnv.pin === undefined) delete process.env.ACCESS_PIN; else process.env.ACCESS_PIN = originalEnv.pin;
     if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
   }
+});
+
+
+test('unsupported user-trait hypothesis is rejected by correction and cannot return after reload', async () => {
+  const storage = new MemoryStorage(); globalThis.localStorage = storage;
+  const memoryStore = await import('../public/js/rin_memory.js?epistemic-flow');
+  await memoryStore.commitTurnState({ requestId:'epi-1', now:11_000_000, stateTransition:{ beliefUpdates:[{ id:'trait-selfcrit', kind:'hypothesis', subject:'user', predicate:'self_critical', value:'true', source:'rin_inference', confidence:.3, status:'uncertain', evidence:[] }] } });
+  await memoryStore.commitTurnState({ requestId:'epi-2', now:11_000_100, stateTransition:{ beliefUpdates:[{ id:'trait-selfcrit', kind:'hypothesis', subject:'user', predicate:'self_critical', value:'true', source:'rin_inference', confidence:.3, status:'rejected', correctedBy:'corr-selfcrit' }, { id:'corr-selfcrit', kind:'user_statement', subject:'user', predicate:'current_statement', value:'Я не являюсь самокритичным человеком', source:'current_user_turn', confidence:1, status:'current', evidence:['Я не являюсь самокритичным человеком'] }] } });
+  const persisted=await memoryStore.loadDiary();
+  const brain=analyzeConversation({ userText:'В общем спасибо)', history:[{role:'user',kind:'text',content:'В общем спасибо)'}], conversationState:'ongoing' });
+  const cognition=buildCognitiveTurn({ userText:'В общем спасибо)', history:[{role:'user',kind:'text',content:'В общем спасибо)'}], memory:{facts:persisted.facts,conversationState:persisted.conversationState}, brain });
+  assert.equal(cognition.beliefModel.beliefs.find(x=>x.id==='trait-selfcrit').status,'rejected');
+  assert.ok(!cognition.beliefModel.factsToUse.some(x=>/самокрит|self_critical/iu.test(x)));
 });

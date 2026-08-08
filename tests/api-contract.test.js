@@ -21,7 +21,7 @@ test('memory result schema contains stable IDs and no duplicate mood/relationshi
     mood: { affection: 99 },
     relationship: { trust: 99 }
   });
-  assert.equal(result.schemaVersion, 3);
+  assert.equal(result.schemaVersion, 4);
   assert.ok(result.events[0].id && result.events[0].key);
   assert.ok(result.openLoops[0].id && result.openLoops[0].key);
   assert.equal('mood' in result, false);
@@ -403,4 +403,12 @@ test('chat handler cannot satisfy a take-lead turn with another promise to start
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test('memory sanitizer accepts explicit fact retractions only under user namespace', async () => {
+  const { sanitizeMemoryResult } = await import('../api/memory.js?epistemic-retractions');
+  const out = sanitizeMemoryResult({ factRetractions: [{ path:'user.trait.selfCritical' }, { path:'self.secret' }, { path:'world.x' }] });
+  assert.deepEqual(out.factRetractions, [{ path:'user.trait.selfCritical' }]);
+  assert.equal(out.schemaVersion, 4);
 });

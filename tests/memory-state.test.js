@@ -209,3 +209,19 @@ test('legacy emotionalTrace migrates into the canonical emotional state once', a
   assert.match(migrated.conversationState.emotionalState.primary.cause, /старая запись/);
   assert.equal(migrated.conversationState.emotionalTrace, undefined);
 });
+
+
+test('explicit correction rejects a stored hypothesis and survives reload', async () => {
+  await memory.commitTurnState({ requestId: 'hyp-1', now: 9_000_000, stateTransition: { beliefUpdates: [{ id:'selfcrit-hyp', kind:'hypothesis', subject:'user', predicate:'self_critical', value:'true', source:'rin_inference', confidence:.3, status:'uncertain', evidence:[] }] } });
+  await memory.commitTurnState({ requestId: 'hyp-2', now: 9_000_100, stateTransition: { beliefUpdates: [{ id:'selfcrit-hyp', kind:'hypothesis', subject:'user', predicate:'self_critical', value:'true', source:'rin_inference', confidence:.3, status:'rejected', correctedBy:'user-correction' }, { id:'user-correction', kind:'user_statement', subject:'user', predicate:'current_statement', value:'Я не являюсь самокритичным человеком', source:'current_user_turn', confidence:1, status:'current', evidence:['Я не являюсь самокритичным человеком'] }] } });
+  const diary = await memory.loadDiary();
+  assert.equal(diary.conversationState.beliefs.find(x=>x.id==='selfcrit-hyp').status, 'rejected');
+  assert.match(diary.conversationState.beliefs.find(x=>x.id==='user-correction').value, /не являюсь самокритичным/iu);
+});
+
+test('removeFact retracts a stale explicit user fact without touching other facts', async () => {
+  await memory.upsertFact('user.trait.selfCritical', 'да'); await memory.upsertFact('user.name', 'Алексей');
+  assert.equal(await memory.removeFact('user.trait.selfCritical'), true);
+  assert.equal(await memory.getFact('user.trait.selfCritical', null), null);
+  assert.equal(await memory.getFact('user.name'), 'Алексей');
+});

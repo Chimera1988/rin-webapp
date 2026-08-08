@@ -292,3 +292,24 @@ test('persisted dialogue snapshot restores continuity fields when recent history
   assert.match(cognition.dialogueState.corrections.at(-1), /вечером/);
   assert.equal(cognition.dialogueState.lastRinAction.kind, 'silence');
 });
+
+
+test('epistemic verifier rejects invented psychological traits without evidence', () => {
+  const plan = normalizeResponsePlan({ responseAct: 'clarify_self', questionBudget: 0, factsToUse: [] });
+  const result = verifyReply('Ты не плох, просто иногда слишком самокритичен.', { plan, brain: { activeScene: { type: 'reflective' } }, userText: 'А что я думаю что я плох?' });
+  assert.equal(result.needsRewrite, true);
+  assert.ok(result.warnings.includes('epistemic_unsupported_user_claim'));
+});
+
+test('evidence challenge becomes an accountable belief-basis act', () => {
+  const userText = 'А в каких моментах я себя критиковал? Откуда у тебя такая информация?';
+  const history = [{ role: 'assistant', kind: 'text', content: 'Ты иногда слишком самокритичен.' }, { role: 'user', kind: 'text', content: userText }];
+  const brain = analyzeConversation({ userText, history, conversationState: 'ongoing' });
+  const cognition = buildCognitiveTurn({ userText, history, memory: closeMemory, brain });
+  const plan = planResponse({ cognition, brain, memory: closeMemory, userText, history });
+  assert.equal(plan.responseAct, 'explain_belief_basis');
+  const bad = verifyReply('Наверное, ты просто стараешься быть идеальным.', { plan, brain, userText });
+  assert.equal(bad.needsRewrite, true);
+  const good = verifyReply('Это было моё предположение. Конкретных примеров у меня нет — я зря выдала впечатление за факт.', { plan, brain, userText });
+  assert.equal(good.needsRewrite, false);
+});
