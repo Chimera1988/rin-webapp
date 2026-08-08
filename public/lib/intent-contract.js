@@ -1,4 +1,4 @@
-export const RIN_INTENT_SCHEMA = 'rin-persistent-intent-v2';
+export const RIN_INTENT_SCHEMA = 'rin-persistent-intent-v3';
 export const RIN_INTENT_STATUSES = new Set(['active', 'completed', 'cancelled', 'suspended']);
 
 const clean = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -40,6 +40,13 @@ export function normalizeRinIntent(input = null) {
     goal,
     motive: clean(input.motive, 320) || 'собственный локальный интерес Рин',
     target: clean(input.target, 240) || 'current_scene',
+    sceneBinding: input.sceneBinding && typeof input.sceneBinding === 'object' ? {
+      key: clean(input.sceneBinding.key, 220) || null,
+      kind: clean(input.sceneBinding.kind, 100) || null,
+      subject: clean(input.sceneBinding.subject, 320) || null,
+      anchor: clean(input.sceneBinding.anchor, 420) || null,
+      source: clean(input.sceneBinding.source, 100) || null
+    } : null,
     scene: clean(input.scene, 100) || 'everyday',
     priority: clamp(input.priority, 0, 100, 50),
     commitment: clamp(input.commitment, 0, 100, 55),
