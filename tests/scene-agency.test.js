@@ -273,3 +273,57 @@ test('an explicit reply to Rin sticker is planned as an explanation of her own g
   assert.equal(plan.shouldAskQuestion, false);
   assert.ok(plan.mustAddress.some(item => /эмоц|причин|жест/i.test(item)));
 });
+
+test('a repeated demand to start preserves the playful scene and cannot collapse into clarify-self disclosure', () => {
+  const history = [
+    msg('user', 'И чтобы сделала тогда моя Кицунэ?)', 'u1'),
+    msg('assistant', 'Я бы устроила тебе сюрприз — загадочный и волшебный, как сама Кицунэ.', 'a1'),
+    msg('user', 'Отдать всего себя 😉', 'u2'),
+    msg('assistant', 'Это смело. Похоже, у нас начинается интересная игра.', 'a2'),
+    msg('user', 'Твой ход 😉', 'u3'),
+    msg('assistant', 'Креативность — моя сильная сторона, так что готовься к неожиданностям.', 'a3'),
+    msg('user', 'А если я буду не готов)', 'u4'),
+    msg('assistant', 'Не переживай, я найду способ сделать так, чтобы ты был вовлечён. 😉', 'a4'),
+    msg('user', 'Тогда поехали)', 'u5'),
+    msg('assistant', 'Пристегни ремни, будет весело!', 'a5'),
+    msg('user', 'Да уже уже 😅', 'u6'),
+    msg('assistant', 'Тогда держись крепче, мы начинаем! 😉', 'a6'),
+    msg('user', 'Мы начнем или нет?', 'u7')
+  ];
+
+  const { brain, plan } = buildPlan(history, history.at(-1).content);
+  assert.equal(brain.hiddenIntent.type, 'invite_rin_initiative');
+  assert.equal(brain.relation.type, 'initiative_handoff');
+  assert.equal(brain.activeScene.type, 'playful_flirt');
+  assert.equal(plan.responseAct, 'take_lead');
+  assert.equal(plan.behavior.action, 'continue_scene');
+  assert.equal(plan.initiative, 'take_lead');
+  assert.equal(plan.questionBudget, 0);
+  assert.ok(plan.mustNot.some(item => /обещан|мы начинаем|готовься|держись/iu.test(item)));
+  assert.doesNotMatch(plan.mustAddress.join(' '), /поясни.*предыдущ|что имела в виду/iu);
+});
+
+test('verifier rejects promise-to-act text for a take-lead turn and accepts a concrete move', () => {
+  const history = [
+    msg('assistant', 'Тогда держись крепче, мы начинаем! 😉', 'a1'),
+    msg('user', 'Мы начнем или нет?', 'u1')
+  ];
+  const { brain, plan } = buildPlan(history, history.at(-1).content);
+
+  for (const draft of [
+    'Тогда держись крепче, мы начинаем! 😉',
+    'Конечно, начинаем! Готовься к увлекательному путешествию в мир наших игр.'
+  ]) {
+    const result = verifyReply(draft, { plan, brain, userText: history.at(-1).content });
+    assert.equal(result.needsRewrite, true, draft);
+    assert.ok(result.warnings.includes('agency_deferred'), `${draft}: ${result.warnings.join(', ')}`);
+  }
+
+  const concrete = verifyReply(
+    'Первый ход: попробуй хотя бы полминуты не прятаться за этой улыбкой. Я посмотрю, сколько продержишься 😏',
+    { plan, brain, userText: history.at(-1).content }
+  );
+  assert.equal(concrete.needsRewrite, false, concrete.warnings.join(', '));
+  assert.equal(concrete.passed, true);
+  assert.equal(concrete.warnings.includes('agency_deferred'), false);
+});

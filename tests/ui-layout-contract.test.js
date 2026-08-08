@@ -11,7 +11,7 @@ test('chat uses a dedicated visual-viewport shell and only messages scroll', asy
     read('public/chat.js')
   ]);
 
-  assert.match(html, /<html[^>]*class="chat-root"/);
+  assert.match(html, /<html[^>]*class="[^"]*\bchat-root\b[^"]*"/);
   assert.match(html, /interactive-widget=resizes-content/);
   assert.match(html, /id="chatViewportShell"\s+class="chat-viewport-shell"/);
   assert.match(html, /<main class="app">[\s\S]*id="chatWallpaper"\s+class="chat-wallpaper"[\s\S]*<section id="chat" class="chat"/);

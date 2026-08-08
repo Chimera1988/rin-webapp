@@ -58,3 +58,18 @@ test('stickers preserve their original rounded-square geometry inside message bu
   assert.doesNotMatch(stickerRule, /border-radius:\s*50%/);
   assert.match(stickerBubbleRule, /border-radius:\s*20px/);
 });
+
+test('fresh client defaults to dark theme and debug enabled while preserving explicit user choices', async () => {
+  const [html, chat] = await Promise.all([
+    read('public/index.html'),
+    read('public/chat.js')
+  ]);
+
+  assert.match(html, /<html\s+lang="ru"\s+class="chat-root theme-dark">/);
+  assert.doesNotMatch(html, /prefers-color-scheme/);
+  assert.match(html, /t\s*=\s*t\s*===\s*['"]theme-light['"]\s*\?\s*['"]theme-light['"]\s*:\s*['"]theme-dark['"]/);
+
+  assert.match(chat, /const\s+DEFAULT_DEBUG_ENABLED\s*=\s*true/);
+  assert.match(chat, /safeLocalGet\(LS_DEBUG_ENABLED,\s*DEFAULT_DEBUG_ENABLED\s*\?\s*['"]1['"]\s*:\s*['"]0['"]\)\s*!==\s*['"]0['"]/);
+  assert.match(chat, /safeLocalSet\(LS_DEBUG_ENABLED,\s*_debugOn\s*\?\s*['"]1['"]\s*:\s*['"]0['"]\)/);
+});

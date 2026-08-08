@@ -353,3 +353,54 @@ test('chat handler falls back to deterministic behavior when a rewrite still vio
   }
 });
 
+
+test('chat handler cannot satisfy a take-lead turn with another promise to start', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    const content = calls === 1
+      ? 'Тогда держись крепче, мы начинаем! 😉'
+      : 'Конечно, начинаем! Готовься к увлекательному путешествию в мир наших игр.';
+    return new Response(JSON.stringify({
+      choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const requestId = 'agency-follow-through-fallback';
+    const history = [
+      { role: 'user', kind: 'text', status: 'complete', id: 'u1', content: 'Твой ход 😉' },
+      { role: 'assistant', kind: 'text', status: 'complete', id: 'a1', content: 'Креативность — моя сильная сторона, так что готовься к неожиданностям.' },
+      { role: 'user', kind: 'text', status: 'complete', id: 'u2', content: 'Да уже уже 😅' },
+      { role: 'assistant', kind: 'text', status: 'complete', id: 'a2', content: 'Тогда держись крепче, мы начинаем! 😉' },
+      { role: 'user', kind: 'text', status: 'sent', requestId, id: 'u3', content: 'Мы начнем или нет?' }
+    ];
+    const res = createRes();
+    await chat.default(createReq({
+      headers: { 'x-rin-pin': '1357' },
+      body: {
+        requestId,
+        history,
+        memory: {
+          mood: { affection: 72, energy: 58 },
+          relationship: { trust: 82, closeness: 76, comfort: 72, respect: 80, playfulness: 68, attraction: 58, vulnerability: 42 }
+        }
+      }
+    }), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls, 2);
+    assert.equal(res.body.conversationBrain.hiddenIntent.type, 'invite_rin_initiative');
+    assert.equal(res.body.conversationBrain.relation.type, 'initiative_handoff');
+    assert.equal(res.body.responsePlan.responseAct, 'take_lead');
+    assert.equal(res.body.responsePlan.behavior.action, 'continue_scene');
+    assert.equal(res.body.responsePlan.questionBudget, 0);
+    assert.match(res.body.reply, /Первый ход|инициативу я забрала|первое правило/iu);
+    assert.doesNotMatch(res.body.reply, /^(?:конечно[,! ]*)?(?:мы\s+)?начинаем[!. ]*(?:готовься|держись)?/iu);
+    assert.equal(res.body.verification.needsRewrite, false);
+    assert.equal(res.body.promptMetrics.rewriteAttempted, true);
+    assert.equal(res.body.promptMetrics.rewriteFallback, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

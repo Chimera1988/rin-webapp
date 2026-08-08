@@ -389,3 +389,111 @@ test('full personal flow keeps agency across jealousy, tease reveal, short repli
     if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
   }
 });
+
+test('initiative handoff survives several turns, persistence and a repeated demand to start', async () => {
+  const originalEnv = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY };
+  const originalFetch = globalThis.fetch;
+  process.env.ACCESS_PIN = '9292';
+  process.env.OPENAI_API_KEY = 'integration-agency-follow-through-key';
+  const chat = (await import('../api/chat.js?integration-agency-follow-through')).default;
+  const storage = new MemoryStorage();
+  globalThis.localStorage = storage;
+  const memoryStore = await import('../public/js/rin_memory.js?integration-agency-follow-through');
+  const turns = [
+    ['Твой ход 😉', 'Первый ход: попробуй хотя бы полминуты не прятаться за этой улыбкой. Я посмотрю, сколько продержишься 😏'],
+    ['А если я буду не готов)', 'Тем интереснее. Не прячься — я уже забрала инициативу 😏'],
+    ['Тогда поехали)', 'Тогда смотри на меня и не отвлекайся. Следующий ход уже мой.'],
+    ['Да уже уже 😅', 'Угу. Не улыбайся так довольно — я всё вижу 😏'],
+    ['Мы начнем или нет?', 'Сам попросил. Тогда первое правило: не выкручивайся и не прячь смущение за шуткой 😏']
+  ];
+  const history = [
+    { role: 'user', kind: 'text', status: 'complete', id: 'seed-u1', content: 'И чтобы сделала тогда моя Кицунэ?)' },
+    { role: 'assistant', kind: 'text', status: 'complete', id: 'seed-a1', content: 'Я бы устроила тебе сюрприз — загадочный и волшебный, как сама Кицунэ.' },
+    { role: 'user', kind: 'text', status: 'complete', id: 'seed-u2', content: 'Отдать всего себя 😉' },
+    { role: 'assistant', kind: 'text', status: 'complete', id: 'seed-a2', content: 'Это смело. Похоже, у нас начинается интересная игра.' }
+  ];
+  const bodies = [];
+  let modelCall = 0;
+
+  try {
+    await memoryStore.saveDiary({
+      ...(await memoryStore.loadDiary()),
+      mood: { affection: 72, energy: 58, label: 'радостная' },
+      relationship: {
+        trust: 82, closeness: 76, comfort: 72, respect: 80,
+        playfulness: 68, attraction: 58, vulnerability: 42, sharedMoments: []
+      }
+    });
+
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      assert.doesNotMatch(payload.messages?.[0]?.content || '', /Ты — строгий редактор/iu, `unexpected rewrite on scripted call ${modelCall + 1}`);
+      const content = turns[modelCall]?.[1];
+      assert.ok(content, `unexpected model call ${modelCall + 1}`);
+      modelCall += 1;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+
+    for (let index = 0; index < turns.length; index += 1) {
+      const [content] = turns[index];
+      const requestId = `agency-follow-${index + 1}`;
+      const user = { role: 'user', kind: 'text', status: 'sent', requestId, id: `agency-follow-u${index + 1}`, content };
+      history.push(user);
+      const persisted = await memoryStore.loadDiary();
+      const res = createRes();
+      await chat(createReq({
+        headers: { 'x-rin-pin': '9292' },
+        body: {
+          requestId,
+          history,
+          memory: {
+            facts: persisted.facts,
+            recentEvents: persisted.events,
+            summaries: persisted.summaries,
+            mood: persisted.mood,
+            relationship: persisted.relationship,
+            openLoops: persisted.openLoops,
+            conversationState: persisted.conversationState
+          }
+        }
+      }), res);
+      assert.equal(res.statusCode, 200, `turn ${index + 1}`);
+      assert.equal(res.body.verification.needsRewrite, false, `turn ${index + 1}: ${(res.body.verification.warnings || []).join(', ')}`);
+      assert.equal(res.body.responsePlan.questionBudget, 0, `turn ${index + 1}`);
+      bodies.push(res.body);
+
+      history[history.length - 1] = { ...user, status: 'complete' };
+      history.push({
+        role: 'assistant', kind: 'text', status: 'complete', requestId,
+        id: `agency-follow-a${index + 1}`, content: res.body.reply
+      });
+      await memoryStore.commitTurnState({
+        requestId,
+        stateTransition: res.body.stateTransition,
+        now: 9_000_000 + index * 100
+      });
+    }
+
+    assert.equal(modelCall, turns.length);
+    assert.equal(bodies[0].responsePlan.responseAct, 'take_lead');
+    assert.equal(bodies[0].responsePlan.behavior.action, 'continue_scene');
+    const final = bodies.at(-1);
+    assert.equal(final.conversationBrain.hiddenIntent.type, 'invite_rin_initiative');
+    assert.equal(final.conversationBrain.relation.type, 'initiative_handoff');
+    assert.equal(final.conversationBrain.activeScene.type, 'playful_flirt');
+    assert.equal(final.responsePlan.responseAct, 'take_lead');
+    assert.equal(final.responsePlan.behavior.action, 'continue_scene');
+    assert.equal(final.responsePlan.initiative, 'take_lead');
+    assert.equal(final.responsePlan.questionBudget, 0);
+    assert.doesNotMatch(final.reply, /^(?:конечно[,! ]*)?(?:мы\s+)?начинаем/iu);
+
+    const finalDiary = await memoryStore.loadDiary();
+    assert.equal(finalDiary.conversationState.revision, turns.length);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalEnv.pin === undefined) delete process.env.ACCESS_PIN; else process.env.ACCESS_PIN = originalEnv.pin;
+    if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
+  }
+});

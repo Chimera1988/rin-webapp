@@ -212,3 +212,24 @@ test('a 24-turn ordinary sequence cannot degenerate into a question-after-every-
 
   assert.ok(questionTurns <= 4, `expected sparse questions, got ${questionTurns}/24`);
 });
+
+test('follow-through demand outranks generic follow-up clarification and forces a concrete take-lead turn', () => {
+  const memory = closeMemory();
+  const text = 'Мы начнем или нет?';
+  const b = brain({ scene: 'playful_flirt', hidden: 'invite_rin_initiative', literal: 'question', relation: 'follow_up_on_rin_statement' });
+  const policy = deriveBehaviorPolicy({
+    cognition: cognition({ scene: 'playful_flirt', turnsInScene: 7 }),
+    brain: b,
+    memory,
+    userText: text,
+    history: [
+      { role: 'assistant', kind: 'text', content: 'Тогда держись крепче, мы начинаем! 😉' },
+      { role: 'user', kind: 'text', content: text }
+    ]
+  });
+
+  assert.equal(policy.responseAct, 'take_lead');
+  assert.equal(policy.action, 'continue_scene');
+  assert.equal(policy.initiative, 'take_lead');
+  assert.equal(policy.questionBudget, 0);
+});
