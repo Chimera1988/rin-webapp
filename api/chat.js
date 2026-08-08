@@ -5,6 +5,7 @@ import { selectRelevantMemory } from '../lib/personality/continuity.js';
 import { buildInnerLifeSnapshot, innerLifeInstruction } from '../lib/personality/inner-life.js';
 import { relationshipInstruction } from '../lib/personality/relationship.js';
 import {
+  buildAffectiveTurn,
   buildCognitiveTurn,
   buildStateTransition,
   cognitionInstruction,
@@ -167,7 +168,7 @@ function voiceModeFromPlan(plan = {}) {
   };
 }
 
-export function buildSystemPrompt({ profile, env, memory, lore, coreDecision, conversationState, conversationBrain, cognition, responsePlan, history, userText, client }) {
+export function buildSystemPrompt({ profile, env, memory, lore, coreDecision, affectiveTurn, conversationState, conversationBrain, cognition, responsePlan, history, userText, client }) {
   const user = userIdentity(profile, memory);
   const stable = formatPromptProfile(profile, memory);
   const custom = [normalize(profile.base_rules, 1800), normalize(profile.instructions_extra, 1800), normalize(profile.knowledge, 2200)].filter(Boolean).join('\n');
@@ -185,7 +186,7 @@ export function buildSystemPrompt({ profile, env, memory, lore, coreDecision, co
     ? `ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ И ЗНАНИЯ — НИЖЕ КАНОНА И ФАКТОВ\n${custom}\nЭти дополнения могут менять предпочтения и стиль, но не биографический канон, подтверждённые факты и смысловой план текущего хода.`
     : '';
   const cognitionBlock = cognition
-    ? cognitionInstruction(cognition)
+    ? cognitionInstruction(cognition, affectiveTurn)
     : conversationBrain
       ? `СМЫСЛ ТЕКУЩЕГО ХОДА: ${conversationBrain.summary}. Фокус: ${conversationBrain.responseFocus}`
       : '';
@@ -197,7 +198,7 @@ export function buildSystemPrompt({ profile, env, memory, lore, coreDecision, co
     formatLore(lore),
     formatMemory(memory, userText, history),
     cognitionBlock,
-    relationshipInstruction(memory, client),
+    relationshipInstruction(memory, client, affectiveTurn),
     formatMood(memory),
     innerLifeInstruction(buildInnerLifeSnapshot(memory, env, userText, history)),
     coreDecision?.prompt,
@@ -437,10 +438,11 @@ export default async function handler(req, res) {
     const isLong = Boolean(body?.client?.forceLong) || detectLongMode(userTurn);
     const conversationBrain = analyzeConversation({ userText: userTurn, history: fullHistory, conversationState });
     const cognition = buildCognitiveTurn({ userText: userTurn, history: fullHistory, memory, brain: conversationBrain, conversationState, explicitReply });
-    const coreDecision = buildCoreDecision({ userText: userTurn, history: fullHistory, memory, conversationState, isLong, conversationBrain });
+    const affectiveTurn = buildAffectiveTurn({ userText: userTurn, history: fullHistory, memory, brain: conversationBrain });
+    const coreDecision = buildCoreDecision({ userText: userTurn, history: fullHistory, memory, conversationState, isLong, conversationBrain, affectiveTurn });
     const responsePlan = planResponse({ cognition, brain: conversationBrain, coreDecision, memory, userText: userTurn, history: fullHistory, isLong });
     if (responsePlan.delivery === 'silence') {
-      const stateTransition = buildStateTransition({ cognition, coreDecision, userText: userTurn });
+      const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
       return res.status(200).json({
         requestId,
         reply: '',
@@ -448,10 +450,11 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-foundation-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-stage4-emotional-inertia-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
+        affectiveTurn,
         verification: { version: 'rin-response-verifier-v4', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
         delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
         stateTransition,
@@ -459,7 +462,7 @@ export default async function handler(req, res) {
       });
     }
     const prompt = buildSystemPrompt({
-      profile, env, memory, lore, coreDecision, conversationState, conversationBrain, cognition, responsePlan,
+      profile, env, memory, lore, coreDecision, affectiveTurn, conversationState, conversationBrain, cognition, responsePlan,
       history: fullHistory, userText: userTurn, client: body.client || {}
     });
 
@@ -490,10 +493,10 @@ export default async function handler(req, res) {
     const verification = repair.verification;
     const clean = repair.reply;
     const delivery = buildTurnDelivery({ responsePlan, coreDecision, verification, reply: clean });
-    const stateTransition = buildStateTransition({ cognition, coreDecision, userText: userTurn });
+    const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-foundation-v1',
+      promptVersion: 'rin-stage4-emotional-inertia-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
@@ -519,6 +522,7 @@ export default async function handler(req, res) {
       conversationBrain,
       cognition: compactCognition(cognition),
       responsePlan,
+      affectiveTurn,
       verification,
       delivery,
       stateTransition,
@@ -538,6 +542,7 @@ export default async function handler(req, res) {
         recentRhythm: coreDecision.recentRhythm,
         initiative: coreDecision.initiative,
         adviceGuard: coreDecision.adviceGuard,
+        affectiveTurn: coreDecision.affectiveTurn,
         emotionalResponse: coreDecision.emotionalResponse,
         nonverbalAction: coreDecision.nonverbalAction,
         habit: coreDecision.habit,
