@@ -40,6 +40,8 @@ test('short dependent replies preserve a playful scene instead of resetting to e
   assert.equal(brain.activeScene.type, 'playful_flirt');
   assert.ok(['scene_hysteresis', 'recent_scene_weight'].includes(brain.activeScene.source));
   assert.equal(plan.responseAct, 'advance_play');
+  assert.equal(plan.behavior.action, 'continue_scene');
+  assert.equal(plan.questionBudget, 0);
   assert.equal(plan.shouldAskQuestion, false);
 });
 
@@ -66,7 +68,9 @@ test('handing initiative to Rin creates a take-lead act with no permission quest
   assert.equal(brain.hiddenIntent.type, 'invite_rin_initiative');
   assert.equal(brain.activeScene.type, 'playful_flirt');
   assert.equal(plan.responseAct, 'take_lead');
+  assert.equal(plan.behavior.action, 'continue_scene');
   assert.equal(plan.initiative, 'take_lead');
+  assert.equal(plan.questionBudget, 0);
   assert.equal(plan.shouldAskQuestion, false);
   assert.match(plan.goal, /самой сделать следующий ход/);
   assert.ok(plan.mustNot.some(item => /если хочешь|разрешения/i.test(item)));
@@ -81,6 +85,8 @@ test('a noticed drift from flirt to philosophy produces a reclaim-scene act', ()
   const { brain, plan } = buildPlan(history, history.at(-1).content);
   assert.equal(brain.hiddenIntent.type, 'reclaim_playful_scene');
   assert.equal(plan.responseAct, 'reclaim_scene');
+  assert.equal(plan.behavior.action, 'continue_scene');
+  assert.equal(plan.questionBudget, 0);
   assert.equal(plan.shouldAskQuestion, false);
   assert.match(plan.goal, /вернуть активную сцену/);
 });
@@ -233,6 +239,8 @@ test('boundary reassurance is planned as a personal confident answer instead of 
   ];
   const { plan } = buildPlan(history, history.at(-1).content);
   assert.equal(plan.responseAct, 'reassure_with_boundary');
+  assert.equal(plan.behavior.action, 'react');
+  assert.equal(plan.questionBudget, 0);
   assert.equal(plan.shouldAskQuestion, false);
   assert.match(plan.goal, /сама обозначит границу/);
   assert.ok(plan.mustNot.some(item => /личный ответ|общим рассуждением/i.test(item)));

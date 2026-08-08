@@ -58,7 +58,7 @@ test('close relationship allows confident playful tone without forcing a questio
   const plan = planResponse({ cognition, brain, memory: closeMemory, userText: history[0].content, history, coreDecision: { mode: 'bold_playful' } });
   assert.equal(plan.tone, 'warm_bold_playful');
   assert.equal(plan.directness, 'confident_playful');
-  assert.match(plan.stance, /подкол|настойчивость/);
+  assert.match(plan.stance, /поддеть|переиграть|условие/);
 });
 
 test('remembered open loop is available but not forced into a direct question turn', () => {
@@ -87,7 +87,20 @@ test('verifier removes an unplanned generic trailing question', () => {
     userText: 'Я только закончил работу.'
   });
   assert.equal(result.reply, 'Я ещё не сплю.');
-  assert.ok(result.repairs.includes('removed_unplanned_generic_question'));
+  assert.ok(result.repairs.includes('removed_trailing_unplanned_question'));
+  assert.equal(result.needsRewrite, false);
+});
+
+
+test('verifier removes a full assistant-style trailing prompt when question budget is zero', () => {
+  const result = verifyReply('Дальше я сама продолжу эту игру. Как ты собираешься её развить?', {
+    plan: { questionBudget: 0, shouldAskQuestion: false, delivery: 'text', responseAct: 'take_lead', initiativeStrength: 90 },
+    brain: { literalIntent: 'statement', activeScene: { type: 'playful_flirt' }, relation: { type: 'continuation' } },
+    userText: 'Что будет дальше?)'
+  });
+  assert.equal(result.reply, 'Дальше я сама продолжу эту игру.');
+  assert.equal((result.reply.match(/\?/g) || []).length, 0);
+  assert.ok(result.repairs.includes('removed_trailing_unplanned_question'));
 });
 
 test('state transition preserves the canonical caused emotional state and recent open loop', () => {
@@ -152,6 +165,24 @@ test('intentional silence is a first-class prior action on the next user turn', 
   const cognition = buildCognitiveTurn({ userText: 'Обиделась?', history, memory: closeMemory, brain });
   assert.equal(cognition.dialogueState.lastRinAction.kind, 'silence');
   assert.match(cognition.dialogueState.lastRinAction.cause, /микросцен/i);
+});
+
+test('strong reciprocal scene continuity resolves a contextual pronoun without forcing clarification', () => {
+  const history = [
+    { id: 'u1', role: 'user', kind: 'text', status: 'complete', content: 'Мне нравится, когда ты рассказываешь о кицунэ 😊' },
+    { id: 'a1', role: 'assistant', kind: 'text', status: 'complete', content: 'Тогда кицунэ оставлю себе как алиби. Очень удобная легенда 😌' },
+    { id: 'u2', role: 'user', kind: 'text', status: 'sent', content: 'А ты применяешь её чары на мне?)' }
+  ];
+  const brain = analyzeConversation({ userText: history.at(-1).content, history, conversationState: 'ongoing' });
+  assert.equal(brain.activeScene.type, 'playful_flirt');
+  assert.equal(brain.relation.type, 'reciprocal_turn');
+  assert.ok(brain.activeScene.continuityStrength >= 0.75);
+  assert.equal(brain.ambiguity.shouldClarify, false);
+
+  const cognition = buildCognitiveTurn({ userText: history.at(-1).content, history, memory: closeMemory, brain });
+  const plan = planResponse({ cognition, brain, memory: closeMemory, userText: history.at(-1).content, history });
+  assert.notEqual(plan.responseAct, 'clarify_critical_ambiguity');
+  assert.equal(plan.questionBudget, 0);
 });
 
 test('context-dependent ambiguity can request clarification, while an explicit reply target resolves it', () => {

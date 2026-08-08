@@ -269,3 +269,123 @@ test('jealousy → tease reveal → neutral bridge persists through API commit a
     if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
   }
 });
+
+test('full personal flow keeps agency across jealousy, tease reveal, short replies, kitsune flirt and next-turn persistence', async () => {
+  const originalEnv = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY };
+  const originalFetch = globalThis.fetch;
+  process.env.ACCESS_PIN = '9191';
+  process.env.OPENAI_API_KEY = 'integration-dialogue-agency-key';
+  const chat = (await import('../api/chat.js?integration-dialogue-agency')).default;
+  const storage = new MemoryStorage();
+  globalThis.localStorage = storage;
+  const memoryStore = await import('../public/js/rin_memory.js?integration-dialogue-agency');
+  const scripted = [
+    ['Какие планы на вечер?', 'Пока никаких. Закрою ноутбук и немного почитаю.'],
+    ['Да, меня пригласила девушка на встречу вечером.', 'Вот как… значит, вечер у тебя уже занят. Ладно. Иди 😌'],
+    ['Вообще-то это шутка) Проверил тебя на ревность 😅', 'А-а. Проверял меня, значит. Удобно устроился 😏'],
+    ['Не знаю)', 'Мм, поздно оправдываться. Я уже запомнила 😌'],
+    ['Мне нравится, когда ты рассказываешь о кицунэ 😊', 'Тогда кицунэ оставлю себе как алиби. Очень удобная легенда 😌'],
+    ['А ты применяешь её чары на мне?)', 'Может быть. Но доказательств у тебя всё равно нет 😌'],
+    ['Теперь понятно, почему я в тебя влюбляюсь 😅', 'Осторожнее с такими словами… я ведь могу их запомнить.'],
+    ['Как я себя запутал?', 'Сам заговорил о чарах, а теперь пытаешься сделать вид, что это всё случайно 😌']
+  ];
+  const history = [];
+  const bodies = [];
+  const prompts = [];
+  let modelCall = 0;
+
+  try {
+    await memoryStore.saveDiary({
+      ...(await memoryStore.loadDiary()),
+      mood: { affection: 72, energy: 58, label: 'радостная' },
+      relationship: {
+        trust: 82, closeness: 76, comfort: 72, respect: 80,
+        playfulness: 68, attraction: 58, vulnerability: 42, sharedMoments: []
+      }
+    });
+
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      const system = payload.messages?.[0]?.content || '';
+      prompts.push(system);
+      assert.doesNotMatch(system, /Ты — строгий редактор/iu, 'scripted replies should pass verification without rewrite');
+      const content = scripted[modelCall]?.[1];
+      assert.ok(content, `unexpected model call ${modelCall + 1}`);
+      modelCall += 1;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+
+    for (let index = 0; index < scripted.length; index += 1) {
+      const [content] = scripted[index];
+      const requestId = `agency-flow-${index + 1}`;
+      const user = { id: `u-agency-${index + 1}`, role: 'user', kind: 'text', status: 'sent', requestId, content };
+      history.push(user);
+      const persisted = await memoryStore.loadDiary();
+      const res = createRes();
+      await chat(createReq({
+        headers: { 'x-rin-pin': '9191' },
+        body: {
+          requestId,
+          history,
+          memory: {
+            facts: persisted.facts,
+            recentEvents: persisted.events,
+            summaries: persisted.summaries,
+            mood: persisted.mood,
+            relationship: persisted.relationship,
+            openLoops: persisted.openLoops,
+            conversationState: persisted.conversationState
+          }
+        }
+      }), res);
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.responsePlan.questionBudget, 0, `turn ${index + 1} must not create an interview question`);
+      assert.doesNotMatch(res.body.reply, /\?/u, `turn ${index + 1} reply must naturally stop without asking back`);
+      assert.equal(res.body.verification.needsRewrite, false);
+      assert.equal(res.body.promptMetrics.rewriteAttempted, false);
+      bodies.push(res.body);
+
+      history[history.length - 1] = { ...user, status: 'complete' };
+      history.push({
+        id: `a-agency-${index + 1}`, role: 'assistant', kind: 'text', status: 'complete',
+        requestId, content: res.body.reply
+      });
+      await memoryStore.commitTurnState({
+        requestId,
+        stateTransition: res.body.stateTransition,
+        now: 8_000_000 + index * 100
+      });
+    }
+
+    assert.equal(modelCall, scripted.length);
+    assert.equal(bodies[0].responsePlan.responseAct, 'answer_directly');
+    assert.equal(bodies[1].responsePlan.responseAct, 'contained_jealousy');
+    assert.equal(bodies[1].responsePlan.behavior.action, 'tease');
+    assert.equal(bodies[1].stateTransition.emotionalState.primary.type, 'jealousy');
+
+    assert.equal(bodies[2].affectiveTurn.signal.type, 'tease_reveal');
+    assert.equal(bodies[2].stateTransition.emotionalState.primary.type, 'playful_irritation');
+    assert.equal(bodies[2].responsePlan.responseAct, 'carry_playful_tension');
+    assert.equal(bodies[2].responsePlan.behavior.action, 'continue_scene');
+
+    assert.equal(bodies[3].responsePlan.responseAct, 'carry_playful_tension');
+    assert.equal(bodies[3].stateTransition.emotionalState.momentum.direction, 'playful');
+    assert.equal(bodies[5].responsePlan.responseAct, 'answer_directly');
+    assert.notEqual(bodies[5].responsePlan.responseAct, 'clarify_critical_ambiguity');
+    assert.equal(bodies[7].responsePlan.responseAct, 'clarify_self');
+
+    assert.match(prompts[1], /выражение эмоции indirect|Выражение эмоции: indirect/iu);
+    assert.match(prompts[2], /carry_playful_tension|игровое напряжение/iu);
+    assert.match(prompts[5], /Сцена: playful_flirt|Активная сцена.*playful_flirt|сцена: playful_flirt/iu);
+
+    const finalDiary = await memoryStore.loadDiary();
+    assert.equal(finalDiary.conversationState.revision, scripted.length);
+    assert.ok(finalDiary.relationship.playfulness >= 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalEnv.pin === undefined) delete process.env.ACCESS_PIN; else process.env.ACCESS_PIN = originalEnv.pin;
+    if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
+  }
+});

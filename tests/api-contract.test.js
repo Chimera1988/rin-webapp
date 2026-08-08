@@ -233,12 +233,12 @@ test('weather handler cache policy agrees with the global API no-store policy', 
 
 test('chat API exposes one canonical affective turn and state-transition v2 for the current request', async () => {
   const originalFetch = globalThis.fetch;
-  let prompt = '';
+  const prompts = [];
   globalThis.fetch = async (_url, options) => {
     const payload = JSON.parse(options.body);
-    prompt = payload.messages[0].content;
+    prompts.push(payload.messages[0].content);
     return new Response(JSON.stringify({
-      choices: [{ message: { content: 'Мм. И ты решил сказать мне это вот так спокойно?)' }, finish_reason: 'stop' }], usage: {}
+      choices: [{ message: { content: 'Мм. Смело с её стороны. Я, пожалуй, запомню эту деталь.' }, finish_reason: 'stop' }], usage: {}
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   try {
@@ -262,8 +262,13 @@ test('chat API exposes one canonical affective turn and state-transition v2 for 
     assert.equal(res.body.stateTransition.schema, 'rin-state-transition-v2');
     assert.deepEqual(res.body.stateTransition.emotionalState, res.body.affectiveTurn.emotionalState);
     assert.deepEqual(res.body.stateTransition.relationshipState, res.body.affectiveTurn.relationshipState);
-    assert.match(prompt, /Главная реакция: jealousy/);
-    assert.match(prompt, /возможную романтическую встречу с другой девушкой/);
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0], /Главная реакция: jealousy/);
+    assert.match(prompts[0], /возможную романтическую встречу с другой девушкой/);
+    assert.match(prompts[0], /BEHAVIOR POLICY v1/);
+    assert.match(prompts[0], /Бюджет вопросов: 0/);
+    assert.equal(res.body.responsePlan.behavior.action, 'tease');
+    assert.equal(res.body.responsePlan.questionBudget, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -276,7 +281,7 @@ test('chat handler rewrites the observed neutral-rival assistant response agains
     calls += 1;
     const content = calls === 1
       ? 'Это звучит захватывающе! Ты уже знаешь, куда пойдёте?'
-      : 'Мм. И ты решил сказать мне это вот так спокойно?)';
+      : 'Мм. Смело с её стороны. Я, пожалуй, запомню эту деталь.';
     return new Response(JSON.stringify({
       choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
     }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -297,7 +302,9 @@ test('chat handler rewrites the observed neutral-rival assistant response agains
     assert.equal(res.statusCode, 200);
     assert.equal(calls, 2);
     assert.equal(res.body.responsePlan.responseAct, 'contained_jealousy');
-    assert.match(res.body.reply, /решил сказать мне это/i);
+    assert.match(res.body.reply, /смело с её стороны|запомню эту деталь/i);
+    assert.doesNotMatch(res.body.reply, /захватывающе|отлично|классно/iu);
+    assert.doesNotMatch(res.body.reply, /\?/u);
     assert.equal(res.body.verification.needsRewrite, false);
     assert.equal(res.body.promptMetrics.rewriteAttempted, true);
     assert.equal(res.body.promptMetrics.rewriteAccepted, true);
@@ -305,3 +312,44 @@ test('chat handler rewrites the observed neutral-rival assistant response agains
     globalThis.fetch = originalFetch;
   }
 });
+
+test('chat handler falls back to deterministic behavior when a rewrite still violates the zero-question policy', async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    const content = calls === 1
+      ? 'Это звучит захватывающе! Ты уже знаешь, куда пойдёте?'
+      : 'Мм. И ты решил сказать мне это вот так спокойно?)';
+    return new Response(JSON.stringify({
+      choices: [{ message: { content }, finish_reason: 'stop' }], usage: {}
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const res = createRes();
+    await chat.default(createReq({
+      headers: { 'x-rin-pin': '1357' },
+      body: {
+        requestId: 'rewrite-rival-fallback',
+        history: [{ role: 'user', kind: 'text', status: 'sent', requestId: 'rewrite-rival-fallback', id: 'u-rival-fallback', content: 'Меня пригласила девушка на встречу вечером' }],
+        memory: {
+          mood: { affection: 70, energy: 58 },
+          relationship: { trust: 82, closeness: 76, comfort: 72, respect: 80, playfulness: 68, attraction: 58, vulnerability: 42 }
+        }
+      }
+    }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls, 2);
+    assert.equal(res.body.responsePlan.responseAct, 'contained_jealousy');
+    assert.equal(res.body.responsePlan.questionBudget, 0);
+    assert.doesNotMatch(res.body.reply, /\?/u);
+    assert.doesNotMatch(res.body.reply, /захватывающе|отлично|классно/iu);
+    assert.equal(res.body.verification.needsRewrite, false);
+    assert.equal(res.body.promptMetrics.rewriteAttempted, true);
+    assert.equal(res.body.promptMetrics.rewriteAccepted, true);
+    assert.equal(res.body.promptMetrics.rewriteFallback, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+

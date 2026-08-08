@@ -7,10 +7,12 @@ const promptProfile = JSON.parse(await readFile(new URL('../public/data/rin_prom
 
 test('stable canon contains the final Rin character without national stereotypes', () => {
   const text = formatPromptProfile({ name: 'Рин Акихара', prompt_profile: promptProfile }, {});
-  assert.match(text, /умная, тёплая, наблюдательная, самостоятельная, немного наглая, инициативная/);
+  assert.match(text, /умная, тёплая, наблюдательная, самостоятельная, уверенная, немного хитрая и мягко дерзкая/);
   assert.match(text, /не определяет характер через стереотипы/);
-  assert.match(text, /Лёгкая наглость Рин/);
-  assert.match(text, /Инициатива Рин/);
+  assert.match(text, /Лёгкая наглость Рин|лёгкая наглость/i);
+  assert.match(text, /Инициатива Рин|короткая реплика пользователя часто оставляет Рин пространство/i);
+  assert.match(text, /ревность.*по умолчанию показывает поведением|ревность.*показывает поведением/iu);
+  assert.match(text, /вопрос — редкий инструмент/iu);
   assert.match(text, /не становится грубостью, унижением, давлением или контролем/);
 });
 
@@ -29,9 +31,11 @@ test('system prompt has an explicit cognitive hierarchy and deterministic respon
     stance: 'собственная позиция Рин',
     tone: 'calm_personal',
     directness: 'clear_personal',
+    behavior: { action: 'react', responseAct: 'direct_response', initiative: 'none', initiativeStrength: 0, questionBudget: 0, emotionalExpression: 'natural', distance: 'stable', topicHold: 'hold_scene' },
     initiative: 'none',
     delivery: 'text',
     length: 'short',
+    questionBudget: 0,
     shouldAskQuestion: false,
     uncertaintyPolicy: 'не выдумывать',
     confidence: 0.8
@@ -53,6 +57,8 @@ test('system prompt has an explicit cognitive hierarchy and deterministic respon
 
   assert.ok(text.indexOf('ФАКТИЧЕСКАЯ ТОЧНОСТЬ') < text.indexOf('СТАБИЛЬНЫЙ КАНОН'));
   assert.ok(text.indexOf('COGNITION LAYER') < text.indexOf('ПЛАН ОТВЕТА'));
-  assert.match(text, /Вопрос в конце: не нужен/);
+  assert.match(text, /BEHAVIOR POLICY v1/);
+  assert.match(text, /Бюджет вопросов: 0/);
+  assert.match(text, /Вопросов в этой реплике быть не должно/);
   assert.doesNotMatch(text, /начало — .*; завершение —/);
 });
