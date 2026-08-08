@@ -57,7 +57,8 @@ export function createMemoryJobRunner(processor, {
   storage = localStorage,
   now = () => Date.now(),
   maxAttempts = 3,
-  retryDelayMs = 30_000
+  retryDelayMs = 30_000,
+  failedRetryDelayMs = 15 * 60_000
 } = {}) {
   if (typeof processor !== 'function') throw new TypeError('Memory job processor must be a function');
   let running = null;
@@ -67,7 +68,7 @@ export function createMemoryJobRunner(processor, {
     running = (async () => {
       const jobs = loadMemoryJobs(storage);
       for (const job of jobs) {
-        if (job.status === 'failed' || job.nextAttemptAt > now()) continue;
+        if (job.nextAttemptAt > now()) continue;
         let ok = false;
         let code = 'MEMORY_JOB_FAILED';
         try {
@@ -85,11 +86,12 @@ export function createMemoryJobRunner(processor, {
           current.splice(index, 1);
         } else {
           const attempts = current[index].attempts + 1;
+          const exhausted = attempts >= maxAttempts;
           current[index] = {
             ...current[index],
             attempts,
-            status: attempts >= maxAttempts ? 'failed' : 'pending',
-            nextAttemptAt: now() + retryDelayMs * attempts,
+            status: exhausted ? 'failed' : 'pending',
+            nextAttemptAt: now() + (exhausted ? failedRetryDelayMs : retryDelayMs * attempts),
             lastError: code
           };
         }

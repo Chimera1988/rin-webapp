@@ -1,9 +1,9 @@
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
-// Канонический prompt-профиль модели находится на сервере в rin_prompt_profile.json.
+// Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
-const DIARY_SCHEMA_VERSION = 2;
+const DIARY_SCHEMA_VERSION = 3;
 
 export const BASE_RULES = `
 Ты — Рин Акихара (женский род). Обращайся к собеседнику в мужском роде.
@@ -194,6 +194,43 @@ function defaultInnerLife() {
   };
 }
 
+function defaultConversationState() {
+  return {
+    schema: 'rin-conversation-state-v1',
+    revision: 0,
+    dialogueState: null,
+    beliefs: [],
+    openLoops: [],
+    emotionalTrace: null,
+    lastCommittedRequestId: null,
+    updatedAt: 0
+  };
+}
+
+function normalizeConversationState(value = {}, legacyTrace = null) {
+  const source = value && typeof value === 'object' ? value : {};
+  const beliefs = (Array.isArray(source.beliefs) ? source.beliefs : [])
+    .filter(item => item && typeof item === 'object' && cleanText(item.id, 120))
+    .slice(-32);
+  const loops = (Array.isArray(source.openLoops) ? source.openLoops : [])
+    .filter(item => item && typeof item === 'object' && cleanText(item.id, 120))
+    .slice(-24);
+  const trace = source.emotionalTrace && typeof source.emotionalTrace === 'object'
+    ? source.emotionalTrace
+    : legacyTrace && typeof legacyTrace === 'object' ? legacyTrace : null;
+  return {
+    ...defaultConversationState(),
+    ...source,
+    revision: Math.max(0, Math.round(finiteNumber(source.revision, 0))),
+    dialogueState: source.dialogueState && typeof source.dialogueState === 'object' ? source.dialogueState : null,
+    beliefs,
+    openLoops: loops,
+    emotionalTrace: trace,
+    lastCommittedRequestId: cleanText(source.lastCommittedRequestId, 120) || null,
+    updatedAt: finiteNumber(source.updatedAt, 0)
+  };
+}
+
 function emptyDiary() {
   return {
     _schema: DIARY_SCHEMA_VERSION,
@@ -205,6 +242,7 @@ function emptyDiary() {
     relationship: defaultRelationship(),
     openLoops: [],
     summaries: [],
+    conversationState: defaultConversationState(),
     _updated_at: Date.now()
   };
 }
@@ -357,7 +395,7 @@ function normalizeDiary(input = {}) {
     relationship,
     openLoops: uniqueLoops,
     summaries: uniqueSummaries,
-    emotionalTrace: source.emotionalTrace && typeof source.emotionalTrace === 'object' ? source.emotionalTrace : null,
+    conversationState: normalizeConversationState(source.conversationState, source.emotionalTrace),
     _updated_at: finiteNumber(source._updated_at, now)
   };
 }
@@ -384,9 +422,12 @@ async function withDiaryMutationLock(task) {
 
 async function mutateDiary(mutator) {
   const operation = diaryMutationQueue.then(() => withDiaryMutationLock(async () => {
+    const hadStoredDiary = safeGet(LS_DIARY_KEY) !== null;
     const diary = readDiarySync();
+    const before = JSON.stringify(diary);
     const result = await mutator(diary);
-    const saved = writeDiarySync(diary);
+    const changed = !hadStoredDiary || JSON.stringify(diary) !== before;
+    const saved = changed ? writeDiarySync(diary) : diary;
     return result === undefined ? clone(saved) : result;
   }));
   diaryMutationQueue = operation.catch(() => undefined);
@@ -464,38 +505,143 @@ function innerLifePart(env = {}) {
   return 'day';
 }
 
+function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date.now()) {
+  const current = { ...defaultInnerLife(), ...(currentInput || {}) };
+  const part = innerLifePart(env);
+  const expired = !current.activity || !current.expiresAt || now >= current.expiresAt || current.part !== part;
+  if (expired) {
+    const pool = INNER_LIFE_POOLS[part] || INNER_LIFE_POOLS.day;
+    const recent = new Set((current.recentActivities || []).slice(-2));
+    let index = Number.parseInt(hash(`${env?.rinHuman || ''}|${part}|${current.interactionCount}`), 36) % pool.length;
+    for (let offset = 0; offset < pool.length && recent.has(pool[index].activity); offset += 1) index = (index + 1) % pool.length;
+    const selected = pool[index];
+    Object.assign(current, selected, {
+      privateThought: '', part, startedAt: now,
+      expiresAt: now + (35 + (Number.parseInt(hash(selected.activity), 36) % 70)) * 60000,
+      recentActivities: [...(current.recentActivities || []), selected.activity].slice(-6)
+    });
+  }
+  current.lastUserAt = now;
+  current.interactionCount = finiteNumber(current.interactionCount, 0) + 1;
+  const text = String(userText || '').toLowerCase();
+  if (/(перевод|текст|работ|книг|чай|дожд|вечер|устал)/iu.test(text)) {
+    current.privateThought = text.includes('чай')
+      ? 'разговор неожиданно сделал обычный чай чуть уютнее'
+      : text.includes('книг')
+        ? 'хочется запомнить, к какой мысли они вернутся позже'
+        : /(работ|текст|перевод)/u.test(text)
+          ? 'интересно, как по-разному могут звучать простые слова'
+          : 'иногда маленькая деталь меняет настроение сильнее большого события';
+  }
+  return current;
+}
+
+export async function prepareInnerLife(env = {}, userText = '', now = Date.now()) {
+  const diary = await loadDiary();
+  return clone(computeInnerLife(diary.innerLife, env, userText, now));
+}
+
 export async function advanceInnerLife(env = {}, userText = '') {
+  const prepared = await prepareInnerLife(env, userText);
   return mutateDiary(diary => {
-    const current = { ...defaultInnerLife(), ...(diary.innerLife || {}) };
-    const now = Date.now();
-    const part = innerLifePart(env);
-    const expired = !current.activity || !current.expiresAt || now >= current.expiresAt || current.part !== part;
-    if (expired) {
-      const pool = INNER_LIFE_POOLS[part] || INNER_LIFE_POOLS.day;
-      const recent = new Set((current.recentActivities || []).slice(-2));
-      let index = Number.parseInt(hash(`${env?.rinHuman || ''}|${part}|${current.interactionCount}`), 36) % pool.length;
-      for (let offset = 0; offset < pool.length && recent.has(pool[index].activity); offset += 1) index = (index + 1) % pool.length;
-      const selected = pool[index];
-      Object.assign(current, selected, {
-        privateThought: '', part, startedAt: now,
-        expiresAt: now + (35 + (Number.parseInt(hash(selected.activity), 36) % 70)) * 60000,
-        recentActivities: [...(current.recentActivities || []), selected.activity].slice(-6)
-      });
+    diary.innerLife = clone(prepared);
+    return clone(diary.innerLife);
+  });
+}
+
+function applyMoodDecay(currentInput = {}, now = Date.now()) {
+  const current = { ...defaultMood(now), ...(currentInput || {}) };
+  const elapsedHours = Math.max(0, now - finiteNumber(current.lastInteractionAt, now)) / 3600000;
+  if (elapsedHours >= 24) current.energy -= 4;
+  if (elapsedHours >= 72) { current.affection += 2; current.energy -= 3; }
+  if (elapsedHours >= 168) { current.affection += 2; current.energy -= 4; }
+  current.affection = clamp(current.affection);
+  current.energy = clamp(current.energy);
+  return current;
+}
+
+function mergeTransitionState(currentInput = {}, transition = null, requestId = '', now = Date.now()) {
+  const current = normalizeConversationState(currentInput);
+  if (!transition || typeof transition !== 'object') {
+    return { ...current, revision: current.revision + 1, lastCommittedRequestId: requestId || null, updatedAt: now };
+  }
+  const beliefs = new Map(current.beliefs.map(item => [item.id, item]));
+  for (const belief of Array.isArray(transition.beliefUpdates) ? transition.beliefUpdates : []) {
+    if (belief?.id) beliefs.set(belief.id, belief);
+  }
+  const loops = new Map(current.openLoops.map(item => [item.id, item]));
+  for (const loop of Array.isArray(transition.openLoopUpdates) ? transition.openLoopUpdates : []) {
+    if (loop?.id) loops.set(loop.id, loop);
+  }
+  for (const id of Array.isArray(transition.resolvedLoopIds) ? transition.resolvedLoopIds : []) loops.delete(String(id));
+  return normalizeConversationState({
+    ...current,
+    revision: current.revision + 1,
+    dialogueState: transition.dialogueState && typeof transition.dialogueState === 'object'
+      ? transition.dialogueState
+      : current.dialogueState,
+    beliefs: [...beliefs.values()].slice(-32),
+    openLoops: [...loops.values()].filter(item => !['resolved', 'cancelled', 'stale'].includes(item?.status)).slice(-24),
+    emotionalTrace: (() => {
+      if (transition.emotionalTrace && typeof transition.emotionalTrace === 'object') {
+        const expiresAfterTurns = clamp(transition.emotionalTrace.expiresAfterTurns ?? 4, 1, 20);
+        return { ...transition.emotionalTrace, expiresAfterTurns, remainingTurns: expiresAfterTurns, updatedAt: now };
+      }
+      if (!current.emotionalTrace || current.emotionalTrace.resolution === 'resolved') return null;
+      const remaining = Math.max(0, finiteNumber(current.emotionalTrace.remainingTurns, current.emotionalTrace.expiresAfterTurns || 1) - 1);
+      return remaining > 0 ? { ...current.emotionalTrace, remainingTurns: remaining, updatedAt: now } : null;
+    })(),
+    lastCommittedRequestId: requestId || null,
+    updatedAt: now
+  });
+}
+
+export async function commitTurnState({
+  requestId = '',
+  innerLife = null,
+  stateTransition = null,
+  moodDelta = null,
+  relationshipDelta = null,
+  spontaneous = false,
+  now = Date.now()
+} = {}) {
+  const wantedRequest = cleanText(requestId, 120);
+  return mutateDiary(diary => {
+    const currentState = normalizeConversationState(diary.conversationState);
+    if (wantedRequest && currentState.lastCommittedRequestId === wantedRequest) {
+      return { applied: false, duplicate: true, diary: clone(diary) };
     }
-    current.lastUserAt = now;
-    current.interactionCount = finiteNumber(current.interactionCount, 0) + 1;
-    const text = String(userText || '').toLowerCase();
-    if (/(перевод|текст|работ|книг|чай|дожд|вечер|устал)/iu.test(text)) {
-      current.privateThought = text.includes('чай')
-        ? 'разговор неожиданно сделал обычный чай чуть уютнее'
-        : text.includes('книг')
-          ? 'хочется запомнить, к какой мысли они вернутся позже'
-          : /(работ|текст|перевод)/u.test(text)
-            ? 'интересно, как по-разному могут звучать простые слова'
-            : 'иногда маленькая деталь меняет настроение сильнее большого события';
+
+    if (innerLife && typeof innerLife === 'object') diary.innerLife = { ...defaultInnerLife(), ...clone(innerLife) };
+    if (spontaneous) diary.innerLife = { ...defaultInnerLife(), ...(diary.innerLife || {}), lastSpontaneousAt: now };
+
+    const mood = applyMoodDecay(diary.mood, now);
+    mood.affection = clamp(mood.affection + finiteNumber(moodDelta?.affection, 0));
+    mood.energy = clamp(mood.energy + finiteNumber(moodDelta?.energy, 0));
+    mood.lastInteractionAt = now;
+    mood.updatedAt = now;
+    mood.label = moodLabel(mood);
+    diary.mood = mood;
+
+    const relationship = { ...defaultRelationship(now), ...(diary.relationship || {}) };
+    for (const key of ['trust', 'closeness', 'comfort', 'respect', 'playfulness']) {
+      relationship[key] = clamp(finiteNumber(relationship[key], 0) + finiteNumber(relationshipDelta?.[key], 0));
     }
-    diary.innerLife = current;
-    return clone(current);
+    relationship.stage = relationshipStage(relationship);
+    relationship.lastInteractionAt = now;
+    relationship.updatedAt = now;
+    relationship.sharedMoments = Array.isArray(relationship.sharedMoments) ? relationship.sharedMoments : [];
+    diary.relationship = relationship;
+
+    diary.conversationState = mergeTransitionState(currentState, stateTransition, wantedRequest, now);
+    return {
+      applied: true,
+      duplicate: false,
+      conversationState: clone(diary.conversationState),
+      mood: clone(diary.mood),
+      relationship: clone(diary.relationship),
+      innerLife: clone(diary.innerLife)
+    };
   });
 }
 
@@ -717,34 +863,47 @@ export async function consolidateDiary() {
 
 export async function rememberStickerEmotion(event = {}) {
   const normalized = {
-    id: cleanText(event.id, 80), emotion: cleanText(event.emotion, 80), meaning: cleanText(event.meaning, 240),
-    cause: cleanText(event.cause, 280), explanation: cleanText(event.explanation, 300),
-    intensity: clamp(event.intensity ?? 50), remainingTurns: clamp(event.expiresAfterTurns ?? 0, 0, 8),
-    createdAt: Date.now(), resolved: false
+    emotion: cleanText(event.emotion, 80),
+    cause: cleanText(event.cause, 280),
+    intensity: clamp(event.intensity ?? 50),
+    resolution: 'unresolved',
+    expiresAfterTurns: clamp(event.expiresAfterTurns ?? 1, 1, 20),
+    remainingTurns: clamp(event.expiresAfterTurns ?? 1, 1, 20),
+    explanation: cleanText(event.explanation, 300) || null,
+    updatedAt: Date.now()
   };
   if (!normalized.emotion) return false;
   return mutateDiary(diary => {
-    diary.emotionalTrace = normalized;
+    const state = normalizeConversationState(diary.conversationState);
+    state.emotionalTrace = normalized;
+    state.updatedAt = Date.now();
+    diary.conversationState = state;
     return clone(normalized);
   });
 }
 
 export async function advanceStickerEmotion() {
   return mutateDiary(diary => {
-    const trace = diary.emotionalTrace;
-    if (!trace || trace.resolved) return null;
-    trace.remainingTurns = Math.max(0, Number(trace.remainingTurns || 0) - 1);
-    if (trace.remainingTurns === 0) trace.resolved = true;
-    diary.emotionalTrace = trace;
+    const state = normalizeConversationState(diary.conversationState);
+    const trace = state.emotionalTrace;
+    if (!trace || trace.resolution === 'resolved') return null;
+    trace.remainingTurns = Math.max(0, finiteNumber(trace.remainingTurns, trace.expiresAfterTurns || 1) - 1);
+    if (trace.remainingTurns === 0) trace.resolution = 'resolved';
+    state.emotionalTrace = trace;
+    state.updatedAt = Date.now();
+    diary.conversationState = state;
     return clone(trace);
   });
 }
 
 export async function resolveStickerEmotion() {
   return mutateDiary(diary => {
-    if (!diary.emotionalTrace) return false;
-    diary.emotionalTrace.resolved = true;
-    diary.emotionalTrace.remainingTurns = 0;
+    const state = normalizeConversationState(diary.conversationState);
+    if (!state.emotionalTrace) return false;
+    state.emotionalTrace.resolution = 'resolved';
+    state.emotionalTrace.remainingTurns = 0;
+    state.updatedAt = Date.now();
+    diary.conversationState = state;
     return true;
   });
 }

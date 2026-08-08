@@ -248,15 +248,31 @@ export async function buildLorePayload(userText, {
       id, chapter, years, section, text
     }));
 
-  remember([
-    ...selectedMemories.map(item => item.id),
-    ...selectedBackstory.map(item => item.id)
-  ]);
-
   return {
     matchedTriggers: triggers.slice(0, 4),
     memories: selectedMemories,
-    backstory: selectedBackstory
+    backstory: selectedBackstory,
+    _selectedIds: [
+      ...selectedMemories.map(item => item.id),
+      ...selectedBackstory.map(item => item.id)
+    ]
+  };
+}
+
+export function commitLorePayload(payload = null) {
+  if (!payload || typeof payload !== 'object') return false;
+  const ids = Array.isArray(payload._selectedIds) ? payload._selectedIds : [];
+  if (!ids.length) return false;
+  remember(ids);
+  return true;
+}
+
+export function lorePayloadForApi(payload = null) {
+  if (!payload || typeof payload !== 'object') return null;
+  return {
+    matchedTriggers: Array.isArray(payload.matchedTriggers) ? payload.matchedTriggers : [],
+    memories: Array.isArray(payload.memories) ? payload.memories : [],
+    backstory: Array.isArray(payload.backstory) ? payload.backstory : []
   };
 }
 
