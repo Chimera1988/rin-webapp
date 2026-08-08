@@ -31,9 +31,9 @@ if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js o
 
 const activeSources = [
   'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
-  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'lib/cognition/initiative-handoff.js', 'lib/cognition/behavior-policy.js', 'lib/cognition/response-planner.js', 'lib/cognition/response-verifier.js', 'lib/core-personality.js', 'public/chat.js', 'public/js/login.js',
+  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/intent-contract.js', 'lib/inner-life-contract.js', 'lib/cognition/emotional-state.js', 'lib/cognition/initiative-handoff.js', 'lib/cognition/persistent-intent.js', 'lib/cognition/memory-retrieval.js', 'lib/cognition/reality-boundary.js', 'lib/cognition/behavior-policy.js', 'lib/cognition/response-planner.js', 'lib/cognition/response-verifier.js', 'lib/personality/inner-life.js', 'lib/personality/voice-policy.js', 'lib/core-personality.js', 'public/chat.js', 'public/js/login.js',
   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
-  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/affective-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
+  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/affective-contract.js', 'public/lib/intent-contract.js', 'public/lib/inner-life-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
 ];
 const forbidden = ['stickers-v4', 'stickers-v5.test', 'response_postprocessor', '/data/rin_persona.json', '/data/rin_mind.json', '/data/rin_reasoning.json', '/data/rin_speaking_habits.json'];
 for (const file of activeSources) {
@@ -134,15 +134,32 @@ if (!serverAffective.includes("export * from '../public/lib/affective-contract.j
 const sharedIntent = await read('public/lib/intent-contract.js');
 const serverIntent = await read('lib/intent-contract.js');
 const persistentIntentEngine = await read('lib/cognition/persistent-intent.js');
-if (!sharedIntent.includes("RIN_INTENT_SCHEMA = 'rin-persistent-intent-v3'") || !sharedIntent.includes('completionCondition') || !sharedIntent.includes('abandonmentCondition') || !sharedIntent.includes('progressState') || !sharedIntent.includes('expectedOutcome') || !sharedIntent.includes('completionEvidence') || !sharedIntent.includes('sceneBinding')) fail('Shared persistent intent contract is incomplete.');
+if (!sharedIntent.includes("RIN_INTENT_SCHEMA = 'rin-persistent-intent-v4'") || !sharedIntent.includes('completionCondition') || !sharedIntent.includes('abandonmentCondition') || !sharedIntent.includes('progressState') || !sharedIntent.includes('expectedOutcome') || !sharedIntent.includes('completionEvidence') || !sharedIntent.includes('sceneBinding')) fail('Shared persistent intent contract is incomplete.');
 if (!serverIntent.includes("export * from '../public/lib/intent-contract.js'")) fail('Server and browser must share one persistent intent contract source.');
-if (!persistentIntentEngine.includes('advancePersistentIntent') || !persistentIntentEngine.includes('persistentIntentInstruction') || !persistentIntentEngine.includes('finalizePersistentIntentAfterReply') || !persistentIntentEngine.includes('deriveSceneBinding') || !persistentIntentEngine.includes('sceneBinding')) fail('Persistent intent engine must own intent lifecycle and prompt instruction.');
+if (!persistentIntentEngine.includes('advancePersistentIntent') || !persistentIntentEngine.includes('persistentIntentInstruction') || !persistentIntentEngine.includes('finalizePersistentIntentAfterReply') || !persistentIntentEngine.includes('sceneBinding')) fail('Persistent intent engine must own intent lifecycle and prompt instruction.');
 if (!affectiveEngine.includes('buildAffectiveTurn') || !affectiveEngine.includes('deriveRelationshipState')) fail('Canonical affective engine must own emotion and relationship transitions.');
 if (!impactShim.includes('buildAffectiveTurn') || /романтическ|ревност|обнимаю|комплимент/iu.test(impactShim)) fail('Legacy turn-state impact module must be a semantic-free compatibility shim.');
 const cognitionContract = await read('lib/cognition/cognitive-contract.js');
 if (!cognitionContract.includes("rin-state-transition-v3") || !cognitionContract.includes('emotionalState') || !cognitionContract.includes('relationshipState') || !cognitionContract.includes('rinIntent')) fail('State transition v3 must carry affective and persistent intent state.');
 if (!cognitionContract.includes('normalizeBehaviorPolicy') || !cognitionContract.includes('questionBudget')) fail('Response plan contract must carry canonical behavior and question budget.');
-if (!browserE2e.includes("rin-state-transition-v3") || !browserE2e.includes('rin-affective-state-v1') || !browserE2e.includes('rin-persistent-intent-v3') || !browserE2e.includes('sceneBinding')) fail('Browser E2E must exercise affective and persistent-intent state contracts.');
+if (!browserE2e.includes("rin-state-transition-v3") || !browserE2e.includes('rin-affective-state-v1') || !browserE2e.includes('rin-persistent-intent-v4') || !browserE2e.includes('sceneBinding')) fail('Browser E2E must exercise affective and persistent-intent state contracts.');
+
+
+const unifiedCoreSource = await read('lib/core-personality.js');
+for (const legacyWriter of ['habits.js', 'micro-reactions.js', 'humanizer.js', 'rhythm-controller.js', 'character.js']) {
+  if (unifiedCoreSource.includes(legacyWriter)) fail(`Core personality must not import legacy active style writer ${legacyWriter}.`);
+}
+if (!unifiedCoreSource.includes("from './personality/voice-policy.js'")) fail('Core personality must consume the single VoicePolicy.');
+const innerLifeServerSource = await read('lib/personality/inner-life.js');
+if (/fallbackActivity|INNER_LIFE_POOLS|Math\.random/u.test(innerLifeServerSource)) fail('Server Inner Life must be read-only and cannot generate a competing activity.');
+if (!memorySource.includes("from '../lib/inner-life-contract.js'")) fail('Browser diary must own Inner Life through the shared contract.');
+const retrievalSource = await read('lib/cognition/memory-retrieval.js');
+if (!retrievalSource.includes('retrieveMemory') || apiChatSource.includes('selectRelevantMemory(')) fail('Memory retrieval must have one relevance owner.');
+const realitySource = await read('lib/cognition/reality-boundary.js');
+if (!realitySource.includes('unsupportedAutobiographicalClaim') || !apiChatSource.includes('buildRealityBoundary')) fail('Reality boundary must be enforced by the chat pipeline.');
+if (!chat.includes('requestAssistantInitiative') || !chat.includes('trigger: { type, reason')) fail('Greeting and scheduled initiative must use the unified server pipeline.');
+if ((chat.match(/fetchWithTimeout\('\/api\/chat'/g) || []).length !== 1 || !chat.includes('requestChatTurn')) fail('Reactive and proactive chat must share one client request helper.');
+if (!persistentIntentEngine.includes('TERMINAL_HOLD_TURNS') || persistentIntentEngine.includes('bindingShift')) fail('Persistent intent must own terminal cooldown and forbid arbitrary in-place rebinding.');
 
 
 

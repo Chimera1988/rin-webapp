@@ -65,7 +65,11 @@ const server = createServer(async (req, res) => {
       const plannedTarget = current === 'RIN_REPLY_TARGET'
         ? (body.history || []).find(item => item.role === 'user' && String(item.content || '').includes('Мой проект называется Rin'))
         : null;
-      const reply = current.includes('Как меня зовут')
+      const reply = body.trigger?.type === 'greeting'
+        ? 'Я сама решила написать первой — просто захотелось.'
+        : body.trigger?.type === 'scheduled'
+          ? 'У меня появилась одна мысль, и я решила не откладывать её до завтра.'
+          : current.includes('Как меня зовут')
         ? `Ты говорил, что тебя зовут ${remembered || 'неизвестно'}.`
         : current === 'RIN_REPLY_TARGET'
           ? 'К этому я и хотела вернуться: что в проекте сейчас самое живое для тебя?'
@@ -75,7 +79,7 @@ const server = createServer(async (req, res) => {
         reply,
         finishReason: 'stop',
         long: false,
-        responsePlan: plannedTarget ? {
+        responsePlan: body.trigger?.type ? { responseAct: body.trigger.type === 'greeting' ? 'proactive_greeting' : 'proactive_personal_share', questionBudget: 0, rinIntent: body.memory?.conversationState?.rinIntent || null } : plannedTarget ? {
           replyTarget: {
             messageId: plannedTarget.id,
             role: 'user',
@@ -120,7 +124,7 @@ const server = createServer(async (req, res) => {
               sharedMoments: previousRelationship.sharedMoments || []
             },
             emotionalState,
-            rinIntent: reveal ? { schema:'rin-persistent-intent-v3', id:'intent-e2e-play', status:'active', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease', sceneBinding:{key:'playful_tease',kind:'playful',subject:'поддразнивание',anchor:'сам начал',source:'last_rin_action'}, scene:'playful_flirt', priority:82, commitment:82, progress:0.48, nextMove:'make_specific_teasing_move', completionCondition:'после нескольких конкретных ходов', abandonmentCondition:'явный отказ или farewell', startedAtTurn:11, updatedAtTurn:11, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' } : body.memory?.conversationState?.rinIntent || null,
+            rinIntent: reveal ? { schema:'rin-persistent-intent-v4', id:'intent-e2e-play', status:'active', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease', sceneBinding:{key:'playful_tease',kind:'playful',subject:'поддразнивание',anchor:'сам начал',source:'last_rin_action'}, scene:'playful_flirt', priority:82, commitment:82, progress:0.48, nextMove:'make_specific_teasing_move', completionCondition:'после нескольких конкретных ходов', abandonmentCondition:'явный отказ или farewell', startedAtTurn:11, updatedAtTurn:11, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' } : body.memory?.conversationState?.rinIntent || null,
             emotionalState, emotionalTrace: emotionalState?.primary ? { emotion: emotionalState.primary.type, cause: emotionalState.primary.cause, intensity: emotionalState.primary.intensity, resolution: emotionalState.primary.resolution, expiresAfterTurns: emotionalState.primary.expiresAfterTurns, remainingTurns: emotionalState.primary.remainingTurns } : null,
             moodDelta: { affection: 0, energy: 0 }, relationshipDelta: { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0, attraction: 0, vulnerability: 0 }
           };
@@ -296,6 +300,8 @@ try {
   await sleep(500);
   const initialAssistantCount = await cdp.evaluate("document.querySelectorAll('#chat .row.assistant').length");
   assert(initialAssistantCount === 1, `expected one greeting, got ${initialAssistantCount}`);
+  assert(chatBodies[0]?.trigger?.type === 'greeting', 'initial greeting must go through /api/chat as a proactive trigger');
+  assert(chatBodies[0]?.history?.length === 0, 'proactive greeting must not fabricate a user message');
   const initialPeerStatus = await cdp.evaluate("document.querySelector('#peerStatus')?.textContent");
   assert(initialPeerStatus === 'офлайн', `presence must stay offline before the first user message, got ${initialPeerStatus}`);
 
