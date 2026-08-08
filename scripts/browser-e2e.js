@@ -48,7 +48,7 @@ const server = createServer(async (req, res) => {
       await readBody(req);
       await sleep(300);
       return json(res, 200, {
-        schemaVersion: 3,
+        schemaVersion: 4,
         facts: [{ path: 'user.name', value: 'Алексей', confidence: 0.99 }],
         events: [], openLoops: [], resolvedLoops: [], sharedMoments: []
       });
@@ -109,7 +109,7 @@ const server = createServer(async (req, res) => {
             lastEvent: { type: 'tease_reveal', cause: 'пользователь признался, что поддразнивал Рин и проверял её реакцию', turn: 11 }, updatedAtTurn: 11
           } : previousEmotion;
           return {
-            schema: 'rin-state-transition-v2',
+            schema: 'rin-state-transition-v3',
             dialogueState: { scene: current.includes('Целую тебя') ? 'romance' : 'everyday', topic: current, relationToPreviousTurn: 'continuation' },
             beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [],
             moodState: body.memory?.mood || { affection: 65, energy: 65 },
@@ -119,6 +119,8 @@ const server = createServer(async (req, res) => {
               recentDynamic: { lastSignal: reveal ? 'playful' : jealousy ? 'neutral' : 'neutral', positiveStreak: 0, negativeStreak: 0, repairPending: false, lastCause: jealousy || reveal ? 'e2e affective state' : '', turn: reveal ? 11 : jealousy ? 10 : 0 },
               sharedMoments: previousRelationship.sharedMoments || []
             },
+            emotionalState,
+            rinIntent: reveal ? { schema:'rin-persistent-intent-v1', id:'intent-e2e-play', status:'active', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'shared_playful_scene', scene:'playful_flirt', priority:82, commitment:82, progress:0.48, nextMove:'tease_or_advance', completionCondition:'после нескольких конкретных ходов', abandonmentCondition:'явный отказ или farewell', startedAtTurn:11, updatedAtTurn:11, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' } : body.memory?.conversationState?.rinIntent || null,
             emotionalState, emotionalTrace: emotionalState?.primary ? { emotion: emotionalState.primary.type, cause: emotionalState.primary.cause, intensity: emotionalState.primary.intensity, resolution: emotionalState.primary.resolution, expiresAfterTurns: emotionalState.primary.expiresAfterTurns, remainingTurns: emotionalState.primary.remainingTurns } : null,
             moodDelta: { affection: 0, energy: 0 }, relationshipDelta: { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0, attraction: 0, vulnerability: 0 }
           };
@@ -509,6 +511,12 @@ try {
   })()`);
   assert(revealState.primary === 'playful_irritation' && revealState.secondary === 'relief' && revealState.momentum === 'playful', 'reveal transition must replace jealousy with playful irritation + relief');
 
+  const revealIntent = await cdp.evaluate(`(() => JSON.parse(localStorage.getItem('rin-diary-v1') || '{}').conversationState?.rinIntent || null)()`);
+  assert(revealIntent?.status === 'active' && revealIntent?.id === 'intent-e2e-play', 'reveal must commit the persistent Rin intent');
+  await send('Да я и не собирался выкручиваться 😏');
+  await waitFor(cdp, completedUsers(12), 'persistent intent next turn');
+  assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.id === 'intent-e2e-play', 'next browser request must restore the committed persistent Rin intent');
+
   const lifecycle = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
     return {
@@ -522,9 +530,9 @@ try {
   assert(lifecycle.allTyped, 'all persisted chat events must use schema v5');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
-  assert(lifecycle.conversationRevision >= 11, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
+  assert(lifecycle.conversationRevision >= 12, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
 
-  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker, manual reply and planned Rin reply and affective persistence; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker, manual reply and planned Rin reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);
