@@ -272,9 +272,9 @@ function deterministicAgencyFallback(plan = {}, userText = '') {
   const seed = String(userText || '').length % 3;
   const variants = {
     take_lead: [
-      'Поздно передумывать. Сам попросил — теперь не мешай мне тебя смущать.',
-      'Мм, инициативу я забрала. А ты пока попробуй не выдать себя слишком быстро.',
-      'Хорошо. Тогда сиди спокойно и не делай вид, что совсем не волнуешься.'
+      'Первый ход: попробуй хотя бы полминуты не прятаться за этой улыбкой. Я посмотрю, сколько продержишься 😏',
+      'Мм, инициативу я забрала. Теперь не отвлекайся и попробуй не выдать себя слишком быстро.',
+      'Сам попросил. Тогда первое правило: не выкручивайся и не прячь смущение за шуткой 😏'
     ],
     reclaim_scene: [
       'Да, отвлеклась. Возвращаюсь — и теперь уже не дам тебе так легко увести разговор в сторону.',
@@ -320,7 +320,7 @@ function rewriteMessages({ draft = '', verification = null, plan = null, brain =
       role: 'system',
       content: `Ты — строгий редактор одной реплики Рин Акихары в личном чате. Верни только окончательный текст реплики без кавычек, пояснений, списков и служебных меток.
 
-Сохрани факты и прямой смысл, но перепиши голос так, чтобы Рин не звучала ассистентом: у неё есть собственная позиция, она не пересказывает пользователя, не оценивает разговор со стороны, не хвалит очевидное и не заканчивает автоматическим вопросом.
+Сохрани факты и прямой смысл, но перепиши голос так, чтобы Рин не звучала ассистентом: у неё есть собственная позиция, она не пересказывает пользователя, не оценивает разговор со стороны, не хвалит очевидное и не заканчивает автоматическим вопросом. Если behavior требует инициативного действия, выполни его уже в этой реплике; обещание «мы начинаем/готовься/держись» без самого хода запрещено.
 
 Активная сцена: ${brain?.activeScene?.type || 'everyday'}. Цель сцены: ${plan?.sceneGoal || brain?.activeScene?.goal || 'ответить конкретно'}.
 Behavior policy: действие ${plan?.behavior?.action || 'react'}; речевой акт ${plan?.responseAct || 'direct_response'}; инициатива ${plan?.initiative || 'none'}; выражение эмоции ${plan?.behavior?.emotionalExpression || 'natural'}; дистанция ${plan?.behavior?.distance || 'stable'}.
@@ -373,7 +373,7 @@ async function repairReplyIfNeeded({ model, draft, verification, plan, brain, us
   if (fallback && (
     behavioralFallbackActs.has(plan?.responseAct)
     || ['missing_required_agency', 'scene_goal_drift', 'assistant_permission_seeking', 'meta_conversation_commentary',
-      'initiative_collapsed_into_assistant_voice', 'emotional_state_contradiction', 'unplanned_question', 'question_budget_exceeded']
+      'initiative_collapsed_into_assistant_voice', 'agency_deferred', 'emotional_state_contradiction', 'unplanned_question', 'question_budget_exceeded']
       .some(item => verification.warnings.includes(item))
   )) {
     const fallbackVerification = verifyReply(fallback, { plan, brain, userText });
@@ -471,12 +471,12 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-stage5-dialogue-agency-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-stage5-dialogue-agency-v1.1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
         affectiveTurn,
-        verification: { version: 'rin-response-verifier-v6-dialogue-agency', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
+        verification: { version: 'rin-response-verifier-v7-agency-follow-through', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
         delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
         stateTransition,
         coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, reason: coreDecision.reason }
@@ -517,7 +517,7 @@ export default async function handler(req, res) {
     const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-stage5-dialogue-agency-v1',
+      promptVersion: 'rin-stage5-dialogue-agency-v1.1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
