@@ -24,8 +24,9 @@ test('playful candidate becomes a committed multi-turn Rin intent', () => {
   assert.equal(first.turnCount, 1);
   assert.equal(first.minTurns, 2);
   assert.equal(first.maxTurns, 4);
-  assert.match(first.goal, /игровую линию/iu);
-  assert.equal(first.nextMove, 'tease_or_advance');
+  assert.match(first.goal, /поддразнивание|игров/iu);
+  assert.equal(first.sceneBinding.key, 'playful_tease');
+  assert.equal(first.nextMove, 'make_specific_teasing_move');
 });
 
 test('supportive user turn advances the same intent instead of replacing it', () => {
@@ -128,4 +129,40 @@ test('semantic cooldown blocks same completed intent for eight turns', () => {
   const completed = normalizeRinIntent({ goal:'продвинуть уже начатую игровую линию собственным ходом Рин', target:'shared_playful_scene', scene:'playful_flirt', commitment:80, progress:1, nextMove:'tease_or_advance', startedAtTurn:8, updatedAtTurn:10, turnCount:3, status:'completed', semanticKey:'continue_playful_tension|shared_playful_scene|playful_flirt', completionReason:'fulfilled' });
   const next = advancePersistentIntent({ memory:memoryWith(completed, 15), characterIntent:playfulCandidate, dialogueState:playfulState, brain:baseBrain, userText:'Ага)' });
   assert.equal(next, null);
+});
+
+test('intent binds to the concrete secret request instead of generic playful scene', () => {
+  const state = { scene:'playful_flirt', openHook:{excerpt:'Можешь раскрыть один?'}, lastRinAction:{kind:'text',meaning:'У нас с тобой есть свои хитрости.'}, reactiveStreak:0, questionStreak:0 };
+  const intent = advancePersistentIntent({ memory:memoryWith(null), characterIntent:playfulCandidate, dialogueState:state, brain:baseBrain, userText:'Можешь раскрыть один?' });
+  assert.equal(intent.sceneBinding.key, 'personal_secret_reveal');
+  assert.equal(intent.nextMove, 'reveal_specific_personal_secret');
+  assert.match(intent.goal, /секрет|фантази/iu);
+  assert.doesNotMatch(intent.goal, /игровую линию/iu);
+});
+
+test('scene-bound intent transforms in place when the shared fantasy acquires a concrete world', () => {
+  const secretState = { scene:'playful_flirt', openHook:{excerpt:'Можешь раскрыть один?'}, lastRinAction:{kind:'text',meaning:'Иногда я люблю фантазировать о таинственных мирах.'} };
+  const secret = advancePersistentIntent({ memory:memoryWith(null), characterIntent:playfulCandidate, dialogueState:secretState, brain:baseBrain, userText:'Расскажешь?' });
+  const worldState = { scene:'playful_flirt', openHook:{excerpt:'Представь мир, где цветы светятся в ночи, а реки текут с песнями.'}, lastRinAction:{kind:'text',meaning:'В таком месте кицунэ могли бы быть стражами.'} };
+  const world = advancePersistentIntent({ memory:memoryWith(secret, 11), characterIntent:playfulCandidate, dialogueState:worldState, brain:baseBrain, userText:'Да, чтобы чужаки не испортили эту красоту.' });
+  assert.equal(world.id, secret.id);
+  assert.equal(world.sceneBinding.key, 'shared_imagined_world');
+  assert.equal(world.nextMove, 'add_specific_shared_world_detail');
+  assert.match(world.goal, /общий мир|воображаем/iu);
+});
+
+test('verifier rejects generic warmth when a concrete kitsune binding must advance', () => {
+  const intent = normalizeRinIntent({ goal:'развить именно общую линию про кицунэ', target:'shared_kitsune_identity', sceneBinding:{key:'shared_kitsune_identity',kind:'shared_fantasy',subject:'кицунэ',anchor:'Да, я иногда представляю, что ты кицунэ'}, scene:'playful_flirt', commitment:82, progress:.3, nextMove:'advance_kitsune_thread', expectedOutcome:'добавить конкретную деталь про кицунэ', startedAtTurn:2, updatedAtTurn:2, turnCount:1, minTurns:1, maxTurns:4, status:'active' });
+  const generic = verifyReply('Мне нравится, когда у нас появляются такие уютные моменты.', { plan:{responseAct:'advance_persistent_intent',questionBudget:0,rinIntent:intent}, brain:baseBrain, userText:'И очарование тоже' });
+  assert.equal(generic.needsRewrite, true);
+  assert.ok(generic.warnings.includes('persistent_intent_scene_binding_missed'));
+  const specific = verifyReply('Тогда считай, что хвост я пока спрятала — но хитрость кицунэ оставила при себе 😏', { plan:{responseAct:'advance_persistent_intent',questionBudget:0,rinIntent:intent}, brain:baseBrain, userText:'И очарование тоже' });
+  assert.ok(!specific.warnings.includes('persistent_intent_scene_binding_missed'));
+});
+
+test('post-reply evidence completes concrete scene targets, not generic engagement', async () => {
+  const { finalizePersistentIntentAfterReply } = await import('../lib/cognition/persistent-intent.js');
+  const secret = normalizeRinIntent({ goal:'раскрыть секрет', target:'personal_secret_reveal', sceneBinding:{key:'personal_secret_reveal',kind:'personal_disclosure',subject:'секрет'}, scene:'everyday', commitment:80, nextMove:'reveal_specific_personal_secret', startedAtTurn:1, updatedAtTurn:1, turnCount:1, status:'active' });
+  assert.equal(finalizePersistentIntentAfterReply(secret, 'Секреты всегда добавляют немного интриги.').status, 'active');
+  assert.equal(finalizePersistentIntentAfterReply(secret, 'Иногда я представляю ночной сад, где можно спрятаться от всего шума.').status, 'completed');
 });

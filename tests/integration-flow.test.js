@@ -532,14 +532,17 @@ test('persistent intent survives server transition, diary reload and changes the
     assert.equal(firstRes.statusCode, 200);
     assert.equal(firstRes.body.stateTransition.schema, 'rin-state-transition-v3');
     assert.equal(firstRes.body.stateTransition.rinIntent?.status, 'active');
+    assert.equal(firstRes.body.stateTransition.rinIntent?.sceneBinding?.key, 'playful_tease');
     await memoryStore.commitTurnState({ requestId:'intent-flow-1', stateTransition:firstRes.body.stateTransition, now:13_000_000 });
     const persisted = await memoryStore.loadDiary();
     assert.equal(persisted.conversationState.rinIntent?.status, 'active');
+    assert.equal(persisted.conversationState.rinIntent?.sceneBinding?.key, 'playful_tease');
 
     const secondRes = createRes();
     await chat(createReq({ headers:{'x-rin-pin':'9292'}, body:{ requestId:'intent-flow-2', history:[{id:'a-i1',role:'assistant',kind:'text',status:'complete',content:firstRes.body.reply},{id:'u-i2',role:'user',kind:'text',status:'sent',requestId:'intent-flow-2',content:'Да я и не собирался выкручиваться 😏'}], memory:{ facts:persisted.facts, mood:persisted.mood, relationship:persisted.relationship, openLoops:persisted.openLoops, recentEvents:persisted.events, conversationState:persisted.conversationState } } }), secondRes);
     assert.equal(secondRes.statusCode, 200);
     assert.equal(secondRes.body.responsePlan.rinIntent?.id, persisted.conversationState.rinIntent.id);
+    assert.equal(secondRes.body.responsePlan.rinIntent?.sceneBinding?.key, 'playful_tease');
     assert.ok(['advance_persistent_intent','carry_playful_tension','tease_and_advance','advance_play'].includes(secondRes.body.responsePlan.responseAct));
     assert.equal(secondRes.body.responsePlan.questionBudget, 0);
     assert.ok(secondRes.body.responsePlan.rinIntent.progress > persisted.conversationState.rinIntent.progress);

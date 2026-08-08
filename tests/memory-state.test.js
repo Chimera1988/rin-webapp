@@ -254,3 +254,13 @@ test('duplicate request cannot advance persistent intent twice', async () => {
   assert.equal(duplicate.applied, false);
   assert.deepEqual((await memory.loadDiary()).conversationState, snapshot.conversationState);
 });
+
+
+test('scene-bound persistent intent survives diary commit and reload byte-for-byte semantically', async () => {
+  const intent = { schema:'rin-persistent-intent-v3', id:'intent-binding', status:'active', goal:'развить линию про кицунэ', target:'shared_kitsune_identity', sceneBinding:{key:'shared_kitsune_identity',kind:'shared_fantasy',subject:'кицунэ и пользователь',anchor:'Я иногда представляю, что ты кицунэ',source:'last_rin_action'}, scene:'playful_flirt', priority:82, commitment:80, progress:.35, nextMove:'advance_kitsune_thread', progressState:'started', expectedOutcome:'добавить деталь про кицунэ', completionCondition:'конкретный target продвинут', abandonmentCondition:'смена темы', startedAtTurn:20, updatedAtTurn:20, turnCount:1, minTurns:1, maxTurns:4, source:'character_intent' };
+  await memory.commitTurnState({ requestId:'binding-persist-r1', now:16_000_000, stateTransition:{ rinIntent:intent } });
+  const reloaded = await memory.loadDiary();
+  assert.equal(reloaded.conversationState.rinIntent.sceneBinding.key, 'shared_kitsune_identity');
+  assert.equal(reloaded.conversationState.rinIntent.nextMove, 'advance_kitsune_thread');
+  assert.match(reloaded.conversationState.rinIntent.sceneBinding.anchor, /кицунэ/iu);
+});

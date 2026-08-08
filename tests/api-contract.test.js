@@ -265,7 +265,7 @@ test('chat API exposes one canonical affective turn and state-transition v3 for 
     assert.equal(prompts.length, 1);
     assert.match(prompts[0], /Главная реакция: jealousy/);
     assert.match(prompts[0], /возможную романтическую встречу с другой девушкой/);
-    assert.match(prompts[0], /BEHAVIOR POLICY v2/);
+    assert.match(prompts[0], /BEHAVIOR POLICY v3/);
     assert.match(prompts[0], /Бюджет вопросов: 0/);
     assert.equal(res.body.responsePlan.behavior.action, 'tease');
     assert.equal(res.body.responsePlan.questionBudget, 0);
