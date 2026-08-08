@@ -53,7 +53,7 @@ export default async function handler(req, res) {
       humidity: Number.isFinite(data.main?.humidity) ? data.main.humidity : null,
       wind: Number.isFinite(data.wind?.speed) ? data.wind.speed : null
     };
-    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json(out);
   } catch (error) {
     console.error('Weather proxy error', error);

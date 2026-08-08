@@ -14,6 +14,7 @@ import {
 } from '../lib/cognition/index.js';
 import { currentUserTurn, isExplicitFarewell, pruneModelHistory, selectModelHistory } from '../lib/chat-contract.js';
 import { fetchWithTimeout, publicError, readJsonBody, requirePin } from '../lib/server/http.js';
+import { buildServerProfile } from '../lib/server/canonical-profile.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const SHORT_MODEL = process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
@@ -361,6 +362,43 @@ async function repairReplyIfNeeded({ model, draft, verification, plan, brain, us
   return { reply: verification.reply, verification, attempted: true, accepted: false, usage: null };
 }
 
+export function buildTurnDelivery({ responsePlan = null, coreDecision = null, verification = null, reply = '' } = {}) {
+  const recoverySticker = verification?.nonverbalLeak?.metaOnly
+    ? (verification.nonverbalLeak.preferredStickerId || coreDecision?.nonverbalAction?.preferredStickerId || null)
+    : null;
+  const planned = recoverySticker
+    ? {
+        preferredStickerId: recoverySticker,
+        delivery: 'sticker_only',
+        standalone: true,
+        emotion: coreDecision?.nonverbalAction?.emotion || verification?.nonverbalLeak?.meaning || 'emotion',
+        meaning: verification?.nonverbalLeak?.meaning || coreDecision?.nonverbalAction?.emotion || 'эмоциональный жест',
+        cause: coreDecision?.nonverbalAction?.cause || verification?.nonverbalLeak?.cause || null,
+        intensity: coreDecision?.nonverbalAction?.intensity || 45,
+        scene: coreDecision?.nonverbalAction?.scene || responsePlan?.director?.scene || null,
+        expiresAfterTurns: coreDecision?.nonverbalAction?.expiresAfterTurns || 1
+      }
+    : coreDecision?.nonverbalAction && responsePlan?.delivery !== 'text'
+      ? {
+          ...coreDecision.nonverbalAction,
+          delivery: responsePlan.delivery
+        }
+      : null;
+
+  if (!planned) return { type: 'text' };
+  return {
+    type: planned.delivery === 'sticker_only' ? 'sticker' : 'text',
+    nonverbal: planned,
+    preferredStickerId: planned.preferredStickerId || null,
+    delivery: planned.delivery,
+    meaning: planned.meaning || planned.emotion || null,
+    cause: planned.cause || null,
+    intensity: planned.intensity || 45,
+    fallbackText: reply || null,
+    reason: recoverySticker ? 'recovered_internal_nonverbal_meta' : 'turn_decision'
+  };
+}
+
 function compactCognition(cognition = {}) {
   return {
     schema: cognition.schema,
@@ -390,7 +428,7 @@ export default async function handler(req, res) {
     const userTurn = normalize(currentTurn?.content, 2000);
     if (!userTurn) return res.status(400).json({ error: 'A user message is required', code: 'INVALID_HISTORY' });
 
-    const profile = body.profile && typeof body.profile === 'object' ? body.profile : {};
+    const profile = await buildServerProfile(body.profile);
     const memory = body.memory && typeof body.memory === 'object' ? body.memory : null;
     const lore = body.lore && typeof body.lore === 'object' ? body.lore : null;
     const env = body.env && typeof body.env === 'object' ? body.env : null;
@@ -402,7 +440,7 @@ export default async function handler(req, res) {
     const coreDecision = buildCoreDecision({ userText: userTurn, history: fullHistory, memory, conversationState, isLong, conversationBrain });
     const responsePlan = planResponse({ cognition, brain: conversationBrain, coreDecision, memory, userText: userTurn, history: fullHistory, isLong });
     if (responsePlan.delivery === 'silence') {
-      const stateTransition = buildStateTransition({ cognition, coreDecision });
+      const stateTransition = buildStateTransition({ cognition, coreDecision, userText: userTurn });
       return res.status(200).json({
         requestId,
         reply: '',
@@ -410,7 +448,7 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-v8-directed-agency', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-foundation-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
@@ -451,21 +489,11 @@ export default async function handler(req, res) {
     });
     const verification = repair.verification;
     const clean = repair.reply;
-    const preferredRecoverySticker = verification.nonverbalLeak?.preferredStickerId || coreDecision.nonverbalAction?.preferredStickerId || null;
-    const delivery = verification.nonverbalLeak?.metaOnly && preferredRecoverySticker ? {
-      type: 'sticker',
-      preferredStickerId: preferredRecoverySticker,
-      delivery: 'sticker_only',
-      meaning: verification.nonverbalLeak.meaning,
-      cause: coreDecision.nonverbalAction?.cause || verification.nonverbalLeak.cause || null,
-      intensity: coreDecision.nonverbalAction?.intensity || 45,
-      fallbackText: clean,
-      reason: 'recovered_internal_nonverbal_meta'
-    } : null;
-    const stateTransition = buildStateTransition({ cognition, coreDecision });
+    const delivery = buildTurnDelivery({ responsePlan, coreDecision, verification, reply: clean });
+    const stateTransition = buildStateTransition({ cognition, coreDecision, userText: userTurn });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-v7-scene-agency',
+      promptVersion: 'rin-foundation-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
