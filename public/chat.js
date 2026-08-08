@@ -360,7 +360,7 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
     if (!diary || typeof diary !== 'object') return null;
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       facts: diary.facts && typeof diary.facts === 'object'
         ? diary.facts
         : { self: {}, user: {}, world: {} },
@@ -390,7 +390,19 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
             comfort: numberOr(diary.relationship.comfort, 52),
             respect: numberOr(diary.relationship.respect, 68),
             playfulness: numberOr(diary.relationship.playfulness, 45),
+            attraction: numberOr(diary.relationship.attraction, 34),
+            vulnerability: numberOr(diary.relationship.vulnerability, 28),
             stage: String(diary.relationship.stage || '').slice(0, 60),
+            recentDynamic: diary.relationship.recentDynamic && typeof diary.relationship.recentDynamic === 'object'
+              ? {
+                  lastSignal: String(diary.relationship.recentDynamic.lastSignal || 'neutral').slice(0, 60),
+                  positiveStreak: numberOr(diary.relationship.recentDynamic.positiveStreak, 0),
+                  negativeStreak: numberOr(diary.relationship.recentDynamic.negativeStreak, 0),
+                  repairPending: Boolean(diary.relationship.recentDynamic.repairPending),
+                  lastCause: String(diary.relationship.recentDynamic.lastCause || '').slice(0, 320),
+                  turn: numberOr(diary.relationship.recentDynamic.turn, 0)
+                }
+              : null,
             lastInteractionAt: numberOr(diary.relationship.lastInteractionAt),
             sharedMoments: Array.isArray(diary.relationship.sharedMoments)
               ? diary.relationship.sharedMoments.slice(-6).map(item => ({
@@ -545,7 +557,7 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage, data, prep
     now: Date.now()
   });
   if (preparedLore) loreModule?.commitLorePayload?.(preparedLore);
-  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}`);
+  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}`);
   return committed;
 }
 
