@@ -163,7 +163,7 @@ function voiceModeFromPlan(plan = {}) {
   return {
     mode: normalize(plan.tone, 100) || 'calm_personal',
     opening: 'contextual',
-    ending: plan.shouldAskQuestion ? 'specific_question' : 'natural_stop',
+    ending: Number(plan.questionBudget) > 0 ? 'specific_question' : 'natural_stop',
     description: descriptions[plan.tone] || 'естественная личная реплика, форма которой следует из смысла и состояния'
   };
 }
@@ -175,7 +175,7 @@ export function buildSystemPrompt({ profile, env, memory, lore, coreDecision, af
   const plan = responsePlan || {
     goal: conversationBrain?.responseFocus || 'ответить на текущую реплику',
     mustAddress: conversationBrain?.obligations || [],
-    factsToUse: [], factsToAvoid: [], stance: 'личная позиция Рин', tone: 'calm_personal', directness: 'balanced', initiative: 'none', delivery: 'text', length: 'short', shouldAskQuestion: false, uncertaintyPolicy: 'не выдумывать', confidence: 0.6
+    factsToUse: [], factsToAvoid: [], stance: 'личная позиция Рин', tone: 'calm_personal', directness: 'balanced', initiative: 'none', delivery: 'text', length: 'short', questionBudget: 0, shouldAskQuestion: false, uncertaintyPolicy: 'не выдумывать', confidence: 0.6
   };
   const voiceMode = voiceModeFromPlan(plan);
   const stateRule = conversationState === 'ending'
@@ -295,6 +295,16 @@ function deterministicAgencyFallback(plan = {}, userText = '') {
       'Нет. Когда буду занята — скажу сама.',
       'Не отвлекаешь. Я умею сказать, когда мне нужно вернуться к делам.',
       'Сейчас нет. А если начнёшь мешать — я тебя предупрежу.'
+    ],
+    contained_jealousy: [
+      'Вот как… значит, вечер у тебя уже занят. Ладно. Иди 😌',
+      'Мм. Смело с её стороны. Я, пожалуй, запомню эту деталь.',
+      'Понятно. Тогда я просто сделаю вид, что меня это совсем не задело 😌'
+    ],
+    carry_playful_tension: [
+      'Мм, поздно оправдываться. Я уже запомнила 😌',
+      'Не-не. Теперь не выкручивайся — сам начал.',
+      'Угу. А теперь живи с тем, что я это тебе ещё припомню.'
     ]
   };
   const pool = variants[plan?.responseAct];
@@ -312,7 +322,10 @@ function rewriteMessages({ draft = '', verification = null, plan = null, brain =
 
 Сохрани факты и прямой смысл, но перепиши голос так, чтобы Рин не звучала ассистентом: у неё есть собственная позиция, она не пересказывает пользователя, не оценивает разговор со стороны, не хвалит очевидное и не заканчивает автоматическим вопросом.
 
-Активная сцена: ${brain?.activeScene?.type || 'everyday'}. Цель сцены: ${plan?.sceneGoal || brain?.activeScene?.goal || 'ответить конкретно'}. Речевой акт: ${plan?.responseAct || 'direct_response'}. Тон: ${plan?.tone || 'calm_personal'}. Длина: ${plan?.length || 'short'}. Вопрос разрешён: ${plan?.shouldAskQuestion ? 'да, только один конкретный' : 'нет'}.
+Активная сцена: ${brain?.activeScene?.type || 'everyday'}. Цель сцены: ${plan?.sceneGoal || brain?.activeScene?.goal || 'ответить конкретно'}.
+Behavior policy: действие ${plan?.behavior?.action || 'react'}; речевой акт ${plan?.responseAct || 'direct_response'}; инициатива ${plan?.initiative || 'none'}; выражение эмоции ${plan?.behavior?.emotionalExpression || 'natural'}; дистанция ${plan?.behavior?.distance || 'stable'}.
+Эмоциональная линия: ${plan?.emotionalIntent?.primary?.type || 'neutral'}; динамика ${plan?.emotionalIntent?.momentum?.direction || 'steady'}. ${plan?.emotionalIntent?.momentum?.direction === 'playful' ? 'Игровая линия уже активна: сохрани игровое напряжение и не уходи в нейтральную безопасную тему.' : ''}
+Тон: ${plan?.tone || 'calm_personal'}. Длина: ${plan?.length || 'short'}. Бюджет вопросов: ${Number(plan?.questionBudget) || 0}. ${Number(plan?.questionBudget) > 0 ? 'Разрешён только один конкретный вопрос.' : 'Вопросительные предложения запрещены.'}
 
 Смысловые обязательства, которые нельзя потерять:
 ${obligations || '- Ответить на текущую реплику по смыслу.'}
@@ -353,12 +366,20 @@ async function repairReplyIfNeeded({ model, draft, verification, plan, brain, us
     console.warn('Rin reply rewrite failed', error?.message || error);
   }
   const fallback = deterministicAgencyFallback(plan, userText);
+  const behavioralFallbackActs = new Set([
+    'take_lead', 'reclaim_scene', 'tease_and_advance', 'advance_play',
+    'reassure_with_boundary', 'contained_jealousy', 'carry_playful_tension'
+  ]);
   if (fallback && (
-    plan?.responseAct === 'reassure_with_boundary'
-    || ['missing_required_agency', 'scene_goal_drift', 'assistant_permission_seeking', 'meta_conversation_commentary', 'initiative_collapsed_into_assistant_voice'].some(item => verification.warnings.includes(item))
+    behavioralFallbackActs.has(plan?.responseAct)
+    || ['missing_required_agency', 'scene_goal_drift', 'assistant_permission_seeking', 'meta_conversation_commentary',
+      'initiative_collapsed_into_assistant_voice', 'emotional_state_contradiction', 'unplanned_question', 'question_budget_exceeded']
+      .some(item => verification.warnings.includes(item))
   )) {
     const fallbackVerification = verifyReply(fallback, { plan, brain, userText });
-    return { reply: fallback, verification: fallbackVerification, attempted: true, accepted: true, fallback: true, usage: null };
+    if (!fallbackVerification.needsRewrite && fallbackVerification.passed) {
+      return { reply: fallbackVerification.reply, verification: fallbackVerification, attempted: true, accepted: true, fallback: true, usage: null };
+    }
   }
   return { reply: verification.reply, verification, attempted: true, accepted: false, usage: null };
 }
@@ -450,15 +471,15 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-stage4-emotional-inertia-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-stage5-dialogue-agency-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
         affectiveTurn,
-        verification: { version: 'rin-response-verifier-v4', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
+        verification: { version: 'rin-response-verifier-v6-dialogue-agency', passed: true, needsRewrite: false, warnings: [], repairs: [], intentionalSilence: true },
         delivery: { type: 'silence', reason: responsePlan.director?.silenceReason || 'микросцена завершена', scene: responsePlan.director?.scene || responsePlan.sceneGoal || null },
         stateTransition,
-        coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, initiative: coreDecision.initiative, reason: coreDecision.reason }
+        coreDecision: { version: coreDecision.version, intent: coreDecision.intent, mode: coreDecision.mode, reason: coreDecision.reason }
       });
     }
     const prompt = buildSystemPrompt({
@@ -496,7 +517,7 @@ export default async function handler(req, res) {
     const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-stage4-emotional-inertia-v1',
+      promptVersion: 'rin-stage5-dialogue-agency-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
@@ -540,7 +561,6 @@ export default async function handler(req, res) {
         microReaction: coreDecision.microReaction,
         humanizer: coreDecision.humanizer,
         recentRhythm: coreDecision.recentRhythm,
-        initiative: coreDecision.initiative,
         adviceGuard: coreDecision.adviceGuard,
         affectiveTurn: coreDecision.affectiveTurn,
         emotionalResponse: coreDecision.emotionalResponse,
