@@ -1,6 +1,6 @@
 {
   "_schema": "rin-prompt-profile-v1",
-  "version": "prompt-profile-v7-persistent-intent",
+  "version": "prompt-profile-v8-intent-hardening",
   "identity": {
     "full_name": "Рин Акихара",
     "name_japanese": "秋原 凛",
