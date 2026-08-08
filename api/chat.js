@@ -11,7 +11,8 @@ import {
   cognitionInstruction,
   planResponse,
   responsePlanInstruction,
-  verifyReply
+  verifyReply,
+  finalizePersistentIntentAfterReply
 } from '../lib/cognition/index.js';
 import { currentUserTurn, isExplicitFarewell, pruneModelHistory, selectModelHistory } from '../lib/chat-contract.js';
 import { fetchWithTimeout, publicError, readJsonBody, requirePin } from '../lib/server/http.js';
@@ -485,7 +486,7 @@ export default async function handler(req, res) {
         model: null,
         long: false,
         voiceMode: null,
-        promptMetrics: { promptVersion: 'rin-stage6-persistent-intent-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        promptMetrics: { promptVersion: 'rin-stage6.1-intent-hardening-v1', systemChars: 0, historyChars: 0, historyItems: history.length, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
         conversationBrain,
         cognition: compactCognition(cognition),
         responsePlan,
@@ -528,10 +529,12 @@ export default async function handler(req, res) {
     const verification = repair.verification;
     const clean = repair.reply;
     const delivery = buildTurnDelivery({ responsePlan, coreDecision, verification, reply: clean });
-    const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn, responsePlan });
+    const finalizedIntent = finalizePersistentIntentAfterReply(responsePlan?.rinIntent, clean);
+    const transitionPlan = finalizedIntent ? { ...responsePlan, rinIntent: finalizedIntent, behavior: { ...(responsePlan?.behavior || {}), persistentIntent: finalizedIntent } } : responsePlan;
+    const stateTransition = buildStateTransition({ cognition, coreDecision, affectiveTurn, responsePlan: transitionPlan });
     const usage = completion.usage || {};
     const promptMetrics = {
-      promptVersion: 'rin-stage6-persistent-intent-v1',
+      promptVersion: 'rin-stage6.1-intent-hardening-v1',
       systemChars: prompt.text.length,
       historyChars: history.reduce((sum, item) => sum + String(item.content || '').length, 0),
       historyItems: history.length,
