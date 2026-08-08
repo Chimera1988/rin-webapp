@@ -31,7 +31,7 @@ if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js o
 
 const activeSources = [
   'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
-  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'lib/cognition/behavior-policy.js', 'lib/cognition/response-planner.js', 'lib/cognition/response-verifier.js', 'lib/core-personality.js', 'public/chat.js', 'public/js/login.js',
+  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'lib/cognition/initiative-handoff.js', 'lib/cognition/behavior-policy.js', 'lib/cognition/response-planner.js', 'lib/cognition/response-verifier.js', 'lib/core-personality.js', 'public/chat.js', 'public/js/login.js',
   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
   'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/affective-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
 ];
@@ -74,6 +74,12 @@ const stickerSource = await read('public/lib/stickers-v6.js');
 if (!stickerSource.includes('decidePlannedSticker')) fail('Client sticker renderer must execute the server nonverbal decision.');
 const initiativeSource = await read('lib/personality/initiative-controller.js');
 if (!initiativeSource.includes('@deprecated Dialogue Agency v1 compatibility shim') || !initiativeSource.includes("mode: 'none'")) fail('Legacy initiative controller must be an inert compatibility shim.');
+const initiativeHandoffSource = await read('lib/cognition/initiative-handoff.js');
+if (!initiativeHandoffSource.includes('detectInitiativeHandoff') || !initiativeHandoffSource.includes('follow_through')) fail('Canonical initiative-handoff classifier must own direct and follow-through initiative transfer semantics.');
+for (const file of ['lib/conversation-brain.js', 'lib/conversation-continuity.js', 'lib/personality/character-intent-engine.js', 'lib/cognition/behavior-policy.js']) {
+  const source = await read(file);
+  if (!source.includes('detectInitiativeHandoff')) fail(`${file} must consume the canonical initiative-handoff classifier.`);
+}
 const behaviorPolicySource = await read('lib/cognition/behavior-policy.js');
 if (!behaviorPolicySource.includes('deriveBehaviorPolicy') || !behaviorPolicySource.includes('questionBudget') || !behaviorPolicySource.includes('directConversation')) fail('Behavior policy must own dialogue action, initiative, question budget and director integration.');
 const responsePlannerSource = await read('lib/cognition/response-planner.js');
@@ -88,6 +94,9 @@ const antiGptSource = await read('lib/personality/anti-gpt.js');
 if (antiGptSource.includes('removeAutomaticQuestion')) fail('Anti-GPT polish must not own question policy.');
 const verifierSource = await read('lib/cognition/response-verifier.js');
 if (!verifierSource.includes('question_budget_exceeded') || !verifierSource.includes('questionBudget(plan)')) fail('Response verifier must enforce the canonical question budget.');
+if (!verifierSource.includes('agency_deferred')) fail('Response verifier must reject promises to act when concrete agency is required.');
+const assistantVoiceSource = await read('lib/personality/assistant-voice.js');
+if (!assistantVoiceSource.includes('agencyDeferral') || !assistantVoiceSource.includes('concreteAgency')) fail('Voice guard must distinguish deferred agency from a concrete scene move.');
 const legacyThreads = await read('lib/memory/conversation-threads.js');
 if (!legacyThreads.includes('@deprecated Foundation v1 compatibility shim') || !legacyThreads.includes('return null')) fail('Legacy conversation threads must be isolated as an inert compatibility shim.');
 const habitsSource = await read('lib/personality/habits.js');
@@ -97,6 +106,9 @@ const weatherSource = await read('api/weather.js');
 if (!weatherSource.includes("'no-store'") || weatherSource.includes('max-age=60')) fail('Weather API cache policy must agree with the API no-store contract.');
 const browserE2e = await read('scripts/browser-e2e.js');
 if (browserE2e.includes('rin-history-v4') || browserE2e.includes('schema v4') || !browserE2e.includes('rin-history-v5')) fail('Browser E2E must enforce chat schema v5.');
+if (!index.includes('chat-root theme-dark') || index.includes('prefers-color-scheme')) fail('Fresh UI must deterministically default to dark theme while allowing an explicit saved light preference.');
+if (!chat.includes('DEFAULT_DEBUG_ENABLED = true')) fail('Fresh UI must default debug mode to enabled.');
+if (!browserE2e.includes('fresh client must start with the dark theme') || !browserE2e.includes('debug toggle must start enabled')) fail('Browser E2E must exercise the fresh theme/debug defaults.');
 const packageJson = JSON.parse(await read('package.json'));
 if (!String(packageJson.scripts?.check || '').includes('e2e:browser')) fail('npm run check must invoke browser E2E.');
 const chatStore = await read('public/js/chat_store.js');

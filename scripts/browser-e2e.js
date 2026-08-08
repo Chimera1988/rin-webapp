@@ -297,6 +297,20 @@ try {
   const initialPeerStatus = await cdp.evaluate("document.querySelector('#peerStatus')?.textContent");
   assert(initialPeerStatus === 'офлайн', `presence must stay offline before the first user message, got ${initialPeerStatus}`);
 
+  const freshDefaults = await cdp.evaluate(`(() => ({
+    dark: document.documentElement.classList.contains('theme-dark'),
+    light: document.documentElement.classList.contains('theme-light'),
+    storedTheme: localStorage.getItem('rin-theme'),
+    debugEnabled: document.querySelector('#debugToggle')?.checked === true,
+    storedDebug: localStorage.getItem('rin-debug-enabled'),
+    debugLog: document.querySelector('#debugLog')?.textContent || ''
+  }))()`);
+  assert(freshDefaults.dark && !freshDefaults.light, 'fresh client must start with the dark theme');
+  assert(freshDefaults.storedTheme === null, 'default dark theme must not masquerade as an explicit saved preference');
+  assert(freshDefaults.debugEnabled, 'debug toggle must start enabled when no preference is stored');
+  assert(freshDefaults.storedDebug === null, 'default debug-on must preserve absence of an explicit user preference');
+  assert(/debug enabled/i.test(freshDefaults.debugLog), 'debug log must record that debug is enabled by default');
+
   const longChatLayout = await cdp.evaluate(`(() => {
     const chat = document.querySelector('#chat');
     const form = document.querySelector('#form');
