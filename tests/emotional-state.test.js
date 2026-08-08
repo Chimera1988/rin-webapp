@@ -207,7 +207,7 @@ test('active playful affect blocks accidental silence on a short confirmation', 
   });
   assert.notEqual(plan.delivery, 'silence');
   assert.equal(plan.responseAct, 'carry_playful_tension');
-  assert.ok(plan.characterIntent.strength >= 72);
+  assert.ok(plan.characterIntent.strength < 72, 'emotion may color behavior but must not become a second persistent-intent writer');
 });
 
 test('a direct practical question is answered directly while unresolved hurt remains in state', () => {

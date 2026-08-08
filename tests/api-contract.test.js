@@ -61,7 +61,8 @@ test('system prompt applies UI profile fields, remembered user name, summaries a
   assert.match(prompt, /Описание из настроек/);
   assert.match(prompt, /Алексей/);
   assert.doesNotMatch(prompt, /Кирилл|Хикари/);
-  assert.match(prompt, /Сводки более ранней истории/);
+  assert.match(prompt, /РЕЛЕВАНТНАЯ ПАМЯТЬ/);
+  assert.match(prompt, /Ранее обсуждали важную поездку в Берлин/);
   assert.match(prompt, /привязанность 0, энергия 0, игривость 0, доверие 0/);
   assert.match(prompt, /погода: 21°C, ясно/);
 });

@@ -52,7 +52,9 @@ test('explicit stop cancels the intent and farewell cannot resurrect it', () => 
   const cancelled = advancePersistentIntent({ memory: memoryWith(first, 11), characterIntent: playfulCandidate, dialogueState: playfulState, brain: baseBrain, userText: 'Хватит, давай сменим тему' });
   assert.equal(cancelled.status, 'cancelled');
   const farewell = advancePersistentIntent({ memory: memoryWith(cancelled, 12), characterIntent: playfulCandidate, dialogueState: playfulState, brain: { ...baseBrain, literalIntent: 'farewell' }, userText: 'Спокойной ночи' });
-  assert.equal(farewell, null);
+  assert.equal(farewell.status, 'cancelled');
+  assert.equal(farewell.id, cancelled.id);
+  assert.ok(farewell.cooldownUntilTurn > 12);
 });
 
 test('persistent intent expires after bounded number of turns instead of becoming obsessive', () => {
@@ -89,7 +91,9 @@ test('verifier rejects generic topic handoff while Rin has an unfinished goal', 
 test('completed or cancelled intent does not immediately resurrect from the same scene candidate', () => {
   const completed = normalizeRinIntent({ goal:'продвинуть уже начатую игровую линию собственным ходом Рин', motive:'play', target:'shared_playful_scene', scene:'playful_flirt', priority:86, commitment:80, progress:.9, nextMove:'tease_or_advance', startedAtTurn:8, updatedAtTurn:10, turnCount:4, minTurns:2, maxTurns:4, status:'completed', completionReason:'done' });
   const next = advancePersistentIntent({ memory: memoryWith(completed, 10), characterIntent: playfulCandidate, dialogueState: playfulState, brain: baseBrain, userText:'Ага)' });
-  assert.equal(next, null);
+  assert.equal(next.status, 'completed');
+  assert.equal(next.id, completed.id);
+  assert.ok(next.cooldownUntilTurn > 10);
 });
 
 test('guessing-game promise becomes a concrete reveal nextMove after user guess', () => {
@@ -128,7 +132,9 @@ test('post-reply evidence completes promised reveal only after Rin actually reve
 test('semantic cooldown blocks same completed intent for eight turns', () => {
   const completed = normalizeRinIntent({ goal:'продвинуть уже начатую игровую линию собственным ходом Рин', target:'shared_playful_scene', scene:'playful_flirt', commitment:80, progress:1, nextMove:'tease_or_advance', startedAtTurn:8, updatedAtTurn:10, turnCount:3, status:'completed', semanticKey:'continue_playful_tension|shared_playful_scene|playful_flirt', completionReason:'fulfilled' });
   const next = advancePersistentIntent({ memory:memoryWith(completed, 15), characterIntent:playfulCandidate, dialogueState:playfulState, brain:baseBrain, userText:'Ага)' });
-  assert.equal(next, null);
+  assert.equal(next.status, 'completed');
+  assert.equal(next.id, completed.id);
+  assert.ok(next.cooldownUntilTurn >= 20);
 });
 
 test('intent binds to the concrete secret request instead of generic playful scene', () => {
@@ -140,15 +146,14 @@ test('intent binds to the concrete secret request instead of generic playful sce
   assert.doesNotMatch(intent.goal, /игровую линию/iu);
 });
 
-test('scene-bound intent transforms in place when the shared fantasy acquires a concrete world', () => {
+test('active scene-bound intent cannot be rebound in place by a new lexical target', () => {
   const secretState = { scene:'playful_flirt', openHook:{excerpt:'Можешь раскрыть один?'}, lastRinAction:{kind:'text',meaning:'Иногда я люблю фантазировать о таинственных мирах.'} };
   const secret = advancePersistentIntent({ memory:memoryWith(null), characterIntent:playfulCandidate, dialogueState:secretState, brain:baseBrain, userText:'Расскажешь?' });
   const worldState = { scene:'playful_flirt', openHook:{excerpt:'Представь мир, где цветы светятся в ночи, а реки текут с песнями.'}, lastRinAction:{kind:'text',meaning:'В таком месте кицунэ могли бы быть стражами.'} };
-  const world = advancePersistentIntent({ memory:memoryWith(secret, 11), characterIntent:playfulCandidate, dialogueState:worldState, brain:baseBrain, userText:'Да, чтобы чужаки не испортили эту красоту.' });
-  assert.equal(world.id, secret.id);
-  assert.equal(world.sceneBinding.key, 'shared_imagined_world');
-  assert.equal(world.nextMove, 'add_specific_shared_world_detail');
-  assert.match(world.goal, /общий мир|воображаем/iu);
+  const same = advancePersistentIntent({ memory:memoryWith(secret, 11), characterIntent:playfulCandidate, dialogueState:worldState, brain:baseBrain, userText:'Да, чтобы чужаки не испортили эту красоту.' });
+  assert.equal(same.id, secret.id);
+  assert.equal(same.sceneBinding.key, 'personal_secret_reveal');
+  assert.equal(same.nextMove, 'reveal_specific_personal_secret');
 });
 
 test('verifier rejects generic warmth when a concrete kitsune binding must advance', () => {

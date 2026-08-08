@@ -133,15 +133,22 @@ test('playful challenge stays in the scene instead of collapsing into generic qu
   assert.equal(policy.questionBudget, 0);
 });
 
-test('critical ambiguity is the only ordinary path that requires a clarification question', () => {
+test('critical ambiguity asks only when continuity evidence is weak', () => {
   const memory = closeMemory();
   const text = 'Это связано с ним.';
-  const b = brain({ ambiguity: true });
-  const policy = deriveBehaviorPolicy({ cognition: cognition(), brain: b, memory, userText: text, history: [] });
+  const b = brain({ ambiguity: true, literal: 'question', relation: 'new_or_followup_question' });
+  const weak = cognition();
+  weak.dialogueState.continuityStrength = 0.2;
+  weak.dialogueState.openHook = null;
+  const policy = deriveBehaviorPolicy({ cognition: weak, brain: b, memory, userText: text, history: [] });
   assert.equal(policy.responseAct, 'clarify_critical_ambiguity');
   assert.equal(policy.action, 'clarify');
   assert.equal(policy.questionBudget, 1);
-  assert.equal(policy.initiative, 'none');
+  const strong = cognition();
+  strong.dialogueState.continuityStrength = 0.9;
+  strong.dialogueState.openHook = { excerpt: 'Обсуждаем конкретного человека' };
+  const grounded = deriveBehaviorPolicy({ cognition: strong, brain: b, memory, userText: text, history: [] });
+  assert.notEqual(grounded.responseAct, 'clarify_critical_ambiguity');
 });
 
 test('reactive streak makes Rin contribute something of her own without converting it into a question', () => {
