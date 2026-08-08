@@ -1,4 +1,4 @@
-export const RIN_INTENT_SCHEMA = 'rin-persistent-intent-v3';
+export const RIN_INTENT_SCHEMA = 'rin-persistent-intent-v4';
 export const RIN_INTENT_STATUSES = new Set(['active', 'completed', 'cancelled', 'suspended']);
 
 const clean = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -12,10 +12,7 @@ const clamp01 = (value, fallback = 0) => {
 };
 function hash(value = '') {
   let h = 2166136261;
-  for (const character of String(value)) {
-    h ^= character.charCodeAt(0);
-    h = Math.imul(h, 16777619);
-  }
+  for (const character of String(value)) { h ^= character.charCodeAt(0); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
 }
 
@@ -30,12 +27,16 @@ export function normalizeRinIntent(input = null) {
   const status = RIN_INTENT_STATUSES.has(input.status) ? input.status : 'active';
   const startedAtTurn = Math.max(0, Math.round(Number(input.startedAtTurn) || 0));
   const updatedAtTurn = Math.max(startedAtTurn, Math.round(Number(input.updatedAtTurn) || startedAtTurn));
+  const terminalAtTurn = Math.max(0, Math.round(Number(input.terminalAtTurn) || (status === 'active' ? 0 : updatedAtTurn)));
+  const cooldownUntilTurn = Math.max(0, Math.round(Number(input.cooldownUntilTurn) || (terminalAtTurn ? terminalAtTurn + 10 : 0)));
   const minTurns = clamp(input.minTurns, 1, 8, 2);
   const maxTurns = clamp(input.maxTurns, minTurns, 12, Math.max(4, minTurns));
   const turnCount = clamp(input.turnCount, 0, 20, 0);
+  const id = clean(input.id, 120) || intentId({ ...input, goal, startedAtTurn });
   return {
     schema: RIN_INTENT_SCHEMA,
-    id: clean(input.id, 120) || intentId({ ...input, goal, startedAtTurn }),
+    id,
+    rootId: clean(input.rootId, 120) || id,
     status,
     goal,
     motive: clean(input.motive, 320) || 'собственный локальный интерес Рин',
@@ -60,6 +61,8 @@ export function normalizeRinIntent(input = null) {
     abandonmentCondition: clean(input.abandonmentCondition, 420) || 'пользователь явно отказался или контекст стал важнее',
     startedAtTurn,
     updatedAtTurn,
+    terminalAtTurn,
+    cooldownUntilTurn,
     turnCount,
     minTurns,
     maxTurns,
@@ -70,6 +73,5 @@ export function normalizeRinIntent(input = null) {
   };
 }
 
-export function isActiveRinIntent(input = null) {
-  return normalizeRinIntent(input)?.status === 'active';
-}
+export function isActiveRinIntent(input = null) { return normalizeRinIntent(input)?.status === 'active'; }
+export function isTerminalRinIntent(input = null) { return ['completed', 'cancelled'].includes(normalizeRinIntent(input)?.status); }
