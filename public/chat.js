@@ -362,7 +362,7 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
     if (!diary || typeof diary !== 'object') return null;
 
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       facts: diary.facts && typeof diary.facts === 'object'
         ? diary.facts
         : { self: {}, user: {}, world: {} },
@@ -467,6 +467,11 @@ async function applyExtractedMemory(extracted, userText = '') {
   try {
     const lib = await ensureMemoryReady();
     if (!lib) return false;
+
+    for (const retraction of Array.isArray(extracted?.factRetractions) ? extracted.factRetractions : []) {
+      const path = String(retraction?.path || '').trim();
+      if (path.startsWith('user.')) await lib.removeFact?.(path);
+    }
 
     for (const fact of Array.isArray(extracted?.facts) ? extracted.facts : []) {
       const path = String(fact?.path || '').trim();
