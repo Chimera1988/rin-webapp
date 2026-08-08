@@ -1,4 +1,4 @@
-export const RIN_INTENT_SCHEMA = 'rin-persistent-intent-v1';
+export const RIN_INTENT_SCHEMA = 'rin-persistent-intent-v2';
 export const RIN_INTENT_STATUSES = new Set(['active', 'completed', 'cancelled', 'suspended']);
 
 const clean = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -45,6 +45,10 @@ export function normalizeRinIntent(input = null) {
     commitment: clamp(input.commitment, 0, 100, 55),
     progress: clamp01(input.progress, 0),
     nextMove: clean(input.nextMove, 260) || 'respond_personally',
+    progressState: clean(input.progressState, 120) || 'started',
+    expectedOutcome: clean(input.expectedOutcome, 360) || null,
+    semanticKey: clean(input.semanticKey, 220) || clean(`${goal}|${input.target || 'current_scene'}|${input.scene || 'everyday'}`, 220).toLowerCase(),
+    completionEvidence: clean(input.completionEvidence, 420) || null,
     completionCondition: clean(input.completionCondition, 420) || 'цель естественно достигнута',
     abandonmentCondition: clean(input.abandonmentCondition, 420) || 'пользователь явно отказался или контекст стал важнее',
     startedAtTurn,
