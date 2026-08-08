@@ -31,7 +31,7 @@ if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js o
 
 const activeSources = [
   'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
-  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'public/chat.js', 'public/js/login.js',
+  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'lib/cognition/behavior-policy.js', 'lib/cognition/response-planner.js', 'lib/cognition/response-verifier.js', 'lib/core-personality.js', 'public/chat.js', 'public/js/login.js',
   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
   'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/affective-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
 ];
@@ -73,7 +73,21 @@ if (!canonicalProfileSource.includes('rin_prompt_profile.json')) fail('Server ca
 const stickerSource = await read('public/lib/stickers-v6.js');
 if (!stickerSource.includes('decidePlannedSticker')) fail('Client sticker renderer must execute the server nonverbal decision.');
 const initiativeSource = await read('lib/personality/initiative-controller.js');
-if (initiativeSource.includes('conversation-threads')) fail('Initiative controller must not use legacy regex conversation threads.');
+if (!initiativeSource.includes('@deprecated Dialogue Agency v1 compatibility shim') || !initiativeSource.includes("mode: 'none'")) fail('Legacy initiative controller must be an inert compatibility shim.');
+const behaviorPolicySource = await read('lib/cognition/behavior-policy.js');
+if (!behaviorPolicySource.includes('deriveBehaviorPolicy') || !behaviorPolicySource.includes('questionBudget') || !behaviorPolicySource.includes('directConversation')) fail('Behavior policy must own dialogue action, initiative, question budget and director integration.');
+const responsePlannerSource = await read('lib/cognition/response-planner.js');
+if (!responsePlannerSource.includes("from './behavior-policy.js'") || /function\s+(?:responseActOf|initiativeOf|shouldAskQuestion)\b/.test(responsePlannerSource)) fail('Response planner must consume the canonical behavior policy instead of choosing behavior itself.');
+const corePersonalitySource = await read('lib/core-personality.js');
+if (corePersonalitySource.includes('initiative-controller.js') || corePersonalitySource.includes('chooseInitiative(')) fail('Personality core must not own conversational initiative.');
+const speechSource = await read('lib/personality/speech.js');
+if (speechSource.includes('ask_one_specific_question') || speechSource.includes('reply_with_question')) fail('Speech style must not own question decisions.');
+const emotionalResponseSource = await read('lib/personality/emotional-response.js');
+if (emotionalResponseSource.includes('allowQuestion')) fail('Emotional response must not own question decisions.');
+const antiGptSource = await read('lib/personality/anti-gpt.js');
+if (antiGptSource.includes('removeAutomaticQuestion')) fail('Anti-GPT polish must not own question policy.');
+const verifierSource = await read('lib/cognition/response-verifier.js');
+if (!verifierSource.includes('question_budget_exceeded') || !verifierSource.includes('questionBudget(plan)')) fail('Response verifier must enforce the canonical question budget.');
 const legacyThreads = await read('lib/memory/conversation-threads.js');
 if (!legacyThreads.includes('@deprecated Foundation v1 compatibility shim') || !legacyThreads.includes('return null')) fail('Legacy conversation threads must be isolated as an inert compatibility shim.');
 const habitsSource = await read('lib/personality/habits.js');
@@ -108,6 +122,7 @@ if (!affectiveEngine.includes('buildAffectiveTurn') || !affectiveEngine.includes
 if (!impactShim.includes('buildAffectiveTurn') || /романтическ|ревност|обнимаю|комплимент/iu.test(impactShim)) fail('Legacy turn-state impact module must be a semantic-free compatibility shim.');
 const cognitionContract = await read('lib/cognition/cognitive-contract.js');
 if (!cognitionContract.includes("rin-state-transition-v2") || !cognitionContract.includes('emotionalState') || !cognitionContract.includes('relationshipState')) fail('State transition v2 must carry full affective state.');
+if (!cognitionContract.includes('normalizeBehaviorPolicy') || !cognitionContract.includes('questionBudget')) fail('Response plan contract must carry canonical behavior and question budget.');
 if (!browserE2e.includes("rin-state-transition-v2") || !browserE2e.includes('rin-affective-state-v1')) fail('Browser E2E must exercise the affective state contract.');
 
 

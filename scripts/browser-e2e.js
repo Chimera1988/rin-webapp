@@ -168,17 +168,25 @@ class Cdp {
       else pending.resolve(message.result);
     };
   }
-  async open() {
+  async open(timeoutMs = 5_000) {
     if (this.ws.readyState === WebSocket.OPEN) return;
     await new Promise((resolve, reject) => {
-      this.ws.onopen = resolve;
-      this.ws.onerror = reject;
+      const timer = setTimeout(() => reject(new Error('Chromium CDP WebSocket open timed out.')), timeoutMs);
+      this.ws.onopen = () => { clearTimeout(timer); resolve(); };
+      this.ws.onerror = error => { clearTimeout(timer); reject(error); };
     });
   }
-  send(method, params = {}) {
+  send(method, params = {}, timeoutMs = 3_000) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Chromium CDP command timed out: ${method}`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: value => { clearTimeout(timer); resolve(value); },
+        reject: error => { clearTimeout(timer); reject(error); }
+      });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -191,6 +199,24 @@ class Cdp {
 }
 
 class BrowserPolicyBlockedError extends Error {}
+
+async function detectManagedNavigationBlock() {
+  const policyFiles = [
+    '/etc/chromium/policies/managed/000_policy_merge.json',
+    '/etc/opt/chrome/policies/managed/000_policy_merge.json'
+  ];
+  for (const file of policyFiles) {
+    try {
+      const policy = JSON.parse(await readFile(file, 'utf8'));
+      const blocked = Array.isArray(policy?.URLBlocklist) ? policy.URLBlocklist : [];
+      const allowed = Array.isArray(policy?.URLAllowlist) ? policy.URLAllowlist : [];
+      if (blocked.includes('*') && allowed.length === 0) {
+        return `Chromium enterprise URLBlocklist blocks all navigations in this environment (${file}).`;
+      }
+    } catch {}
+  }
+  return null;
+}
 
 async function waitFor(cdp, expression, message, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
@@ -214,6 +240,8 @@ let chromium;
 let cdp;
 let profileDir;
 try {
+  const managedNavigationBlock = await detectManagedNavigationBlock();
+  if (managedNavigationBlock) throw new BrowserPolicyBlockedError(managedNavigationBlock);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const appPort = server.address().port;
   const debugPort = await freePort();
@@ -224,16 +252,19 @@ try {
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   let version;
-  for (let i = 0; i < 100 && !version; i += 1) {
+  const devtoolsDeadline = Date.now() + 8_000;
+  while (!version && Date.now() < devtoolsDeadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`);
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(500) });
       if (response.ok) version = await response.json();
     } catch {}
     if (!version) await sleep(50);
   }
   if (!version) throw new Error('Chromium DevTools endpoint did not start.');
 
-  const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+  const pagesResponse = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(2_000) });
+  if (!pagesResponse.ok) throw new Error(`Chromium DevTools page list failed: ${pagesResponse.status}`);
+  const pages = await pagesResponse.json();
   cdp = new Cdp(pages[0].webSocketDebuggerUrl);
   await cdp.open();
   await cdp.send('Page.enable');
@@ -488,7 +519,25 @@ try {
   }
 } finally {
   try { cdp?.close(); } catch {}
-  try { chromium?.kill('SIGTERM'); } catch {}
-  await new Promise(resolve => server.close(resolve));
+  if (chromium && chromium.exitCode === null && chromium.signalCode === null) {
+    try { chromium.kill('SIGTERM'); } catch {}
+    await Promise.race([
+      new Promise(resolve => chromium.once('exit', resolve)),
+      sleep(1_500)
+    ]);
+    if (chromium.exitCode === null && chromium.signalCode === null) {
+      try { chromium.kill('SIGKILL'); } catch {}
+      await Promise.race([
+        new Promise(resolve => chromium.once('exit', resolve)),
+        sleep(1_000)
+      ]);
+    }
+  }
+  try { server.closeIdleConnections?.(); } catch {}
+  try { server.closeAllConnections?.(); } catch {}
+  await Promise.race([
+    new Promise(resolve => server.close(() => resolve())),
+    sleep(2_000)
+  ]);
   if (profileDir) await rm(profileDir, { recursive: true, force: true });
 }
