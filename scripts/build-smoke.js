@@ -31,9 +31,9 @@ if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js o
 
 const activeSources = [
   'package.json', 'vercel.json', 'api/login.js', 'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
-  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'public/chat.js', 'public/js/login.js',
+  'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/chat-contract.js', 'lib/affective-contract.js', 'lib/cognition/emotional-state.js', 'public/chat.js', 'public/js/login.js',
   'public/index.html', 'public/login.html', 'public/js/app_bootstrap.js',
-  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
+  'public/js/chat_store.js', 'public/js/rin_memory.js', 'public/js/http_client.js', 'public/js/chat_viewport.js', 'public/lib/chat-contract.js', 'public/lib/affective-contract.js', 'public/lib/stickers-v6.js', 'public/lib/sticker-contract.js'
 ];
 const forbidden = ['stickers-v4', 'stickers-v5.test', 'response_postprocessor', '/data/rin_persona.json', '/data/rin_mind.json', '/data/rin_reasoning.json', '/data/rin_speaking_habits.json'];
 for (const file of activeSources) {
@@ -96,7 +96,19 @@ if (await exists('lib/stickers-v4.js') || await exists('public/lib/stickers-v4.j
 if (!await exists('public/data/legacy/README.md')) fail('Legacy canon must be isolated and documented.');
 const memorySource = await read('public/js/rin_memory.js');
 if (!memorySource.includes('navigator?.locks')) fail('Diary writes must use a cross-tab lock when the browser supports Web Locks.');
-if (!/DIARY_SCHEMA_VERSION\s*=\s*3/.test(memorySource) || !memorySource.includes('commitTurnState')) fail('Diary must use transactional conversation state schema v3.');
+if (!/DIARY_SCHEMA_VERSION\s*=\s*4/.test(memorySource) || !memorySource.includes('commitTurnState')) fail('Diary must use transactional affective conversation state schema v4.');
+if (!memorySource.includes("from '../lib/affective-contract.js'")) fail('Browser diary must consume the shared affective contract.');
+const sharedAffective = await read('public/lib/affective-contract.js');
+const serverAffective = await read('lib/affective-contract.js');
+const affectiveEngine = await read('lib/cognition/emotional-state.js');
+const impactShim = await read('lib/cognition/turn-state-impact.js');
+if (!sharedAffective.includes("AFFECTIVE_STATE_SCHEMA = 'rin-affective-state-v1'") || !sharedAffective.includes("RELATIONSHIP_STATE_SCHEMA = 'rin-relationship-state-v2'")) fail('Shared affective contract schemas are missing.');
+if (!serverAffective.includes("export * from '../public/lib/affective-contract.js'")) fail('Server and browser must share one affective contract source.');
+if (!affectiveEngine.includes('buildAffectiveTurn') || !affectiveEngine.includes('deriveRelationshipState')) fail('Canonical affective engine must own emotion and relationship transitions.');
+if (!impactShim.includes('buildAffectiveTurn') || /романтическ|ревност|обнимаю|комплимент/iu.test(impactShim)) fail('Legacy turn-state impact module must be a semantic-free compatibility shim.');
+const cognitionContract = await read('lib/cognition/cognitive-contract.js');
+if (!cognitionContract.includes("rin-state-transition-v2") || !cognitionContract.includes('emotionalState') || !cognitionContract.includes('relationshipState')) fail('State transition v2 must carry full affective state.');
+if (!browserE2e.includes("rin-state-transition-v2") || !browserE2e.includes('rin-affective-state-v1')) fail('Browser E2E must exercise the affective state contract.');
 
 
 

@@ -89,11 +89,40 @@ const server = createServer(async (req, res) => {
         delivery: current.includes('Целую тебя')
           ? { type: 'sticker', preferredStickerId: 'kiss', delivery: 'sticker_only', nonverbal: { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 }, reason: 'turn_decision' }
           : { type: 'text' },
-        stateTransition: {
-          schema: 'rin-state-transition-v1',
-          dialogueState: { scene: current.includes('Целую тебя') ? 'romance' : 'everyday', topic: current, relationToPreviousTurn: 'continuation' },
-          beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [], emotionalTrace: null
-        },
+        stateTransition: (() => {
+          const previousRelationship = body.memory?.relationship || {};
+          const jealousy = current.includes('Меня пригласила девушка');
+          const reveal = current.includes('Это была шутка, хотел тебя проверить на ревность');
+          const previousEmotion = body.memory?.conversationState?.emotionalState || null;
+          const emotionalState = jealousy ? {
+            schema: 'rin-affective-state-v1',
+            primary: { type: 'jealousy', cause: 'пользователь упомянул возможную романтическую встречу с другой девушкой', target: 'relationship', intensity: 42, valence: -18, arousal: 58, startedAtTurn: 10, expiresAfterTurns: 4, remainingTurns: 4, resolution: 'unresolved', source: 'dialogue' },
+            secondary: null, tension: 34, warmth: 58, vulnerability: 34,
+            momentum: { direction: 'tense', strength: 42 },
+            lastEvent: { type: 'romantic_rival', cause: 'пользователь упомянул возможную романтическую встречу с другой девушкой', turn: 10 }, updatedAtTurn: 10
+          } : reveal ? {
+            schema: 'rin-affective-state-v1',
+            primary: { type: 'playful_irritation', cause: 'пользователь признался, что поддразнивал Рин и проверял её реакцию', target: 'user', intensity: 30, valence: 8, arousal: 62, startedAtTurn: 11, expiresAfterTurns: 3, remainingTurns: 3, resolution: 'unresolved', source: 'dialogue' },
+            secondary: { type: 'relief', cause: 'романтическая угроза оказалась шуткой', target: 'relationship', intensity: 22, valence: 42, arousal: 30, startedAtTurn: 11, expiresAfterTurns: 2, remainingTurns: 2, resolution: 'softening', source: 'dialogue' },
+            tension: 18, warmth: 61, vulnerability: 34,
+            momentum: { direction: 'playful', strength: 30 },
+            lastEvent: { type: 'tease_reveal', cause: 'пользователь признался, что поддразнивал Рин и проверял её реакцию', turn: 11 }, updatedAtTurn: 11
+          } : previousEmotion;
+          return {
+            schema: 'rin-state-transition-v2',
+            dialogueState: { scene: current.includes('Целую тебя') ? 'romance' : 'everyday', topic: current, relationToPreviousTurn: 'continuation' },
+            beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [],
+            moodState: body.memory?.mood || { affection: 65, energy: 65 },
+            relationshipState: {
+              trust: previousRelationship.trust ?? 55, closeness: previousRelationship.closeness ?? 42, comfort: previousRelationship.comfort ?? 52, respect: previousRelationship.respect ?? 68,
+              playfulness: previousRelationship.playfulness ?? 45, attraction: previousRelationship.attraction ?? 34, vulnerability: previousRelationship.vulnerability ?? 28,
+              recentDynamic: { lastSignal: reveal ? 'playful' : jealousy ? 'neutral' : 'neutral', positiveStreak: 0, negativeStreak: 0, repairPending: false, lastCause: jealousy || reveal ? 'e2e affective state' : '', turn: reveal ? 11 : jealousy ? 10 : 0 },
+              sharedMoments: previousRelationship.sharedMoments || []
+            },
+            emotionalState, emotionalTrace: emotionalState?.primary ? { emotion: emotionalState.primary.type, cause: emotionalState.primary.cause, intensity: emotionalState.primary.intensity, resolution: emotionalState.primary.resolution, expiresAfterTurns: emotionalState.primary.expiresAfterTurns, remainingTurns: emotionalState.primary.remainingTurns } : null,
+            moodDelta: { affection: 0, energy: 0 }, relationshipDelta: { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0, attraction: 0, vulnerability: 0 }
+          };
+        })(),
         conversationBrain: { activeScene: { type: current.includes('Целую тебя') ? 'romance' : 'everyday' }, hiddenIntent: { type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none' } }
       });
     }
@@ -418,6 +447,23 @@ try {
   })()`);
   assert(rinReply.linked && /Мой проект называется Rin/.test(rinReply.targetContent) && rinReply.quoteVisible, 'Rin planned reply must quote a specific earlier user message');
 
+  await send('Меня пригласила девушка на встречу вечером');
+  await waitFor(cdp, completedUsers(10), 'affective jealousy commit');
+  const jealousyState = await cdp.evaluate(`(() => {
+    const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
+    return { schema: diary._schema, emotion: diary.conversationState?.emotionalState?.primary?.type, cause: diary.conversationState?.emotionalState?.primary?.cause };
+  })()`);
+  assert(jealousyState.schema === 4 && jealousyState.emotion === 'jealousy' && /другой девушк/.test(jealousyState.cause || ''), 'canonical jealousy state must commit to diary v4');
+
+  await send('Это была шутка, хотел тебя проверить на ревность 😁');
+  await waitFor(cdp, completedUsers(11), 'affective reveal commit');
+  assert(chatBodies.at(-1)?.memory?.conversationState?.emotionalState?.primary?.type === 'jealousy', 'next browser request must restore committed jealousy before server transition');
+  const revealState = await cdp.evaluate(`(() => {
+    const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
+    return { primary: diary.conversationState?.emotionalState?.primary?.type, secondary: diary.conversationState?.emotionalState?.secondary?.type, momentum: diary.conversationState?.emotionalState?.momentum?.direction };
+  })()`);
+  assert(revealState.primary === 'playful_irritation' && revealState.secondary === 'relief' && revealState.momentum === 'playful', 'reveal transition must replace jealousy with playful irritation + relief');
+
   const lifecycle = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
     return {
@@ -431,9 +477,9 @@ try {
   assert(lifecycle.allTyped, 'all persisted chat events must use schema v5');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
-  assert(lifecycle.conversationRevision >= 9, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
+  assert(lifecycle.conversationRevision >= 11, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
 
-  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker, manual reply and planned Rin reply; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker, manual reply and planned Rin reply and affective persistence; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);
