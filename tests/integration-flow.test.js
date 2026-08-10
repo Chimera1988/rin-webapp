@@ -4,6 +4,8 @@ import {
   assignMessageBatch,
   createChatMessage,
   createSerialQueue,
+  loadChatHistory,
+  saveChatHistory,
   toApiHistory,
   updateMessage
 } from '../public/js/chat_store.js';
@@ -11,6 +13,8 @@ import { buildDecisionStateTransition, normalizeTurnDecision } from '../lib/cogn
 import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState } from '../lib/cognition/kernel-state.js';
 import { analyzeConversation } from '../lib/conversation-brain.js';
+import { buildStickerState } from '../lib/cognition/sticker-state.js';
+import { selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { MemoryStorage, createReq, createRes, sleep } from './helpers/runtime.js';
 
 const decision = (overrides = {}) => ({
@@ -192,4 +196,50 @@ test('failed turn remains excluded and retry becomes current without corrupting 
   ];
   updateMessage(history,'u1',{status:'sent',requestId:'retry'});
   assert.deepEqual(toApiHistory(history,'retry').map(item=>item.id), ['u2','a2','u1']);
+});
+
+test('40-turn sticker flow respects 30% rolling budget, survives history reload and rotates same-intent assets', async () => {
+  const storage = new MemoryStorage();
+  let history = [];
+  const stickerTurns = [];
+  const selectedIds = [];
+  for (let turn = 1; turn <= 40; turn += 1) {
+    const state = await buildStickerState({
+      history: toApiHistory(history),
+      preference: { mode:'smart', probability:30, safeMode:true },
+      scene: 'everyday',
+      userText: 'обычный тёплый разговор'
+    });
+    const turnId=`sticker-flow-${turn}`;
+    history.push(createChatMessage({ role:'assistant',kind:'text',status:'complete',id:`sf-text-${turn}`,requestId:`sf-${turn}`,turnId,content:`ответ ${turn}` }));
+    if (state.available) {
+      const selected=await selectStickerForIntent('warmth',{
+        delivery:'after_text',scene:'everyday',intensity:45,
+        recentStickerIds:state.recentAssetIds,rotationSeed:`sf-${turn}`
+      });
+      assert.ok(selected);
+      stickerTurns.push(turn);
+      selectedIds.push(selected.sticker.id);
+      history.push(createChatMessage({
+        role:'assistant',kind:'sticker',status:'complete',id:`sf-sticker-${turn}`,requestId:`sf-${turn}`,turnId,
+        sticker:{...selected.sticker,delivery:'after_text',cause:'flow test',intensity:45,canExplain:true,expiresAfterTurns:1}
+      }));
+    }
+    if (turn === 20) {
+      saveChatHistory(history,storage);
+      history=loadChatHistory(storage);
+    }
+  }
+
+  assert.equal(stickerTurns.length,12);
+  for (let start=1; start<=31; start+=1) {
+    const used=stickerTurns.filter(turn=>turn>=start && turn<start+10).length;
+    assert.ok(used<=3,`window ${start}-${start+9} has ${used} sticker turns`);
+  }
+  for (let index=1; index<selectedIds.length; index+=1) {
+    assert.notEqual(selectedIds[index],selectedIds[index-1],`asset repeated at sticker index ${index}`);
+  }
+  const reconstructed=await buildStickerState({history:toApiHistory(history),preference:{mode:'smart',probability:30,safeMode:true},scene:'everyday'});
+  assert.ok(reconstructed.recentAssetIds.length>0);
+  assert.equal(reconstructed.schema,'rin-sticker-state-v1');
 });

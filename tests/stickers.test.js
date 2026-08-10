@@ -61,3 +61,35 @@ test('sent sticker telemetry persists only under v7 key', () => {
   assert.ok(storage.getItem('rin-stickers-v7-stats'));
   assert.equal(storage.getItem('rin-stickers-v6-stats'),null);
 });
+
+test('selector strongly avoids the immediately previous asset when the same semantic intent has alternatives', async () => {
+  const warmth = await selectStickerForIntent('warmth', {
+    delivery: 'after_text',
+    recentStickerIds: ['warm_smile'],
+    rotationSeed: 'rotation-warmth-1'
+  });
+  assert.ok(warmth);
+  assert.notEqual(warmth.sticker.id, 'warm_smile');
+  assert.equal(warmth.selection.strategy, 'semantic_rank_with_recent_rotation');
+  assert.ok(warmth.selection.candidateCount >= 2);
+});
+
+test('kiss family rotates away from an immediately repeated kiss asset without changing semantic intent', async () => {
+  const next = await selectStickerForIntent('kiss', {
+    delivery: 'sticker_only',
+    scene: 'romance',
+    intensity: 70,
+    recentStickerIds: ['kiss'],
+    rotationSeed: 'rotation-kiss-2'
+  });
+  assert.ok(next);
+  assert.notEqual(next.sticker.id, 'kiss');
+  assert.ok(['gentle_kiss', 'kiss_gesture'].includes(next.sticker.id));
+});
+
+test('asset rotation is deterministic for the same turn seed and recent history', async () => {
+  const options = { delivery:'after_text', recentStickerIds:['warm_smile'], rotationSeed:'stable-turn-seed' };
+  const first = await selectStickerForIntent('warmth', options);
+  const second = await selectStickerForIntent('warmth', options);
+  assert.equal(first.sticker.id, second.sticker.id);
+});

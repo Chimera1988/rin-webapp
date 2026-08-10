@@ -324,3 +324,58 @@ test('memory sanitizer accepts explicit fact retractions only under user namespa
   assert.deepEqual(out.factRetractions, [{ path:'user.trait.selfCritical' }]);
   assert.equal(out.schemaVersion, 4);
 });
+
+test('smart sticker frequency is enforced from server history before the Kernel decision is accepted', async () => {
+  const stickerDecision = baseDecision({
+    act: 'decorate_every_turn',
+    delivery: { segments: [
+      { type:'text', purpose:'main_reply', stickerIntent:null, maxChars:240 },
+      { type:'sticker', purpose:'extra_reaction', stickerIntent:'warmth', maxChars:20 }
+    ] }
+  });
+  const textDecision = baseDecision({ act:'answer_without_sticker' });
+  const prior = [];
+  for (let turn = 1; turn <= 9; turn += 1) {
+    const turnId = `prior-${turn}`;
+    prior.push({ role:'assistant', kind:'text', status:'complete', id:`a-${turn}`, requestId:`p-${turn}`, turnId, content:`reply ${turn}` });
+    if ([1,4,7].includes(turn)) prior.push({ role:'assistant', kind:'sticker', status:'complete', id:`s-${turn}`, requestId:`p-${turn}`, turnId, content:'', sticker:{ id: turn === 7 ? 'warm_smile' : 'smile', src:turn===7?'/stickers/warm_smile.webp':'/stickers/smile.webp', emotion:'warm_smile', meaning:'улыбка' } });
+  }
+  const requestId='budget-blocked';
+  const history=[...prior,{ role:'user',kind:'text',status:'sent',requestId,id:'u-budget',content:'Как погода?' }];
+  const mock=installStructuredMock({ decisions:[stickerDecision,textDecision], realizations:[realization('Отвечу без лишнего жеста.')] });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({ requestId, text:'Как погода?', history, client:{sticker:{mode:'smart',probability:30,safeMode:true}} }),res);
+    assert.equal(res.statusCode,200);
+    assert.equal(res.body.cognition.stickerState.available,false);
+    assert.equal(res.body.cognition.stickerState.reason,'rolling_budget_exhausted');
+    assert.equal(res.body.cognition.stickerState.usedStickerTurns,3);
+    assert.equal(res.body.cognition.stickerState.limitStickerTurns,3);
+    assert.equal(mock.counts().decision,2);
+    assert.equal(res.body.deliveryPlan.segments.some(item=>item.type==='sticker'),false);
+  } finally { mock.restore(); }
+});
+
+test('server selector rotates away from the immediately previous asset while preserving Kernel semantic intent', async () => {
+  const requestId='rotate-warmth';
+  const history=[
+    { role:'assistant',kind:'text',status:'complete',id:'a-prev',requestId:'prev',turnId:'prev-turn',content:'Привет)' },
+    { role:'assistant',kind:'sticker',status:'complete',id:'s-prev',requestId:'prev',turnId:'prev-turn',content:'',sticker:{id:'warm_smile',src:'/stickers/warm_smile.webp',emotion:'warm_smile',meaning:'тёплая улыбка'} },
+    { role:'user',kind:'text',status:'sent',requestId,id:'u-rotate',content:'Спасибо)' }
+  ];
+  const d=baseDecision({ delivery:{ segments:[
+    { type:'text',purpose:'main_reply',stickerIntent:null,maxChars:220 },
+    { type:'sticker',purpose:'warmth',stickerIntent:'warmth',maxChars:20 }
+  ] } });
+  const mock=installStructuredMock({ decisions:[d], realizations:[realization('Мм, приятно)')] });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({ requestId,text:'Спасибо)',history,client:{sticker:{mode:'always',probability:30,safeMode:false}} }),res);
+    assert.equal(res.statusCode,200);
+    const sticker=res.body.deliveryPlan.segments.find(item=>item.type==='sticker');
+    assert.ok(sticker);
+    assert.equal(sticker.stickerIntent,'warmth');
+    assert.notEqual(sticker.sticker.id,'warm_smile');
+    assert.equal(sticker.semantic.selection.strategy,'semantic_rank_with_recent_rotation');
+  } finally { mock.restore(); }
+});

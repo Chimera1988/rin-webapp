@@ -64,3 +64,29 @@ test('realization prompt cannot change the already frozen TurnDecision', () => {
   assert.doesNotMatch(prompt.system, /выбери.*intent/iu);
   assert.equal(prompt.responseFormat.json_schema.name, 'rin_realization');
 });
+
+test('StickerState is a hard schema gate, not a probability hint interpreted by the Kernel', () => {
+  const blocked = buildKernelPrompt({
+    profile: { prompt_profile: promptProfile },
+    state: {
+      activeIntent: null,
+      stickerState: { schema:'rin-sticker-state-v1', mode:'smart', available:false, reason:'rolling_budget_exhausted', targetPercent:30, usedStickerTurns:3, limitStickerTurns:3 },
+      recentHistory: [], userEvents: [{ content:'Как погода?' }]
+    }
+  });
+  const blockedTypes = blocked.responseFormat.json_schema.schema.properties.delivery.properties.segments.items.properties.type.enum;
+  assert.deepEqual(blockedTypes, ['text']);
+  assert.match(blocked.system, /hard availability/iu);
+  assert.doesNotMatch(blocked.system, /frequencyPreference=/);
+
+  const available = buildKernelPrompt({
+    profile: { prompt_profile: promptProfile },
+    state: {
+      activeIntent: null,
+      stickerState: { schema:'rin-sticker-state-v1', mode:'smart', available:true, reason:'available', targetPercent:30, usedStickerTurns:1, limitStickerTurns:3 },
+      recentHistory: [], userEvents: [{ content:'Умничка 😘' }]
+    }
+  });
+  const availableTypes = available.responseFormat.json_schema.schema.properties.delivery.properties.segments.items.properties.type.enum;
+  assert.deepEqual(availableTypes, ['text','sticker']);
+});
