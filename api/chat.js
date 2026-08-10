@@ -6,6 +6,7 @@ import { buildDecisionStateTransition } from '../lib/cognition/turn-decision.js'
 import { validateRealization, validateTurnDecisionConstraints } from '../lib/cognition/turn-validator.js';
 import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
+import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildRealizationPrompt, parseRealization } from '../lib/personality/rin-realization.js';
 import {
   cleanInlineText,
@@ -187,7 +188,7 @@ async function realizeDecision({ profile, state, decision, realityBoundary, isLo
   return { realization, validation, usage: mergeUsage(first.usage, retry.usage), retried: true };
 }
 
-export async function buildDeliveryPlan({ requestId, decision, realization, scene = null } = {}) {
+export async function buildDeliveryPlan({ requestId, decision, realization, scene = null, stickerState = null } = {}) {
   const turnId = `rin-turn-${normalize(requestId, 80) || Date.now()}`;
   const realizedTexts = Array.isArray(realization?.segments) ? realization.segments : [];
   let textIndex = 0;
@@ -208,7 +209,9 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
       delivery: stickerDelivery,
       scene: scene?.type || '',
       cause: decision.focus,
-      intensity: decision.delivery.mode === 'sticker_only' ? 62 : 48
+      intensity: decision.delivery.mode === 'sticker_only' ? 62 : 48,
+      recentStickerIds: stickerState?.recentAssetIds || [],
+      rotationSeed: `${requestId}:${plan.stickerIntent}:${index}`
     });
     if (!selected) throw Object.assign(new Error(`Sticker intent unresolved: ${plan.stickerIntent || '(empty)'}`), { code: 'STICKER_INTENT_UNRESOLVED' });
     segments.push({ ...base, stickerIntent: plan.stickerIntent, sticker: selected.sticker, semantic: selected });
@@ -269,7 +272,13 @@ export default async function handler(req, res) {
     const canonCue = trigger ? [trigger.type, trigger.reason].filter(Boolean).join(' ') : userTurn;
     const lore = await retrieveCanonicalLore(canonCue);
     const affectiveTurn = buildAffectiveTurn({ userText: userTurn, history: fullHistory, memory, brain });
-    const kernelState = buildKernelState({ requestId, userText: userTurn, history: fullHistory, memory, brain, affectiveTurn, explicitReply, env, lore, conversationState });
+    const stickerState = await buildStickerState({
+      history: fullHistory,
+      preference: body?.client?.sticker || null,
+      scene: brain?.activeScene?.type || 'everyday',
+      userText: userTurn
+    });
+    const kernelState = buildKernelState({ requestId, userText: userTurn, history: fullHistory, memory, brain, affectiveTurn, explicitReply, env, lore, conversationState, stickerState });
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
 
     const kernelPrompt = buildKernelPrompt({
@@ -295,7 +304,7 @@ export default async function handler(req, res) {
     // a different behavior. The same Cognitive Kernel gets one chance to decide again.
     let decisionUsage = kernelCompletion.usage;
     let decisionValidation = mergeDecisionValidation(
-      validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent }),
+      validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState }),
       await validateDecisionResources(decision)
     );
     if (!decisionValidation.passed) {
@@ -316,7 +325,7 @@ export default async function handler(req, res) {
       catch { return res.status(502).json({ error: 'Decision model retry returned invalid structured output', code: 'INVALID_TURN_DECISION', requestId }); }
       decisionUsage = mergeUsage(kernelCompletion.usage, retryCompletion.usage);
       decisionValidation = mergeDecisionValidation(
-        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent }),
+        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState }),
         await validateDecisionResources(decision)
       );
       if (!decisionValidation.passed) {
@@ -326,7 +335,7 @@ export default async function handler(req, res) {
     }
 
     const realizationResult = await realizeDecision({ profile, state: kernelState, decision, realityBoundary, isLong });
-    const deliveryPlan = await buildDeliveryPlan({ requestId, decision, realization: realizationResult.realization, scene: kernelState.scene });
+    const deliveryPlan = await buildDeliveryPlan({ requestId, decision, realization: realizationResult.realization, scene: kernelState.scene, stickerState: kernelState.stickerState });
     const stateTransition = buildDecisionStateTransition({ kernelState, affectiveTurn, decision });
     const replyTarget = latestUserTarget(group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
