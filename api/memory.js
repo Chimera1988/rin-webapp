@@ -20,8 +20,6 @@ export function createEmptyMemoryResult() {
     schemaVersion: 4,
     facts: [],
     events: [],
-    openLoops: [],
-    resolvedLoops: [],
     sharedMoments: [],
     factRetractions: []
   };
@@ -51,22 +49,6 @@ export function sanitizeMemoryResult(value) {
     });
   }
 
-  for (const item of list(value?.openLoops, 4)) {
-    const text = clean(item?.text, 400);
-    if (!text) continue;
-    result.openLoops.push({
-      id: clean(item?.id, 100) || contentKey(`loop:${text}`),
-      key: contentKey(`loop:${text}`),
-      text,
-      type: clean(item?.type, 30) || 'topic',
-      importance: clamp(item?.importance, 1, 10, 5)
-    });
-  }
-  for (const item of list(value?.resolvedLoops, 4)) {
-    const id = clean(item?.id, 100);
-    const text = clean(item?.text, 400);
-    if (id || text) result.resolvedLoops.push({ id: id || null, text: text || null });
-  }
   for (const item of list(value?.sharedMoments, 3)) {
     const text = clean(item?.text, 500);
     if (!text) continue;
@@ -92,12 +74,12 @@ async function extractMemory({ userText, assistantText, existingMemory }) {
 
 Эмоциональное состояние и отношения здесь не анализируй: они обновляются отдельным единым детерминированным контуром на клиенте.
 
-Для openLoops переиспользуй id существующей линии, если она уже есть. Для resolvedLoops возвращай прежде всего стабильный id существующей линии; text используй только если id отсутствует. sharedMoments должны быть редкими и значимыми.
+Conversational open loops и active intent здесь не анализируй и не возвращай: ими владеет ConversationState/Cognitive Kernel. sharedMoments должны быть редкими и значимыми.
 
 Если пользователь прямо исправляет ранее сохранённый факт о себе, верни старый путь в factRetractions и новую версию в facts. Не выводи factRetractions для догадок ассистента, которых не было в facts.
 
 Формат:
-{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"openLoops":[{"id":"existing-id-or-empty","text":"...","type":"plan","importance":7}],"resolvedLoops":[{"id":"existing-id","text":""}],"sharedMoments":[]}
+{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"sharedMoments":[]}
 `.trim();
 
   const userPrompt = `
