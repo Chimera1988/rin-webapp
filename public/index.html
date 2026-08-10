@@ -27,7 +27,7 @@
   </script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-08-10-rin-cognitive-kernel-v1.2-live-contract-fix" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-10-rin-cognitive-kernel-v1.3-sticker-state" />
 </head>
 <body class="chat-app">
 
@@ -245,9 +245,9 @@
           </div>
           <div class="settings-divider"></div>
           <div class="settings-range-block">
-            <div class="settings-range-head"><strong>Вероятность отправки</strong><span id="stickerProbVal">30%</span></div>
+            <div class="settings-range-head"><strong>Частота стикеров</strong><span id="stickerProbVal">30%</span></div>
             <input id="stickerProb" type="range" min="0" max="100" value="30" />
-            <small>Как часто Рин будет отправлять подходящие стикеры</small>
+            <small>Целевая частота в умном режиме: 30% — примерно до 3 ходов со стикером из 10</small>
           </div>
           <div class="settings-divider"></div>
           <div class="settings-range-block">
@@ -402,7 +402,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-10-rin-cognitive-kernel-v1.2-live-contract-fix"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-10-rin-cognitive-kernel-v1.3-sticker-state"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

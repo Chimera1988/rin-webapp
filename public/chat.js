@@ -733,7 +733,10 @@ function lsStickerMode(){
   if (raw === 'keywords') return 'smart';
   return ['smart','always','off'].includes(raw) ? raw : 'smart';
 }
-function lsStickerSafe(){ return safeLocalGet(LS_STICKER_SAFE)==='1'; }
+function lsStickerSafe(){
+  const raw = safeLocalGet(LS_STICKER_SAFE, '');
+  return raw === '' ? true : raw === '1';
+}
 function lsStickerOpacity(){
   return Math.max(20, Math.min(100, +(safeLocalGet(LS_STICKER_OPACITY) || '100')));
 }
@@ -1721,6 +1724,16 @@ function stickerClientPreferences() {
   };
 }
 
+function stickerDebugSummary(data = null) {
+  const state = data?.cognition?.stickerState || null;
+  const stickerSegment = data?.deliveryPlan?.segments?.find(item => item?.type === 'sticker') || null;
+  if (!state && !stickerSegment) return '';
+  const budget = state?.mode === 'always'
+    ? 'always'
+    : `${Number(state?.usedStickerTurns || 0)}/${state?.limitStickerTurns ?? '-'}`;
+  return `; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerBudget=${budget}; stickerGap=${state?.turnsSinceSticker ?? '-'}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}`;
+}
+
 function updatePresenceForDelivery(presenceTurn, mode, typingRowRef) {
   if (mode === 'typing') {
     presence.setTyping(presenceTurn);
@@ -1852,7 +1865,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     await commitSuccessfulTurnState({ memoryModule, requestId, data, preparedInnerLife });
     stateCommitted = true;
     const kind = await deliverCommittedAssistantTurn(preparedDelivery, { presenceTurn, scheduler: humanDeliveryScheduler });
-    dbg(`proactive complete: request=${requestId}; kind=${kind}; trigger=${type}; build=${RIN_BUILD_VERSION}`);
+    dbg(`proactive complete: request=${requestId}; kind=${kind}; trigger=${type}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data)}`);
     return true;
   } catch (error) {
     if (stateCommitted) {
@@ -2119,7 +2132,7 @@ async function processUserBatch(messageIds = []) {
       enqueueMemoryJob({ id: requestId, userText: combinedUserText, assistantText: memoryText }, localStorage);
       void memoryJobRunner.drain();
     }
-    dbg(`reply complete: request=${requestId}; kind=${kind}; segments=${preparedDelivery.segments?.length || 0}; build=${RIN_BUILD_VERSION}`);
+    dbg(`reply complete: request=${requestId}; kind=${kind}; segments=${preparedDelivery.segments?.length || 0}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data)}`);
   } catch (error) {
     if (stateCommitted) {
       markUserBatchComplete(ids);
