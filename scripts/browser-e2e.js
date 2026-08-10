@@ -50,13 +50,14 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         schemaVersion: 4,
         facts: [{ path: 'user.name', value: 'Алексей', confidence: 0.99 }],
-        events: [], openLoops: [], resolvedLoops: [], sharedMoments: []
+        events: [], sharedMoments: [], factRetractions: []
       });
     }
     if (url.pathname === '/api/chat' && req.method === 'POST') {
       const body = await readBody(req);
       chatBodies.push(body);
-      const current = [...(body.history || [])].reverse().find(item => item.role === 'user')?.content || '';
+      const userEvents = (body.history || []).filter(item => item.role === 'user' && item.requestId === body.requestId);
+      const current = userEvents.at(-1)?.content || [...(body.history || [])].reverse().find(item => item.role === 'user')?.content || '';
       if (current === 'FAIL_ONCE' && failOnce) {
         failOnce = false;
         return json(res, 502, { error: 'Temporary failure', code: 'UPSTREAM_TIMEOUT', requestId: body.requestId });
@@ -65,71 +66,82 @@ const server = createServer(async (req, res) => {
       const plannedTarget = current === 'RIN_REPLY_TARGET'
         ? (body.history || []).find(item => item.role === 'user' && String(item.content || '').includes('Мой проект называется Rin'))
         : null;
+      const stickerOnly = current.includes('Целую тебя');
+      const act = body.trigger?.type === 'greeting' ? 'proactive_greeting'
+        : body.trigger?.type === 'scheduled' ? 'proactive_personal_share'
+          : stickerOnly ? 'return_kiss'
+            : current.includes('Это была шутка, хотел тебя проверить на ревность') ? 'tease_after_reveal'
+              : 'direct_response';
       const reply = body.trigger?.type === 'greeting'
         ? 'Я сама решила написать первой — просто захотелось.'
         : body.trigger?.type === 'scheduled'
           ? 'У меня появилась одна мысль, и я решила не откладывать её до завтра.'
           : current.includes('Как меня зовут')
-        ? `Ты говорил, что тебя зовут ${remembered || 'неизвестно'}.`
-        : current === 'RIN_REPLY_TARGET'
-          ? 'К этому я и хотела вернуться: что в проекте сейчас самое живое для тебя?'
-          : `Ответ на: ${current}`;
+            ? `Ты говорил, что тебя зовут ${remembered || 'неизвестно'}.`
+            : current === 'RIN_REPLY_TARGET'
+              ? 'К этому я и хотела вернуться: что в проекте сейчас самое живое для тебя?'
+              : `Ответ на: ${current}`;
+      const turnId = `rin-turn-${body.requestId}`;
+      const deliveryPlan = stickerOnly ? {
+        schema: 'rin-delivery-plan-v1', turnId, mode: 'sticker_only', fallbackText: '😘',
+        segments: [{ id: `${turnId}-seg-1`, segmentIndex: 0, purpose: 'kiss', type: 'sticker', stickerIntent: 'kiss',
+          sticker: { id: 'kiss', src: '/stickers/kiss.webp', emotion: 'kiss', meaning: 'поцелуй', utterance: null },
+          semantic: { delivery: 'sticker_only', cause: 'ответ на поцелуй пользователя', intensity: 90, canExplain: true, expiresAfterTurns: 2 }
+        }]
+      } : {
+        schema: 'rin-delivery-plan-v1', turnId, mode: 'single_text', fallbackText: reply,
+        segments: [{ id: `${turnId}-seg-1`, segmentIndex: 0, purpose: 'main_reply', type: 'text', text: reply }]
+      };
+
+      const previousRelationship = body.memory?.relationship || {};
+      const jealousy = current.includes('Меня пригласила девушка');
+      const reveal = current.includes('Это была шутка, хотел тебя проверить на ревность');
+      const previousEmotion = body.memory?.conversationState?.emotionalState || null;
+      const emotionalState = jealousy ? {
+        schema: 'rin-affective-state-v1',
+        primary: { type: 'jealousy', cause: 'пользователь упомянул возможную романтическую встречу с другой девушкой', target: 'relationship', intensity: 42, valence: -18, arousal: 58, startedAtTurn: 10, expiresAfterTurns: 4, remainingTurns: 4, resolution: 'unresolved', source: 'dialogue' },
+        secondary: null, tension: 34, warmth: 58, vulnerability: 34,
+        momentum: { direction: 'tense', strength: 42 },
+        lastEvent: { type: 'romantic_rival', cause: 'пользователь упомянул возможную романтическую встречу с другой девушкой', turn: 10 }, updatedAtTurn: 10
+      } : reveal ? {
+        schema: 'rin-affective-state-v1',
+        primary: { type: 'playful_irritation', cause: 'пользователь признался, что поддразнивал Рин и проверял её реакцию', target: 'user', intensity: 30, valence: 8, arousal: 62, startedAtTurn: 11, expiresAfterTurns: 3, remainingTurns: 3, resolution: 'unresolved', source: 'dialogue' },
+        secondary: { type: 'relief', cause: 'романтическая угроза оказалась шуткой', target: 'relationship', intensity: 22, valence: 42, arousal: 30, startedAtTurn: 11, expiresAfterTurns: 2, remainingTurns: 2, resolution: 'softening', source: 'dialogue' },
+        tension: 18, warmth: 61, vulnerability: 34,
+        momentum: { direction: 'playful', strength: 30 },
+        lastEvent: { type: 'tease_reveal', cause: 'пользователь признался, что поддразнивал Рин и проверял её реакцию', turn: 11 }, updatedAtTurn: 11
+      } : previousEmotion;
+      const activeIntent = reveal ? {
+        schema:'rin-persistent-intent-v4', id:'intent-e2e-play', rootId:'intent-e2e-play', status:'active', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease',
+        sceneBinding:{key:'playful_tease',kind:'playful',subject:'поддразнивание',anchor:'сам начал',source:'cognitive_kernel'}, scene:'playful_flirt', priority:82, commitment:82, progress:0.48, nextMove:'make_specific_teasing_move',
+        completionCondition:'после нескольких конкретных ходов', abandonmentCondition:'явный отказ или farewell', progressState:'advanced', expectedOutcome:'естественное продолжение сцены', completionEvidence:[],
+        startedAtTurn:11, updatedAtTurn:11, turnCount:1, minTurns:2, maxTurns:4, source:'cognitive_kernel'
+      } : body.memory?.conversationState?.rinIntent || null;
+      const turnDecision = {
+        schema: 'rin-turn-decision-v1', act, focus: reply, stance: 'e2e', question: { mode: /\?$/.test(reply) ? 'natural' : 'none', reason: null },
+        delivery: stickerOnly ? { mode:'sticker_only', segments:[{ type:'sticker', purpose:'kiss', stickerIntent:'kiss', maxChars:20 }] } : { mode:'single_text', segments:[{ type:'text', purpose:'main_reply', stickerIntent:null, maxChars:800 }] },
+        intentTransition: reveal ? { operation:'activate', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease', nextMove:'make_specific_teasing_move', progress:0.48, commitment:82, reason:'e2e' } : activeIntent ? { operation:'preserve', goal:null, motive:null, target:null, nextMove:null, progress:null, commitment:null, reason:null } : { operation:'none', goal:null, motive:null, target:null, nextMove:null, progress:null, commitment:null, reason:null },
+        openLoops:{open:[],resolveIds:[]}, realityMode:'grounded', source:'cognitive_kernel'
+      };
       return json(res, 200, {
-        requestId: body.requestId,
-        reply,
-        finishReason: 'stop',
-        long: false,
-        responsePlan: body.trigger?.type ? { responseAct: body.trigger.type === 'greeting' ? 'proactive_greeting' : 'proactive_personal_share', questionBudget: 0, rinIntent: body.memory?.conversationState?.rinIntent || null } : plannedTarget ? {
-          replyTarget: {
-            messageId: plannedTarget.id,
-            role: 'user',
-            kind: plannedTarget.kind || 'text',
-            excerpt: plannedTarget.content,
-            reason: 'browser e2e callback',
-            confidence: 0.9
-          }
-        } : null,
-        coreDecision: { initiative: { mode: 'none' }, nonverbalAction: current.includes('Целую тебя') ? { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 } : null, emotionalResponse: { intensity: current.includes('Целую тебя') ? 90 : 40 } },
-        delivery: current.includes('Целую тебя')
-          ? { type: 'sticker', preferredStickerId: 'kiss', delivery: 'sticker_only', nonverbal: { preferredStickerId: 'kiss', emotion: 'kiss', cause: 'ответ на поцелуй пользователя', delivery: 'sticker_only', standalone: true, intensity: 90 }, reason: 'turn_decision' }
-          : { type: 'text' },
-        stateTransition: (() => {
-          const previousRelationship = body.memory?.relationship || {};
-          const jealousy = current.includes('Меня пригласила девушка');
-          const reveal = current.includes('Это была шутка, хотел тебя проверить на ревность');
-          const previousEmotion = body.memory?.conversationState?.emotionalState || null;
-          const emotionalState = jealousy ? {
-            schema: 'rin-affective-state-v1',
-            primary: { type: 'jealousy', cause: 'пользователь упомянул возможную романтическую встречу с другой девушкой', target: 'relationship', intensity: 42, valence: -18, arousal: 58, startedAtTurn: 10, expiresAfterTurns: 4, remainingTurns: 4, resolution: 'unresolved', source: 'dialogue' },
-            secondary: null, tension: 34, warmth: 58, vulnerability: 34,
-            momentum: { direction: 'tense', strength: 42 },
-            lastEvent: { type: 'romantic_rival', cause: 'пользователь упомянул возможную романтическую встречу с другой девушкой', turn: 10 }, updatedAtTurn: 10
-          } : reveal ? {
-            schema: 'rin-affective-state-v1',
-            primary: { type: 'playful_irritation', cause: 'пользователь признался, что поддразнивал Рин и проверял её реакцию', target: 'user', intensity: 30, valence: 8, arousal: 62, startedAtTurn: 11, expiresAfterTurns: 3, remainingTurns: 3, resolution: 'unresolved', source: 'dialogue' },
-            secondary: { type: 'relief', cause: 'романтическая угроза оказалась шуткой', target: 'relationship', intensity: 22, valence: 42, arousal: 30, startedAtTurn: 11, expiresAfterTurns: 2, remainingTurns: 2, resolution: 'softening', source: 'dialogue' },
-            tension: 18, warmth: 61, vulnerability: 34,
-            momentum: { direction: 'playful', strength: 30 },
-            lastEvent: { type: 'tease_reveal', cause: 'пользователь признался, что поддразнивал Рин и проверял её реакцию', turn: 11 }, updatedAtTurn: 11
-          } : previousEmotion;
-          return {
-            schema: 'rin-state-transition-v3',
-            dialogueState: { scene: current.includes('Целую тебя') ? 'romance' : 'everyday', topic: current, relationToPreviousTurn: 'continuation' },
-            beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [],
-            moodState: body.memory?.mood || { affection: 65, energy: 65 },
-            relationshipState: {
-              trust: previousRelationship.trust ?? 55, closeness: previousRelationship.closeness ?? 42, comfort: previousRelationship.comfort ?? 52, respect: previousRelationship.respect ?? 68,
-              playfulness: previousRelationship.playfulness ?? 45, attraction: previousRelationship.attraction ?? 34, vulnerability: previousRelationship.vulnerability ?? 28,
-              recentDynamic: { lastSignal: reveal ? 'playful' : jealousy ? 'neutral' : 'neutral', positiveStreak: 0, negativeStreak: 0, repairPending: false, lastCause: jealousy || reveal ? 'e2e affective state' : '', turn: reveal ? 11 : jealousy ? 10 : 0 },
-              sharedMoments: previousRelationship.sharedMoments || []
-            },
-            emotionalState,
-            rinIntent: reveal ? { schema:'rin-persistent-intent-v4', id:'intent-e2e-play', status:'active', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease', sceneBinding:{key:'playful_tease',kind:'playful',subject:'поддразнивание',anchor:'сам начал',source:'last_rin_action'}, scene:'playful_flirt', priority:82, commitment:82, progress:0.48, nextMove:'make_specific_teasing_move', completionCondition:'после нескольких конкретных ходов', abandonmentCondition:'явный отказ или farewell', startedAtTurn:11, updatedAtTurn:11, turnCount:1, minTurns:2, maxTurns:4, source:'character_intent' } : body.memory?.conversationState?.rinIntent || null,
-            emotionalState, emotionalTrace: emotionalState?.primary ? { emotion: emotionalState.primary.type, cause: emotionalState.primary.cause, intensity: emotionalState.primary.intensity, resolution: emotionalState.primary.resolution, expiresAfterTurns: emotionalState.primary.expiresAfterTurns, remainingTurns: emotionalState.primary.remainingTurns } : null,
-            moodDelta: { affection: 0, energy: 0 }, relationshipDelta: { trust: 0, closeness: 0, comfort: 0, respect: 0, playfulness: 0, attraction: 0, vulnerability: 0 }
-          };
-        })(),
-        conversationBrain: { activeScene: { type: current.includes('Целую тебя') ? 'romance' : 'everyday' }, hiddenIntent: { type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none' } }
+        requestId: body.requestId, turnId, reply: stickerOnly ? '' : reply, finishReason: 'stop', long: false,
+        model: { kernel:'gpt-4o', realization:'gpt-4o' }, turnDecision, deliveryPlan,
+        validation:{decision:{passed:true,warnings:[]},realization:{passed:true,warnings:[],reply:stickerOnly?'':reply}},
+        stateTransition: {
+          schema: 'rin-state-transition-v4',
+          dialogueState: { scene: stickerOnly ? 'romance' : 'everyday', topic: current, relationToPreviousTurn: 'continuation' },
+          beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [],
+          moodState: body.memory?.mood || { affection: 65, energy: 65 },
+          relationshipState: {
+            trust: previousRelationship.trust ?? 55, closeness: previousRelationship.closeness ?? 42, comfort: previousRelationship.comfort ?? 52, respect: previousRelationship.respect ?? 68,
+            playfulness: previousRelationship.playfulness ?? 45, attraction: previousRelationship.attraction ?? 34, vulnerability: previousRelationship.vulnerability ?? 28,
+            recentDynamic: { lastSignal: reveal ? 'playful' : 'neutral', positiveStreak: 0, negativeStreak: 0, repairPending: false, lastCause: jealousy || reveal ? 'e2e affective state' : '', turn: reveal ? 11 : jealousy ? 10 : 0 },
+            sharedMoments: previousRelationship.sharedMoments || []
+          },
+          emotionalState, rinIntent: activeIntent
+        },
+        replyTarget: plannedTarget ? { messageId: plannedTarget.id, role: 'user', kind: plannedTarget.kind || 'text', excerpt: plannedTarget.content, reason: 'browser e2e callback', confidence: 0.9 } : null,
+        perception: { version:'conversation-perception-v3', literalIntent:'statement', hiddenIntent:{ type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none', confidence:80 }, relation:{type:'continuation',confidence:80}, activeScene:{type:stickerOnly?'romance':'everyday',topic:current,confidence:80}, referents:[], ambiguity:{level:20} }
       });
     }
     if (url.pathname === '/api/tts') return json(res, 503, { error: 'disabled', code: 'TTS_NOT_CONFIGURED' });
@@ -303,7 +315,7 @@ try {
   assert(chatBodies[0]?.trigger?.type === 'greeting', 'initial greeting must go through /api/chat as a proactive trigger');
   assert(chatBodies[0]?.history?.length === 0, 'proactive greeting must not fabricate a user message');
   const initialPeerStatus = await cdp.evaluate("document.querySelector('#peerStatus')?.textContent");
-  assert(initialPeerStatus === 'офлайн', `presence must stay offline before the first user message, got ${initialPeerStatus}`);
+  assert(initialPeerStatus === 'онлайн', `presence should be online immediately after the proactive greeting, got ${initialPeerStatus}`);
 
   const freshDefaults = await cdp.evaluate(`(() => ({
     dark: document.documentElement.classList.contains('theme-dark'),
@@ -405,7 +417,7 @@ try {
     document.querySelector('#form').requestSubmit();
     return true;
   })()`);
-  const completedUsers = count => `JSON.parse(localStorage.getItem('rin-history-v5') || '[]').filter(m => m.role === 'user' && m.status === 'complete').length >= ${count}`;
+  const completedUsers = count => `JSON.parse(localStorage.getItem('rin-history-v6') || '[]').filter(m => m.role === 'user' && m.status === 'complete').length >= ${count}`;
 
   await send('Меня зовут Алексей. Мой проект называется Rin.');
   await waitFor(cdp, completedUsers(1), 'first completed user turn');
@@ -413,10 +425,13 @@ try {
   await waitFor(cdp, completedUsers(2), 'second completed user turn', 20_000);
   assert(chatBodies[1]?.memory?.facts?.user?.name === 'Алексей', 'semantic memory must enter the immediately following request');
 
+  const beforeRapidRequests = chatBodies.length;
   await Promise.all([send('Быстрый ход один'), send('Быстрый ход два')]);
   await waitFor(cdp, completedUsers(4), 'two rapid sends');
-  const rapid = chatBodies.slice(-2).map(body => [...body.history].reverse().find(item => item.role === 'user')?.content);
-  assert(rapid[0] === 'Быстрый ход один' && rapid[1] === 'Быстрый ход два', `rapid send order changed: ${rapid.join(' / ')}`);
+  assert(chatBodies.length === beforeRapidRequests + 1, 'rapid user messages must aggregate into one model request');
+  const rapidBody = chatBodies.at(-1);
+  const rapid = rapidBody.history.filter(item => item.role === 'user' && item.requestId === rapidBody.requestId).map(item => item.content);
+  assert(rapid.length === 2 && rapid[0] === 'Быстрый ход один' && rapid[1] === 'Быстрый ход два', `rapid aggregation order changed: ${rapid.join(' / ')}`);
 
   const beforeFailedTurnState = await cdp.evaluate(`(() => {
     const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
@@ -447,9 +462,9 @@ try {
   assert([...retryBody.history].at(-1)?.content === 'FAIL_ONCE', 'retried turn must be the final current context item');
 
   await send('Целую тебя 💋');
-  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v5') || '[]').some(m => m.kind === 'sticker' && m.sticker?.id === 'kiss')", 'standalone kiss sticker');
+  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v6') || '[]').some(m => m.kind === 'sticker' && m.sticker?.id === 'kiss')", 'standalone kiss sticker');
   const kissTurn = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
     const sticker = history.find(m => m.kind === 'sticker' && m.sticker?.id === 'kiss');
     const rows = [...document.querySelectorAll('#chat .row')];
     return { sticker, lastHasText: rows.at(-1)?.querySelector('.bubble')?.textContent?.includes('Ответ на: Целую тебя') || false };
@@ -479,7 +494,7 @@ try {
   assert(manualReply?.inReplyTo === selectedReply.sourceId, 'manual reply must preserve inReplyTo in the API history');
   assert(manualReply?.replySnapshot?.role === 'assistant', 'manual reply must preserve a public snapshot of the selected assistant message');
   const manualUi = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
     const message = [...history].reverse().find(item => item.role === 'user' && item.content === 'Я отвечаю именно на эту реплику.');
     const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
     return { linked: message?.inReplyTo || null, quoteVisible: Boolean(row?.querySelector('.reply-quote')) };
@@ -489,7 +504,7 @@ try {
   await send('RIN_REPLY_TARGET');
   await waitFor(cdp, completedUsers(9), 'planned Rin reply target');
   const rinReply = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
     const message = [...history].reverse().find(item => item.role === 'assistant' && item.replySnapshot);
     const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
     return {
@@ -525,21 +540,21 @@ try {
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.sceneBinding?.key === 'playful_tease', 'next browser request must restore the concrete intent scene binding');
 
   const lifecycle = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v5') || '[]');
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
     return {
-      allTyped: history.every(m => m.id && m.schemaVersion === 5 && m.kind && m.status),
+      allTyped: history.every(m => m.id && m.schemaVersion === 6 && m.kind && m.status),
       failed: history.filter(m => m.status === 'failed').length,
       pending: history.filter(m => ['pending','sent'].includes(m.status)).length,
       peer: document.querySelector('#peerStatus')?.textContent,
       conversationRevision: JSON.parse(localStorage.getItem('rin-diary-v1') || '{}').conversationState?.revision || 0
     };
   })()`);
-  assert(lifecycle.allTyped, 'all persisted chat events must use schema v5');
+  assert(lifecycle.allTyped, 'all persisted chat events must use schema v6');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
   assert(lifecycle.conversationRevision >= 12, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
 
-  console.log(`Browser E2E OK: login, iOS visual-viewport shell, long-chat viewport, unified themes/settings, single greeting, memory-before-next-turn, rapid order, failure/retry, standalone sticker, manual reply and planned Rin reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, server-owned sticker, reply-to-selected, planned reply target and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);
