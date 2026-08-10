@@ -290,13 +290,15 @@ async function ensureLoreReady() {
   if (loreLib) return loreLib;
 
   try {
-    loreLib = await import(`/js/rin_lore.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`);
-    await loreLib.loadLoreData();
-    dbg('lore data ready');
+    const module = await import(`/js/rin_lore.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`);
+    if (typeof module?.getSchedule !== 'function') throw new Error('rin_lore schedule API is unavailable');
+    await module.getSchedule();
+    loreLib = module;
+    dbg('lore schedule metadata ready');
     return loreLib;
   } catch (error) {
     dbg(
-      'lore data load failed: ' +
+      'lore schedule load failed: ' +
       (error?.message || error)
     );
     return null;
@@ -2039,6 +2041,7 @@ async function processUserBatch(messageIds = []) {
     if (!response.ok) {
       const error = new Error(data?.error || `HTTP ${response.status}`);
       error.code = data?.code || 'CHAT_REQUEST_FAILED';
+      error.warnings = Array.isArray(data?.warnings) ? data.warnings.slice(0, 8) : [];
       throw error;
     }
     if (data.requestId && data.requestId !== requestId) {
@@ -2130,7 +2133,10 @@ async function processUserBatch(messageIds = []) {
     markBatchFailed(ids, code);
     addBubble(userFacingError(code), 'assistant');
     finishPresence();
-    dbg(`chat request failed: request=${requestId}; code=${code}`);
+    const warningSuffix = Array.isArray(error?.warnings) && error.warnings.length
+      ? `; warnings=${error.warnings.join('|')}`
+      : '';
+    dbg(`chat request failed: request=${requestId}; code=${code}${warningSuffix}`);
   } finally {
     activeRequests = Math.max(0, activeRequests - 1);
     finishPresence();
