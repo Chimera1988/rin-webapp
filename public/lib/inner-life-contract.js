@@ -1,11 +1,16 @@
-export const INNER_LIFE_SCHEMA = 'rin-inner-life-v1';
+export const INNER_LIFE_SCHEMA = 'rin-inner-life-v2';
+export const INNER_LIFE_REALITY_MODES = new Set(['simulated_character_world', 'grounded']);
 const clean=(v,max=300)=>String(v??'').replace(/\s+/g,' ').trim().slice(0,max);
 const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
 const clamp=(v,min=0,max=100,f=50)=>Math.max(min,Math.min(max,num(v,f)));
 export function normalizeInnerLife(input={}) {
   const s=input&&typeof input==='object'?input:{};
+  const realityMode=INNER_LIFE_REALITY_MODES.has(s.realityMode)?s.realityMode:'simulated_character_world';
   return {
     schema:INNER_LIFE_SCHEMA,
+    realityMode,
+    source:clean(s.source,80)||'persisted_simulation',
+    sceneId:clean(s.sceneId,120)||null,
     activity:clean(s.activity,180), trace:clean(s.trace,220), focus:clean(s.focus,220), privateThought:clean(s.privateThought,260),
     activityGoal:clean(s.activityGoal,220), continuityKey:clean(s.continuityKey,160), part:clean(s.part,30),
     energy:clamp(s.energy,0,100,60), startedAt:Math.max(0,num(s.startedAt,0)), expiresAt:Math.max(0,num(s.expiresAt,0)),

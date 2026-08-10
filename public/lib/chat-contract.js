@@ -1,4 +1,4 @@
-export const CHAT_SCHEMA_VERSION = 5;
+export const CHAT_SCHEMA_VERSION = 6;
 
 const ALLOWED_ROLES = new Set(['user', 'assistant']);
 const TEXT_KINDS = new Set(['text', 'voice']);
@@ -88,6 +88,10 @@ export function normalizeChatMessage(value = {}, index = 0) {
     schemaVersion: CHAT_SCHEMA_VERSION,
     id: cleanInlineText(value.id, 100) || `legacy-${index}-${Number.isFinite(tsNumber) ? tsNumber : Date.now()}`,
     requestId: cleanInlineText(value.requestId, 100) || null,
+    turnId: cleanInlineText(value.turnId, 120) || null,
+    deliveryId: cleanInlineText(value.deliveryId, 120) || null,
+    segmentId: cleanInlineText(value.segmentId, 120) || null,
+    segmentIndex: Number.isFinite(Number(value.segmentIndex)) ? Math.max(0, Math.round(Number(value.segmentIndex))) : null,
     inReplyTo: cleanInlineText(value.inReplyTo, 100) || null,
     replySnapshot: normalizeReplySnapshot(value.replySnapshot),
     role,
@@ -167,17 +171,21 @@ export function selectTransportHistory(history = [], options = {}) {
       if (message.status === 'complete') return true;
       return message.role === 'user' && message.status === 'sent' && message.requestId === includeRequestId;
     });
-  const currentIndex = includeRequestId
-    ? selected.findIndex(message => message.role === 'user' && message.requestId === includeRequestId && message.status === 'sent')
-    : -1;
-  if (currentIndex >= 0 && currentIndex !== selected.length - 1) selected.push(selected.splice(currentIndex, 1)[0]);
-  return selected;
+  if (!includeRequestId) return selected;
+  const current = selected.filter(message => message.role === 'user' && message.requestId === includeRequestId && message.status === 'sent');
+  if (!current.length) return selected;
+  const currentIds = new Set(current.map(message => message.id));
+  return [...selected.filter(message => !currentIds.has(message.id)), ...current];
 }
 
 export function selectModelHistory(history = [], options = {}) {
   return selectTransportHistory(history, options).map(message => ({
     id: message.id,
     requestId: message.requestId,
+    turnId: message.turnId,
+    deliveryId: message.deliveryId,
+    segmentId: message.segmentId,
+    segmentIndex: message.segmentIndex,
     inReplyTo: message.inReplyTo,
     replySnapshot: message.replySnapshot,
     role: message.role,
@@ -200,12 +208,15 @@ export function lastUserText(history = []) {
   return [...history].reverse().find(item => item?.role === 'user' && cleanMessageText(item?.content))?.content || '';
 }
 
-export function currentUserTurn(history = [], requestId = '') {
+export function currentUserTurnGroup(history = [], requestId = '') {
   const wanted = cleanInlineText(requestId, 100);
-  if (wanted) {
-    const byRequest = [...history].reverse().find(item => item?.role === 'user' && item?.requestId === wanted);
-    if (byRequest) return byRequest;
-  }
+  if (!wanted) return [];
+  return (Array.isArray(history) ? history : []).filter(item => item?.role === 'user' && item?.requestId === wanted);
+}
+
+export function currentUserTurn(history = [], requestId = '') {
+  const group = currentUserTurnGroup(history, requestId);
+  if (group.length) return group.at(-1);
   return [...history].reverse().find(item => item?.role === 'user') || null;
 }
 

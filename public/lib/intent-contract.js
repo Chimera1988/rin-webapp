@@ -27,7 +27,8 @@ export function normalizeRinIntent(input = null) {
   const status = RIN_INTENT_STATUSES.has(input.status) ? input.status : 'active';
   const startedAtTurn = Math.max(0, Math.round(Number(input.startedAtTurn) || 0));
   const updatedAtTurn = Math.max(startedAtTurn, Math.round(Number(input.updatedAtTurn) || startedAtTurn));
-  const terminalAtTurn = Math.max(0, Math.round(Number(input.terminalAtTurn) || (status === 'active' ? 0 : updatedAtTurn)));
+  const isTerminal = status === 'completed' || status === 'cancelled';
+  const terminalAtTurn = Math.max(0, Math.round(Number(input.terminalAtTurn) || (isTerminal ? updatedAtTurn : 0)));
   const cooldownUntilTurn = Math.max(0, Math.round(Number(input.cooldownUntilTurn) || (terminalAtTurn ? terminalAtTurn + 10 : 0)));
   const minTurns = clamp(input.minTurns, 1, 8, 2);
   const maxTurns = clamp(input.maxTurns, minTurns, 12, Math.max(4, minTurns));
@@ -66,7 +67,7 @@ export function normalizeRinIntent(input = null) {
     turnCount,
     minTurns,
     maxTurns,
-    source: clean(input.source, 100) || 'character_intent',
+    source: clean(input.source, 100) || 'cognitive_kernel',
     reason: clean(input.reason, 420) || null,
     completionReason: clean(input.completionReason, 420) || null,
     replacementOf: clean(input.replacementOf, 120) || null
