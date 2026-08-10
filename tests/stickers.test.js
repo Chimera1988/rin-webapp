@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { MemoryStorage } from './helpers/runtime.js';
 import { selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
+import { STICKER_INTENT_VALUES } from '../lib/cognition/sticker-intents.js';
 
 const storage=new MemoryStorage();
 globalThis.localStorage=storage;
@@ -22,6 +23,15 @@ test('manifest has one v7 contract, exactly 34 assets, and every exact semantic 
     assert.ok(resolved,sticker.id);
     assert.equal(resolved.sticker.id,sticker.id);
     assert.equal(resolved.sticker.src,sticker.src);
+  }
+});
+
+
+test('every sticker intent allowed by the strict Kernel schema resolves to a real asset', async () => {
+  for (const intent of STICKER_INTENT_VALUES) {
+    const resolved = await selectStickerForIntent(intent, { delivery: 'sticker_only' });
+    assert.ok(resolved, intent);
+    assert.match(resolved.sticker.src, /^\/stickers\/[a-z0-9_]+\.webp$/i);
   }
 });
 

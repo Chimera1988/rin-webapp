@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { normalizeTurnDecision, applyIntentTransition, buildDecisionStateTransition } from '../lib/cognition/turn-decision.js';
+import { normalizeTurnDecision, applyIntentTransition, buildDecisionStateTransition, buildTurnDecisionJsonSchema } from '../lib/cognition/turn-decision.js';
 import { validateTurnDecisionConstraints } from '../lib/cognition/turn-validator.js';
 import { buildKernelState } from '../lib/cognition/kernel-state.js';
 import { buildDeliveryPlan } from '../api/chat.js';
@@ -12,6 +12,26 @@ const decision = overrides => normalizeTurnDecision({
   delivery: { mode: 'single_text', segments: [{ type: 'text', purpose: 'answer', stickerIntent: null, maxChars: 300 }] },
   intentTransition: { operation: 'none' }, openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded',
   ...(overrides || {})
+});
+
+
+test('strict TurnDecision schema eliminates free-form sticker intents and impossible state transitions before validation', () => {
+  const normal = buildTurnDecisionJsonSchema({ activeIntent: null, conversationState: 'ongoing', allowStickers: true });
+  const delivery = normal.schema.properties.delivery;
+  assert.deepEqual(delivery.required, ['segments']);
+  assert.equal('mode' in delivery.properties, false);
+  const segment = delivery.properties.segments.items.properties;
+  assert.ok(segment.stickerIntent.enum.includes('kiss'));
+  assert.ok(segment.stickerIntent.enum.includes('tender'));
+  assert.equal(segment.stickerIntent.enum.includes('affectionate_kiss'), false);
+  assert.deepEqual(normal.schema.properties.intentTransition.properties.operation.enum, ['none', 'activate']);
+
+  const stickerOff = buildTurnDecisionJsonSchema({ activeIntent: null, conversationState: 'ongoing', allowStickers: false });
+  assert.deepEqual(stickerOff.schema.properties.delivery.properties.segments.items.properties.type.enum, ['text']);
+  assert.deepEqual(stickerOff.schema.properties.delivery.properties.segments.items.properties.stickerIntent.enum, [null]);
+
+  const endingLive = buildTurnDecisionJsonSchema({ activeIntent: { status: 'active', goal: 'rest' }, conversationState: 'ending', allowStickers: true });
+  assert.deepEqual(endingLive.schema.properties.intentTransition.properties.operation.enum, ['complete', 'cancel']);
 });
 
 test('TurnDecision is the sole owner of persistent intent lifecycle transitions', () => {
@@ -120,15 +140,15 @@ test('active Kernel perception consumes semantic signals, not legacy behavior di
   assert.doesNotMatch(JSON.stringify(state.perception), /уверенный игровой ход|выполни игровой ход/iu);
 });
 
-test('TurnDecision normalization never invents missing semantic beats or sticker intent', () => {
+test('TurnDecision normalization derives structural delivery mode but never invents semantic beats or sticker intent', () => {
   const oneBeat = normalizeTurnDecision({
     act:'continue', focus:'continue', stance:'warm', question:{mode:'none',reason:null},
     delivery:{ mode:'multi_message', segments:[{type:'text',purpose:'only',stickerIntent:null,maxChars:120}] },
     intentTransition:{operation:'none'}, openLoops:{open:[],resolveIds:[]}, realityMode:'grounded'
   });
   assert.equal(oneBeat.delivery.segments.length, 1);
-  const invalidMulti = validateTurnDecisionConstraints(oneBeat);
-  assert.ok(invalidMulti.warnings.includes('multi_message_requires_multiple_segments'));
+  assert.equal(oneBeat.delivery.mode, 'single_text');
+  assert.equal(validateTurnDecisionConstraints(oneBeat).passed, true);
 
   const missingStickerIntent = normalizeTurnDecision({
     act:'gesture', focus:'gesture', stance:'warm', question:{mode:'none',reason:null},
@@ -137,6 +157,24 @@ test('TurnDecision normalization never invents missing semantic beats or sticker
   });
   assert.equal(missingStickerIntent.delivery.segments[0].stickerIntent, null);
   assert.ok(validateTurnDecisionConstraints(missingStickerIntent).warnings.includes('sticker_segment_requires_intent'));
+});
+
+
+test('DeliveryPlan sticker metadata follows the kernel-authored segment order', async () => {
+  const before = decision({ delivery:{ segments:[
+    {type:'sticker',purpose:'gesture',stickerIntent:'kiss',maxChars:20},
+    {type:'text',purpose:'reply',stickerIntent:null,maxChars:120}
+  ] } });
+  const beforePlan = await buildDeliveryPlan({ requestId:'r-before-sticker', decision:before, realization:{ segments:[{text:'Поймала 😏'}] } });
+  assert.equal(beforePlan.mode, 'text_plus_sticker');
+  assert.equal(beforePlan.segments[0].semantic.delivery, 'before_text');
+
+  const after = decision({ delivery:{ segments:[
+    {type:'text',purpose:'reply',stickerIntent:null,maxChars:120},
+    {type:'sticker',purpose:'gesture',stickerIntent:'kiss',maxChars:20}
+  ] } });
+  const afterPlan = await buildDeliveryPlan({ requestId:'r-after-sticker', decision:after, realization:{ segments:[{text:'Поймала 😏'}] } });
+  assert.equal(afterPlan.segments[1].semantic.delivery, 'after_text');
 });
 
 test('DeliveryPlan binds realized text by segment order even when purposes repeat', async () => {

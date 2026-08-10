@@ -36,11 +36,11 @@ test('correction and direct question arrive as neutral semantic signals for one 
   }
 });
 
-test('TurnDecision protocol rejects inconsistent delivery but never invents replacement behavior', () => {
-  const bad=validDecision({delivery:{mode:'multi_message',segments:[{type:'text',purpose:'only',stickerIntent:null,maxChars:200}]}});
-  const checked=validateTurnDecisionConstraints(bad,{conversationState:'ongoing'});
-  assert.equal(checked.passed,false);
-  assert.ok(checked.warnings.some(item=>/multi_message/i.test(item)));
+test('TurnDecision derives delivery mode from semantic segments instead of trusting a competing mode field', () => {
+  const projected=validDecision({delivery:{mode:'multi_message',segments:[{type:'text',purpose:'only',stickerIntent:null,maxChars:200}]}});
+  assert.equal(projected.delivery.mode,'single_text');
+  const checked=validateTurnDecisionConstraints(projected,{conversationState:'ongoing'});
+  assert.equal(checked.passed,true);
   assert.equal('replacementDecision' in checked,false);
 });
 

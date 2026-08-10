@@ -151,6 +151,34 @@ test('sticker is decided by the kernel and materialized server-side as an existi
   } finally { mock.restore(); }
 });
 
+
+test('warm reactive turn with kiss can produce text plus a schema-supported sticker without INVALID_TURN_DECISION', async () => {
+  const warmDecision = baseDecision({
+    act: 'receive_affection_and_return_warmth',
+    focus: 'принять тёплую реплику и ответить лично',
+    stance: 'тёплая и слегка смущённая',
+    delivery: { segments: [
+      { type: 'text', purpose: 'warm_reply', stickerIntent: null, maxChars: 260 },
+      { type: 'sticker', purpose: 'affection', stickerIntent: 'kiss', maxChars: 20 }
+    ] }
+  });
+  const mock = installStructuredMock({ decisions: [warmDecision], realizations: [realization('Вот теперь утро действительно стало лучше 😏')] });
+  try {
+    const res = createRes();
+    await chat.default(userRequest({
+      requestId: 'warm-reactive-kiss',
+      text: 'Доброе утро) Конечно, особенно когда оно начинается с твоего сообщения 😘',
+      client: { sticker: { mode: 'smart', probability: 30, safeMode: true } }
+    }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.turnDecision.delivery.mode, 'text_plus_sticker');
+    assert.equal(res.body.deliveryPlan.mode, 'text_plus_sticker');
+    assert.deepEqual(res.body.deliveryPlan.segments.map(item => item.type), ['text', 'sticker']);
+    assert.equal(mock.counts().decision, 1);
+    assert.equal(mock.counts().realization, 1);
+  } finally { mock.restore(); }
+});
+
 test('semantic silence is a kernel decision and skips realization', async () => {
   const silence = baseDecision({ act: 'let_moment_rest', delivery: { mode: 'silence', segments: [] } });
   const mock = installStructuredMock({ decisions: [silence], realizations: [] });

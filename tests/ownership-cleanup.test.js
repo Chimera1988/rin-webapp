@@ -121,5 +121,9 @@ test('client owns timing execution only and does not own proactive content or ca
   assert.match(scheduler, /waitBeforeFirstSegment/);
   assert.doesNotMatch(presence, /readBeforeTyping|firstReturn|returnAfterIdle/);
   assert.doesNotMatch(lore, /rin_backstory|rin_memories|rin_triggers|rin_phrases|pickGreeting|pickInitiationPhrase|buildLorePayload/);
+  assert.match(lore, /export async function getSchedule/);
+  const chat = await read('public/chat.js');
+  assert.doesNotMatch(chat, /loadLoreData/);
+  assert.match(chat, /module\?\.getSchedule/);
   assert.doesNotMatch(policy, /chooseConfiguredStarter|starter/i);
 });
