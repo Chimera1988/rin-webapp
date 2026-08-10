@@ -192,6 +192,7 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
   const realizedTexts = Array.isArray(realization?.segments) ? realization.segments : [];
   let textIndex = 0;
   const segments = [];
+  const firstTextPlanIndex = decision.delivery.segments.findIndex(item => item?.type === 'text');
   for (let index = 0; index < decision.delivery.segments.length; index += 1) {
     const plan = decision.delivery.segments[index];
     const base = { id: `${turnId}-seg-${index + 1}`, segmentIndex: index, purpose: plan.purpose, type: plan.type };
@@ -200,7 +201,9 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
       if (text) segments.push({ ...base, text });
       continue;
     }
-    const stickerDelivery = decision.delivery.mode === 'sticker_only' ? 'sticker_only' : 'after_text';
+    const stickerDelivery = firstTextPlanIndex < 0
+      ? 'sticker_only'
+      : index < firstTextPlanIndex ? 'before_text' : 'after_text';
     const selected = await selectStickerForIntent(plan.stickerIntent, {
       delivery: stickerDelivery,
       scene: scene?.type || '',
@@ -296,6 +299,7 @@ export default async function handler(req, res) {
       await validateDecisionResources(decision)
     );
     if (!decisionValidation.passed) {
+      console.warn('Rin TurnDecision rejected; retrying same kernel', { requestId, warnings: decisionValidation.warnings });
       const retryCompletion = await openaiChat({
         model: KERNEL_MODEL,
         messages: [{
@@ -316,6 +320,7 @@ export default async function handler(req, res) {
         await validateDecisionResources(decision)
       );
       if (!decisionValidation.passed) {
+        console.error('Rin TurnDecision rejected after retry', { requestId, warnings: decisionValidation.warnings });
         return res.status(502).json({ error: 'Decision model violated protocol/state invariants', code: 'INVALID_TURN_DECISION', requestId, warnings: decisionValidation.warnings });
       }
     }
