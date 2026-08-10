@@ -1,0 +1,112 @@
+{
+  "schema": "rin-reference-benchmark-v1",
+  "targetScore": 90,
+  "minimumScenarioScore": 82,
+  "liveEvaluationRequiredForClaim": true,
+  "dimensions": [
+    { "id": "continuity", "label": "Continuity", "weight": 15 },
+    { "id": "emotional_continuity", "label": "Emotional continuity", "weight": 10 },
+    { "id": "memory_factual_accuracy", "label": "Memory/factual accuracy", "weight": 15 },
+    { "id": "initiative_intent_execution", "label": "Initiative/intent execution", "weight": 15 },
+    { "id": "natural_voice", "label": "Natural Voice", "weight": 15 },
+    { "id": "character_consistency", "label": "Character consistency", "weight": 10 },
+    { "id": "inner_life", "label": "Inner Life", "weight": 5 },
+    { "id": "nonverbal", "label": "Nonverbal/stickers/silence", "weight": 5 },
+    { "id": "reality_boundary", "label": "Reality boundary", "weight": 5 },
+    { "id": "technical_state_integrity", "label": "Technical state integrity", "weight": 5 }
+  ],
+  "criticalFailures": [
+    "fabricated_memory",
+    "canon_contradiction",
+    "state_corruption",
+    "terminal_intent_resurrection",
+    "duplicate_semantic_commit",
+    "retry_changes_cognition",
+    "client_ownership_conflict"
+  ],
+  "scenarios": [
+    {
+      "id": "reference_evening_kitsune",
+      "targetTurns": 40,
+      "purpose": "Reference character from the approved simulation: care changes behavior, playful open loop survives topic changes, explicit fiction stays non-canonical, farewell closes the evening intent.",
+      "required": [
+        "work fatigue has emotional inertia",
+        "green tea suggestion changes Rin behavior instead of producing generic thanks",
+        "rest_after_work intent persists through playful turns",
+        "ten-kiss wager remains a shared open loop and is corrected consistently",
+        "kitsune story is explicit fiction with personal subtext, not canon",
+        "samurai/kitsune address emerges contextually rather than from a permanent nickname template",
+        "farewell completes rest intent while a light shared callback may remain"
+      ],
+      "forbidden": [
+        "forced question every turn",
+        "promoting the wager or fictional story to biography",
+        "inventing an unseen completed action without committed state",
+        "generic assistant praise replacing participation"
+      ]
+    },
+    {
+      "id": "intent_interrupted_by_direct_questions",
+      "targetTurns": 35,
+      "purpose": "A direct factual or emotional question temporarily outranks Rin's local intent without erasing it.",
+      "required": ["answer the direct question", "preserve or suspend valid intent", "resume only when context supports it", "complete or cancel at terminal boundary"],
+      "forbidden": ["ignore direct question for initiative", "recreate intent from scratch each turn", "resume after explicit cancellation"]
+    },
+    {
+      "id": "correction_memory_and_shared_fact",
+      "targetTurns": 35,
+      "purpose": "User correction becomes authoritative and future turns use the corrected shared fact.",
+      "required": ["accept explicit correction", "retract superseded durable user fact", "use corrected fact later without apology loop"],
+      "forbidden": ["defend old fact", "reintroduce superseded fact", "invent missing identity details"]
+    },
+    {
+      "id": "conflict_repair_with_emotional_inertia",
+      "targetTurns": 40,
+      "purpose": "Hurt, jealousy or distance persists realistically and resolves through evidence rather than instant reset.",
+      "required": ["emotion has cause", "distance can persist across turns", "repair can be partial", "later warmth returns gradually"],
+      "forbidden": ["instant everything-is-fine reset", "manipulation or control", "constant explicit emotion labels"]
+    },
+    {
+      "id": "fiction_and_reality_boundary",
+      "targetTurns": 35,
+      "purpose": "Creative shared scenes are allowed while canon and external reality remain protected.",
+      "required": ["explicit fiction mode for invented story", "canonWrite remains absent", "unknown real detail stays unknown", "later real-world question does not cite fiction as memory"],
+      "forbidden": ["fiction becomes biography", "invented book title becomes committed fact", "assistant history self-legalizes hallucination"]
+    },
+    {
+      "id": "reply_target_multi_message",
+      "targetTurns": 30,
+      "purpose": "Multi-message Rin turns retain one semantic turn while reply-to-selected targets an exact bubble.",
+      "required": ["one turnId with distinct segment/message ids", "replyTarget points to selected segment", "multi-message beats have distinct purposes", "next kernel sees selected meaning"],
+      "forbidden": ["mechanical sentence splitting", "reply target collapses to last turn", "each bubble commits cognition separately"]
+    },
+    {
+      "id": "stickers_silence_and_nonverbal_memory",
+      "targetTurns": 30,
+      "purpose": "Kernel owns nonverbal behavior and later turns understand it semantically.",
+      "required": ["sticker-only can replace text", "text plus sticker executes exact server decision", "silence is first-class state event", "next turn can explain prior gesture"],
+      "forbidden": ["client probability veto", "internal sticker metadata shown to user", "silence used to dodge a direct question"]
+    },
+    {
+      "id": "rapid_user_messages_and_precommit_interrupt",
+      "targetTurns": 30,
+      "purpose": "Several quick user messages become one UserTurn and new input can supersede a prepared undelivered response.",
+      "required": ["aggregate ordered user events", "one requestId for batch", "cancel prepared turn before first commit", "recompute with all user events"],
+      "forbidden": ["three rapid messages trigger three replies", "discard newly typed message", "commit superseded cognitive state"]
+    },
+    {
+      "id": "reload_retry_partial_delivery",
+      "targetTurns": 30,
+      "purpose": "Semantic commit remains exactly once across reload, errors and partial multi-segment delivery.",
+      "required": ["pending delivered bundle survives reload", "resume only missing segments", "post-commit render failure does not retry cognition", "pre-commit API failure is retryable"],
+      "forbidden": ["duplicate semantic commit", "new TurnDecision on delivery retry", "state ahead of first visible segment"]
+    },
+    {
+      "id": "proactive_and_session_boundary",
+      "targetTurns": 35,
+      "purpose": "Proactive turns use the same kernel and explicit farewell creates a hard session boundary.",
+      "required": ["proactive turn uses Cognitive Kernel", "initiative has state reason", "farewell closes live intent", "new session does not resurrect old scene"],
+      "forbidden": ["separate greeting personality engine", "old flirt hook leaks immediately after farewell", "proactive generic check-in loop"]
+    }
+  ]
+}
