@@ -20,6 +20,7 @@ import { MemoryStorage, createReq, createRes, sleep } from './helpers/runtime.js
 const decision = (overrides = {}) => ({
   act: 'direct_response', focus: 'ответить по смыслу', stance: 'лично и конкретно',
   question: { mode: 'none', reason: null },
+  replyLink: { targetEventId: null, reason: null },
   delivery: { mode: 'single_text', segments: [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620 }] },
   intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
   openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded', ...overrides

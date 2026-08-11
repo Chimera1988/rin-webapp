@@ -104,3 +104,28 @@ test('reply UI keeps the existing composer and bubble design tokens', async () =
   assert.match(chat,/inReplyTo/);
   assert.match(chat,/replySnapshot/);
 });
+
+test('ordinary single-message turns expose no visual reply candidate', () => {
+  const history=[
+    {role:'user',kind:'text',status:'sent',requestId:'r1',id:'u-only',content:'Чем занимаешься?'}
+  ];
+  const state=kernelFor(history,'Чем занимаешься?');
+  assert.deepEqual(state.visualReplyCandidates,[]);
+});
+
+test('multi-message user turn exposes only earlier events as optional semantic visual-reply anchors', () => {
+  const history=[
+    {role:'user',kind:'text',status:'sent',requestId:'r1',id:'u-first',content:'Как прошёл день?'},
+    {role:'user',kind:'text',status:'sent',requestId:'r1',id:'u-second',content:'И чай успела выпить?'}
+  ];
+  const state=kernelFor(history,'Как прошёл день?\nИ чай успела выпить?');
+  assert.deepEqual(state.visualReplyCandidates,[{eventId:'u-first',excerpt:'Как прошёл день?'}]);
+  assert.equal(state.visualReplyCandidates.some(item=>item.eventId==='u-second'),false);
+});
+
+test('assistant visual reply UI is driven only by semantic visualReply, never by automatic latest-user fallback', async () => {
+  const chat=await readFile(new URL('../public/chat.js',import.meta.url),'utf8');
+  assert.match(chat,/replyLinkFromTarget\(data\?\.visualReply\)/u);
+  assert.doesNotMatch(chat,/defaultInReplyTo/u);
+  assert.doesNotMatch(chat,/replyLinkFromTarget\(data\?\.replyTarget\)/u);
+});

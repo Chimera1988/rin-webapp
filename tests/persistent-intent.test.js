@@ -6,6 +6,7 @@ import { applyIntentTransition, buildDecisionStateTransition, normalizeTurnDecis
 const decision = (intentTransition) => normalizeTurnDecision({
   act: 'continue_naturally', focus: 'текущая линия', stance: 'лично',
   question: { mode: 'none', reason: null },
+  replyLink: { targetEventId: null, reason: null },
   delivery: { mode: 'single_text', segments: [{ type:'text', purpose:'reply', stickerIntent:null, maxChars:300 }] },
   intentTransition,
   openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded'

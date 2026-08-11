@@ -49,6 +49,7 @@ test('realization prompt cannot change the already frozen TurnDecision', () => {
   const decision = {
     act: 'tease_and_hold_commitment', focus: 'поддержать пари, но сохранить отдых', stance: 'игривая и тёплая',
     question: { mode: 'none', reason: null },
+    replyLink: { targetEventId: null, reason: null },
     delivery: { mode: 'multi_message', segments: [
       { type: 'text', purpose: 'reaction', maxChars: 180 },
       { type: 'text', purpose: 'afterthought', maxChars: 160 }
@@ -89,4 +90,26 @@ test('StickerState is a hard schema gate, not a probability hint interpreted by 
   });
   const availableTypes = available.responseFormat.json_schema.schema.properties.delivery.properties.segments.items.properties.type.enum;
   assert.deepEqual(availableTypes, ['text','sticker']);
+});
+
+test('Kernel owns semantic visual reply and cannot quote ordinary latest messages by default', () => {
+  const ordinary = buildKernelPrompt({
+    profile: { prompt_profile: promptProfile },
+    state: { activeIntent:null, stickerState:{available:false}, visualReplyCandidates:[], recentHistory:[], userEvents:[{id:'u-only',content:'Чем занимаешься?'}] }
+  });
+  assert.deepEqual(ordinary.responseFormat.json_schema.schema.properties.replyLink.properties.targetEventId.enum,[null]);
+  assert.match(ordinary.system,/Визуальную цитату.*более ранняя реплика/iu);
+  assert.match(ordinary.system,/Никогда не цитируй единственное или последнее сообщение/iu);
+
+  const batched = buildKernelPrompt({
+    profile: { prompt_profile: promptProfile },
+    state: {
+      activeIntent:null,
+      stickerState:{available:false},
+      visualReplyCandidates:[{eventId:'u-first',excerpt:'Как прошёл день?'}],
+      recentHistory:[],
+      userEvents:[{id:'u-first',content:'Как прошёл день?'},{id:'u-last',content:'И чай выпила?'}]
+    }
+  });
+  assert.deepEqual(batched.responseFormat.json_schema.schema.properties.replyLink.properties.targetEventId.enum,[null,'u-first']);
 });

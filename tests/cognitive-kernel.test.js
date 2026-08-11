@@ -9,6 +9,7 @@ import { buildDeliveryPlan } from '../api/chat.js';
 const decision = overrides => normalizeTurnDecision({
   act: 'answer_and_continue', focus: 'ответить конкретно', stance: 'спокойная',
   question: { mode: 'none', reason: null },
+  replyLink: { targetEventId: null, reason: null },
   delivery: { mode: 'single_text', segments: [{ type: 'text', purpose: 'answer', stickerIntent: null, maxChars: 300 }] },
   intentTransition: { operation: 'none' }, openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded',
   ...(overrides || {})
@@ -187,4 +188,17 @@ test('DeliveryPlan binds realized text by segment order even when purposes repea
     {type:'text',purpose:'beat',text:'Второй пузырь'}
   ] } });
   assert.deepEqual(plan.segments.map(item => item.text), ['Первый пузырь', 'Второй пузырь']);
+});
+
+test('visual reply is structurally unavailable for ordinary single-message turns and limited to earlier batch events', () => {
+  const single = buildTurnDecisionJsonSchema({ replyCandidateIds: [] });
+  assert.deepEqual(single.schema.properties.replyLink.properties.targetEventId.enum,[null]);
+
+  const batched = buildTurnDecisionJsonSchema({ replyCandidateIds: ['u-first','u-second'] });
+  assert.deepEqual(batched.schema.properties.replyLink.properties.targetEventId.enum,[null,'u-first','u-second']);
+
+  const invalid = decision({ replyLink:{targetEventId:'u-last',reason:'не должен быть разрешён'} });
+  const validation = validateTurnDecisionConstraints(invalid,{visualReplyCandidates:[{eventId:'u-first'}]});
+  assert.equal(validation.passed,false);
+  assert.ok(validation.warnings.includes('visual_reply_target_not_allowed'));
 });

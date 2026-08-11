@@ -14,6 +14,7 @@ const baseDecision = (overrides = {}) => ({
   focus: 'ответить на текущую реплику по смыслу',
   stance: 'личная и конкретная позиция Рин',
   question: { mode: 'none', reason: null },
+  replyLink: { targetEventId: null, reason: null },
   delivery: { mode: 'single_text', segments: [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620 }] },
   intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
   openLoops: { open: [], resolveIds: [] },
@@ -377,5 +378,37 @@ test('server selector rotates away from the immediately previous asset while pre
     assert.equal(sticker.stickerIntent,'warmth');
     assert.notEqual(sticker.sticker.id,'warm_smile');
     assert.equal(sticker.semantic.selection.strategy,'semantic_rank_with_recent_rotation');
+  } finally { mock.restore(); }
+});
+
+test('ordinary single-message response does not emit a visual reply link', async () => {
+  const mock=installStructuredMock({ decisions:[baseDecision()], realizations:[realization('Работаю над переводом.)')] });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId:'no-visual-quote',text:'Чем занимаешься?'}),res);
+    assert.equal(res.statusCode,200);
+    assert.equal(res.body.visualReply,null);
+    assert.equal(res.body.turnDecision.replyLink.targetEventId,null);
+    assert.deepEqual(res.body.cognition.visualReplyCandidates,[]);
+    assert.equal('replyTarget' in res.body,false);
+  } finally { mock.restore(); }
+});
+
+test('Kernel may emit a visual reply only to an earlier event inside a multi-message user turn', async () => {
+  const requestId='semantic-visual-reply';
+  const history=[
+    {role:'user',kind:'text',status:'sent',requestId,id:'u-first',content:'Как прошёл день?'},
+    {role:'user',kind:'text',status:'sent',requestId,id:'u-last',content:'И чай успела выпить?'}
+  ];
+  const d=baseDecision({replyLink:{targetEventId:'u-first',reason:'отдельно отвечаю на первый вопрос из двух'}});
+  const mock=installStructuredMock({decisions:[d],realizations:[realization('День был плотный, но уже отпускает.)')]});
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId,text:'И чай успела выпить?',history}),res);
+    assert.equal(res.statusCode,200);
+    assert.deepEqual(res.body.cognition.visualReplyCandidates,[{eventId:'u-first',excerpt:'Как прошёл день?'}]);
+    assert.equal(res.body.visualReply.messageId,'u-first');
+    assert.equal(res.body.visualReply.role,'user');
+    assert.equal(res.body.visualReply.excerpt,'Как прошёл день?');
   } finally { mock.restore(); }
 });
