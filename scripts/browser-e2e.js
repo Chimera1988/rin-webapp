@@ -7,6 +7,8 @@ import net from 'node:net';
 
 const root = process.cwd();
 const publicRoot = path.join(root, 'public');
+const deploymentConfig = JSON.parse(await readFile(path.join(root, 'vercel.json'), 'utf8'));
+const deploymentHeaders = Object.fromEntries((deploymentConfig.headers || []).find(item => item?.source === '/(.*)')?.headers?.map(item => [item.key, item.value]) || []);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const chatBodies = [];
 let failOnce = true;
@@ -29,7 +31,7 @@ async function readBody(req) {
 }
 
 function json(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.writeHead(status, { ...deploymentHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
 }
 
@@ -122,7 +124,7 @@ const server = createServer(async (req, res) => {
       };
       return json(res, 200, {
         requestId: body.requestId, turnId, reply: stickerOnly ? '' : reply, finishReason: 'stop', long: false,
-        model: { kernel:'gpt-4o', realization:'gpt-4o' }, turnDecision, deliveryPlan,
+        model: { kernel:'gpt-4.1', realization:'gpt-4.1' }, turnDecision, deliveryPlan,
         validation:{decision:{passed:true,warnings:[]},realization:{passed:true,warnings:[],reply:stickerOnly?'':reply}},
         stateTransition: {
           schema: 'rin-state-transition-v4',
@@ -150,7 +152,7 @@ const server = createServer(async (req, res) => {
     if (!file.startsWith(`${publicRoot}${path.sep}`) && file !== publicRoot) return json(res, 403, { error: 'Forbidden' });
     const info = await stat(file).catch(() => null);
     if (!info?.isFile()) return json(res, 404, { error: 'Not found' });
-    res.writeHead(200, { 'Content-Type': contentType(file), 'Cache-Control': 'no-store' });
+    res.writeHead(200, { ...deploymentHeaders, 'Content-Type': contentType(file), 'Cache-Control': 'no-store' });
     res.end(await readFile(file));
   } catch (error) {
     json(res, 500, { error: String(error?.message || error) });
@@ -251,6 +253,8 @@ function assert(condition, message) {
   if (!condition) throw new Error(`Browser E2E assertion failed: ${message}`);
 }
 
+function phase(name) { console.log(`[browser-e2e] ${name}`); }
+
 let chromium;
 let cdp;
 let profileDir;
@@ -285,7 +289,7 @@ try {
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   await cdp.send('Page.navigate', { url: `http://rin.test:${appPort}/login.html` });
-  await waitFor(cdp, "Boolean(document.querySelector('#loginForm'))", 'login form');
+  await waitFor(cdp, "Boolean(document.querySelector('#loginForm')) && document.documentElement.classList.contains('login-ready')", 'login bootstrap readiness');
 
   await cdp.evaluate(`(() => {
     localStorage.clear();
@@ -298,22 +302,22 @@ try {
 
   await cdp.evaluate(`(() => {
     localStorage.setItem('rin-sticker-mode', 'always');
-    localStorage.setItem('rin-profile-v1', JSON.stringify({ initiation: { max_per_day: 0, windows: [] } }));
     document.querySelector('#pinInput').disabled = false;
     document.querySelector('#pinInput').value = '1357';
     document.querySelector('#loginForm').requestSubmit();
     return true;
   })()`);
   await waitFor(cdp, "location.pathname.includes('index') && document.documentElement.classList.contains('auth-ready')", 'authenticated app bootstrap', 20_000);
-  await waitFor(cdp, "document.querySelectorAll('#chat .row.assistant').length >= 1", 'single greeting');
-  await sleep(500);
-  const initialAssistantCount = await cdp.evaluate("document.querySelectorAll('#chat .row.assistant').length");
+  await waitFor(cdp, "document.querySelectorAll('#chat .row.her').length >= 1", 'single greeting');
+  await waitFor(cdp, "document.querySelector('#peerStatus')?.textContent === 'онлайн'", 'greeting presence completion');
+  const initialAssistantCount = await cdp.evaluate("document.querySelectorAll('#chat .row.her').length");
   assert(initialAssistantCount === 1, `expected one greeting, got ${initialAssistantCount}`);
   assert(chatBodies[0]?.trigger?.type === 'greeting', 'initial greeting must go through /api/chat as a proactive trigger');
   assert(chatBodies[0]?.history?.length === 0, 'proactive greeting must not fabricate a user message');
   const initialPeerStatus = await cdp.evaluate("document.querySelector('#peerStatus')?.textContent");
-  assert(initialPeerStatus === 'онлайн', `presence should be online immediately after the proactive greeting, got ${initialPeerStatus}`);
+  assert(initialPeerStatus === 'онлайн', `presence should settle online after the proactive greeting, got ${initialPeerStatus}`);
 
+  phase('greeting complete');
   const freshDefaults = await cdp.evaluate(`(() => ({
     dark: document.documentElement.classList.contains('theme-dark'),
     light: document.documentElement.classList.contains('theme-light'),
@@ -408,6 +412,7 @@ try {
   assert(await cdp.evaluate("document.documentElement.classList.contains('theme-dark') && document.querySelector('[data-theme-choice=theme-dark]').classList.contains('is-active')"), 'dark theme must apply to the whole app');
   await cdp.evaluate("document.querySelector('#closeSettingsBtn').click(); true");
 
+  phase('settings and viewport complete');
   const send = text => cdp.evaluate(`(() => {
     const input = document.querySelector('#input');
     input.value = ${JSON.stringify(text)};
@@ -420,8 +425,9 @@ try {
   await waitFor(cdp, completedUsers(1), 'first completed user turn');
   await send('Как меня зовут?');
   await waitFor(cdp, completedUsers(2), 'second completed user turn', 20_000);
-  assert(chatBodies[1]?.memory?.facts?.user?.name === 'Алексей', 'semantic memory must enter the immediately following request');
+  assert(chatBodies.at(-1)?.memory?.facts?.user?.name === 'Алексей', 'semantic memory must enter the immediately following request');
 
+  phase('memory-before-next-turn complete');
   const beforeRapidRequests = chatBodies.length;
   await Promise.all([send('Быстрый ход один'), send('Быстрый ход два')]);
   await waitFor(cdp, completedUsers(4), 'two rapid sends');
@@ -429,6 +435,7 @@ try {
   const rapidBody = chatBodies.at(-1);
   const rapid = rapidBody.history.filter(item => item.role === 'user' && item.requestId === rapidBody.requestId).map(item => item.content);
   assert(rapid.length === 2 && rapid[0] === 'Быстрый ход один' && rapid[1] === 'Быстрый ход два', `rapid aggregation order changed: ${rapid.join(' / ')}`);
+  phase('rapid aggregation complete');
   const rapidVisualReply = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
     const message = [...history].reverse().find(item => item.role === 'assistant' && item.replySnapshot?.excerpt === 'Быстрый ход один');
@@ -446,6 +453,7 @@ try {
       trust: diary.relationship?.trust
     };
   })()`);
+  phase('visual reply complete');
   await send('FAIL_ONCE');
   await waitFor(cdp, "Boolean(document.querySelector('.message-retry'))", 'failed message retry control');
   const afterFailedTurnState = await cdp.evaluate(`(() => {
@@ -511,7 +519,7 @@ try {
     const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
     return { schema: diary._schema, emotion: diary.conversationState?.emotionalState?.primary?.type, cause: diary.conversationState?.emotionalState?.primary?.cause };
   })()`);
-  assert(jealousyState.schema === 4 && jealousyState.emotion === 'jealousy' && /другой девушк/.test(jealousyState.cause || ''), 'canonical jealousy state must commit to diary v4');
+  assert(jealousyState.schema === 5 && jealousyState.emotion === 'jealousy' && /другой девушк/.test(jealousyState.cause || ''), 'canonical jealousy state must commit to diary v5');
 
   await send('Это была шутка, хотел тебя проверить на ревность 😁');
   await waitFor(cdp, completedUsers(10), 'affective reveal commit');
@@ -529,6 +537,7 @@ try {
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.id === 'intent-e2e-play', 'next browser request must restore the committed persistent Rin intent');
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.sceneBinding?.key === 'playful_tease', 'next browser request must restore the concrete intent scene binding');
 
+  phase('affective and intent continuity complete');
   const lifecycle = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
     return {
@@ -542,12 +551,16 @@ try {
   assert(lifecycle.allTyped, 'all persisted chat events must use schema v6');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
-  assert(lifecycle.conversationRevision >= 12, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
+  const expectedCommittedRevision = chatBodies.length - 1; // exactly one intentional upstream failure is retried successfully
+  assert(lifecycle.conversationRevision === expectedCommittedRevision, `conversation revision must advance exactly once per committed turn: expected ${expectedCommittedRevision}, got ${lifecycle.conversationRevision}`);
 
+  phase('lifecycle assertions complete');
   console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, server-owned sticker, reply-to-selected, semantic batch visual reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
 } catch (error) {
-  if (error instanceof BrowserPolicyBlockedError) {
-    console.log(`Browser E2E SKIPPED: ${error.message}`);
+  if (error instanceof BrowserPolicyBlockedError && process.env.RIN_ALLOW_BROWSER_E2E_SKIP === '1') {
+    console.log(`Browser E2E SKIPPED by explicit opt-in: ${error.message}`);
+  } else if (error instanceof BrowserPolicyBlockedError) {
+    throw new Error(`Browser E2E unavailable and cannot be counted as passing: ${error.message}`);
   } else {
     throw error;
   }

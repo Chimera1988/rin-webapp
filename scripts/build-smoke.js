@@ -27,6 +27,8 @@ if ((index.match(/app_bootstrap\.js/g) || []).length !== 1) fail('Index must loa
 if (!index.includes('id="chatViewportShell"') || !index.includes('class="chat-viewport-shell"')) fail('Index must keep the visual viewport shell.');
 if (!index.includes('id="chatWallpaper"') || !index.includes('class="chat-wallpaper"')) fail('Index must keep the wallpaper layer.');
 if (!index.includes('id="replyPreview"') || !index.includes('class="reply-preview"')) fail('Index must keep reply-to-selected UI.');
+const loginSource = await read('public/js/login.js');
+if (!loginSource.includes("classList.add('login-ready')")) fail('Login must expose an explicit bootstrap readiness boundary.');
 if (!/id=\"peerStatus\"[^>]*>не в сети<\/div>/.test(index)) fail('Initial peer status must be «не в сети».');
 if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js outside authenticated bootstrap.');
 
@@ -38,8 +40,9 @@ const activeSources = [
   'lib/conversation-brain.js', 'lib/conversation-continuity.js', 'lib/cognition/dialogue-state.js',
   'lib/cognition/memory-retrieval.js', 'lib/cognition/reality-boundary.js', 'lib/personality/rin-realization.js',
   'public/chat.js', 'public/js/chat_store.js', 'public/js/delivery_scheduler.js', 'public/js/presence_controller.js',
+  'public/js/storage.js', 'public/js/initiation_state.js', 'public/js/conversation_policy.js', 'public/js/persona_ui.js', 'public/js/wallpaper_store.js',
   'public/js/rin_memory.js', 'public/js/rin_lore.js', 'public/lib/chat-contract.js', 'public/lib/inner-life-contract.js',
-  'public/lib/intent-contract.js', 'public/lib/sticker-contract.js', 'public/lib/stickers-v6.js'
+  'public/lib/intent-contract.js', 'public/lib/sticker-contract.js', 'public/lib/stickers-v7.js'
 ];
 const forbidden = ['stickers-v4', 'response_postprocessor', '/data/rin_persona.json', '/data/rin_mind.json', '/data/rin_reasoning.json', '/data/rin_speaking_habits.json'];
 for (const file of activeSources) {
@@ -47,19 +50,19 @@ for (const file of activeSources) {
   for (const token of forbidden) if (source.includes(token)) fail(`${file} still references obsolete active source ${token}.`);
 }
 
-for (const file of ['public/data/rin_prompt_profile.json', 'public/data/rin_backstory.json', 'public/data/rin_memories.json', 'public/data/rin_schedule.json', 'public/data/rin_triggers.json', 'public/data/stickers-v6.json']) {
+for (const file of ['data/canon/rin_prompt_profile.json', 'data/canon/rin_backstory.json', 'data/canon/rin_memories.json', 'public/data/rin_schedule.json', 'data/canon/rin_triggers.json', 'public/data/stickers-v7.json']) {
   const json = JSON.parse(await read(file));
   if (!json._schema) fail(`${file} has no _schema.`);
 }
 
-const promptProfile = JSON.parse(await read('public/data/rin_prompt_profile.json'));
+const promptProfile = JSON.parse(await read('data/canon/rin_prompt_profile.json'));
 const activePromptText = JSON.stringify({ reference_character: promptProfile.reference_character, voice: promptProfile.voice, cognitive_policy: promptProfile.cognitive_policy, guardrails: promptProfile.guardrails });
 if (promptProfile.version !== 'prompt-profile-v9-reference-character-kernel') fail('Reference-character prompt profile version is not active.');
 if (!promptProfile.reference_character?.core?.includes('не пытается выглядеть живой')) fail('Reference Rin core is missing.');
 if (!Array.isArray(promptProfile.reference_dialogue_examples) || promptProfile.reference_dialogue_examples.length < 5) fail('Reference dialogue examples are incomplete.');
 if (/behavior policy|RESPONSE PLAN/iu.test(activePromptText)) fail('Active reference prompt still delegates decisions to a legacy behavior planner.');
 if (promptProfile.relationship?.private_name !== 'Хикари Ринсей') fail('Shared private name must be canonical Хикари Ринсей.');
-const canonText = `${await read('public/data/rin_backstory.json')}\n${await read('public/data/rin_memories.json')}`;
+const canonText = `${await read('data/canon/rin_backstory.json')}\n${await read('data/canon/rin_memories.json')}`;
 if (/собеседник\s*\(光\)|собеседник\s*[—-]\s*свет/iu.test(canonText)) fail('Obsolete placeholder/光 etymology remains in canon.');
 const benchmark = JSON.parse(await read('tests/fixtures/rin-reference-benchmark.json'));
 if (benchmark.targetScore !== 90 || benchmark.liveEvaluationRequiredForClaim !== true) fail('Reference benchmark target/claim policy is invalid.');
@@ -69,6 +72,7 @@ const vercel = JSON.parse(await read('vercel.json'));
 const headerText = JSON.stringify(vercel.headers || []);
 if (!headerText.includes('/api/(.*)') || !headerText.includes('no-store')) fail('API no-store cache policy is missing.');
 if (!headerText.includes('css|js') || !headerText.includes('must-revalidate')) fail('Client revalidation cache policy is missing.');
+if (!headerText.includes('Content-Security-Policy') || !headerText.includes("default-src 'self'") || !headerText.includes("object-src 'none'")) fail('Baseline browser security headers are missing.');
 
 const apiChat = await read('api/chat.js');
 for (const required of ['cognitive-kernel.js', 'kernel-state.js', 'turn-decision.js', 'turn-validator.js', 'sticker-state.js', 'sticker-selector.js', 'rin-realization.js', 'canon-retrieval.js']) {
@@ -84,7 +88,7 @@ const removedDecisionOwners = [
   'lib/personality/initiative-controller.js', 'lib/personality/inner-life.js', 'lib/personality/micro-reactions.js',
   'lib/personality/mood.js', 'lib/personality/relationship-engine.js', 'lib/personality/relationship.js',
   'lib/personality/rhythm-controller.js', 'lib/personality/speech.js', 'lib/personality/utils.js',
-  'lib/personality/voice-policy.js', 'lib/stickers-v6.js'
+  'lib/personality/voice-policy.js', 'lib/stickers-v6.js', 'public/lib/stickers-v6.js'
 ];
 for (const file of removedDecisionOwners) if (await exists(file)) fail(`Competing legacy owner must be physically absent: ${file}.`);
 for (const legacyOwner of removedDecisionOwners.map(file => path.basename(file))) {
@@ -93,6 +97,7 @@ for (const legacyOwner of removedDecisionOwners.map(file => path.basename(file))
 if (/gpt-4o-mini/.test(apiChat)) fail('User-facing chat cognition must not route by short-model gpt-4o-mini.');
 if (/normalize\(input\.(?:hint|pool)|trigger\?\.(?:hint|pool)/.test(apiChat)) fail('Proactive trigger must carry event metadata only; content hints/pools are forbidden.');
 if (!apiChat.includes('OPENAI_DECISION_MODEL') || !apiChat.includes('OPENAI_REALIZATION_MODEL')) fail('Chat must route models by cognitive role.');
+if (!apiChat.includes("'gpt-4.1'") || /OPENAI_LONG_MODEL|['"]gpt-4o['"]/.test(apiChat)) fail('Chat model defaults must use the current explicit role fallback without deprecated compatibility aliases.');
 if (!apiChat.includes('retrieveCanonicalLore(canonCue)') || /body\.lore/.test(apiChat)) fail('Canonical lore must be server-retrieved and client lore must not be trusted.');
 if (!apiChat.includes('validateTurnDecisionConstraints') || !apiChat.includes('validateRealization')) fail('Deterministic decision/realization validation is missing.');
 if (/responsePlan|coreDecision|conversationBrain|compatibilityResponsePlan/.test(apiChat)) fail('Chat API must not emit or reconstruct legacy decision-plan compatibility fields.');
@@ -192,7 +197,7 @@ if (/\bopenLoops\s*:\s*\[\]/.test(memorySource.split('function emptyDiary')[1]?.
 const intentContract = await read('public/lib/intent-contract.js');
 if (!intentContract.includes("source: clean(input.source, 100) || 'cognitive_kernel'")) fail('PersistentIntent default provenance must be Cognitive Kernel.');
 if (!intentContract.includes("status === 'completed' || status === 'cancelled'")) fail('Only completed/cancelled intents may receive terminal tombstones.');
-const clientStickers = await read('public/lib/stickers-v6.js');
+const clientStickers = await read('public/lib/stickers-v7.js');
 if (/decideSticker|decidePlannedSticker|deriveStickerSignals|Math\.random/.test(clientStickers)) fail('Client sticker module must execute/telemetry only, never decide semantics/probability.');
 const clientLore = await read('public/js/rin_lore.js');
 if (/rin_backstory|rin_memories|rin_triggers|rin_phrases|pickGreeting|pickInitiationPhrase|buildLorePayload|lorePayloadForApi|commitLorePayload/.test(clientLore)) fail('Client lore module must own schedule metadata only, not canon or proactive content.');
@@ -223,7 +228,8 @@ if (await exists('public/data/rin_phrases.json')) fail('Legacy proactive phrase 
 const initiationPolicy = await read('public/js/conversation_policy.js');
 if (/chooseConfiguredStarter|starter/i.test(initiationPolicy)) fail('InitiationPolicy must decide timing only, not proactive content.');
 const innerLife = await read('public/lib/inner-life-contract.js');
-if (!innerLife.includes('rin-inner-life-v2') || !innerLife.includes('realityMode') || !innerLife.includes('source')) fail('InnerLife v2 provenance contract is incomplete.');
+if (!innerLife.includes('rin-inner-life-v3') || !innerLife.includes('activityGoal') || !innerLife.includes('recentActivities') || !innerLife.includes('realityMode') || !innerLife.includes('source')) fail('InnerLife v3 active contract is incomplete.');
+if (/privateThought|continuityKey|recentThoughts|lastSpontaneousAt/.test(innerLife)) fail('InnerLife contract still exposes inactive legacy fields.');
 
 const weather = await read('api/weather.js');
 if (!weather.includes("'no-store'") || weather.includes('max-age=60')) fail('Weather API cache policy must remain no-store.');
@@ -238,7 +244,7 @@ for (const file of ['public/data/legacy/README.md', 'public/data/legacy/rin_mind
 
 const stickerContractUrl = pathToFileURL(path.join(root, 'public/lib/sticker-contract.js')).href;
 const stickerContract = await import(`${stickerContractUrl}?build-smoke=${Date.now()}`);
-const stickerConfig = JSON.parse(await read('public/data/stickers-v6.json'));
+const stickerConfig = JSON.parse(await read('public/data/stickers-v7.json'));
 const stickerAssets = new Set((await readdir(path.join(root, 'public/stickers'))).map(file => `/stickers/${file}`));
 const stickerValidation = stickerContract.validateStickerConfig(stickerConfig, stickerAssets);
 if (!stickerValidation.ok) fail(`Sticker manifest invalid: ${stickerValidation.errors.join('; ')}`);
@@ -246,8 +252,46 @@ if (stickerAssets.size !== 34) fail(`Expected 34 sticker assets, found ${sticker
 if (Number(stickerConfig.defaults?.rollingWindowTurns) !== 10 || Number(stickerConfig.defaults?.minGapAssistantTurns) !== 2) fail('Sticker manifest rolling frequency defaults are not canonical.');
 if (stickerConfig.defaults?.semanticContract !== 'sticker-emotion-v2') fail('Sticker manifest semantic contract must be sticker-emotion-v2.');
 
+const scheduleConfig = JSON.parse(await read('public/data/rin_schedule.json'));
+if (scheduleConfig._schema !== 'rin-schedule-v2' || scheduleConfig.probability_semantics !== 'one_draw_per_window_when_eligible') fail('Schedule v2 must define one-draw-per-window probability semantics.');
+if (!Array.isArray(scheduleConfig.windows) || scheduleConfig.windows.length !== 3 || !scheduleConfig.windows.every(item => item.id && Number.isFinite(Number(item.probability)))) fail('Schedule v2 windows are incomplete.');
+if (!Number.isFinite(Number(scheduleConfig.location?.lat)) || !Number.isFinite(Number(scheduleConfig.location?.lon))) fail('Schedule location coordinates must be canonical runtime metadata.');
+if (!chat.includes('createInitiationStateStore') || !chat.includes('recordAttempt(dateKey, windowKey)') || !chat.includes('initiationPolicy.pollIntervalMs')) fail('Client initiative execution must persist a single draw per schedule window.');
+if (/RIN_TZ|RIN_CITY|RIN_COUNTRY|rin-init-count/.test(chat)) fail('Client chat still contains a competing schedule/timezone/initiation source.');
+if (!chat.includes('persistChatHistoryMutation') || !chat.includes('HISTORY_STORAGE_FAILED')) fail('Outbound user turns must be blocked unless chat state is durably persisted.');
+const wallpaperStore = await read('public/js/wallpaper_store.js');
+if (!wallpaperStore.includes('indexedDBRef') || !wallpaperStore.includes("rin-media-v1")) fail('Large wallpaper media must use the IndexedDB media store.');
+if (chat.includes("'rin-wallpaper-data'") || chat.includes('LS_WP_DATA')) fail('Chat runtime must not store wallpaper binary data in localStorage.');
+if (!chat.includes('fetchRinWeather(schedule.location)') || !chat.includes('/api/weather?lat=')) fail('Client weather must use schedule coordinates.');
+if (/query\.q|Kanazawa/.test(weather)) fail('Weather API must not use deprecated city-name geocoding.');
+
+const personaUi = await read('public/js/persona_ui.js');
+const memoryProfileSource = await read('public/js/rin_memory.js');
+for (const legacyField of ['pName', 'pInstrBase', 'pStarters', 'pInitMax', 'pWin1', 'pWin2']) if (index.includes(`id="${legacyField}"`) || personaUi.includes(legacyField)) fail(`Non-executable persona control must be absent: ${legacyField}.`);
+for (const liveField of ['pDesc', 'pInstrExtra', 'pKnowledge']) if (!index.includes(`id="${liveField}"`)) fail(`Executable persona control is missing: ${liveField}.`);
+if (/name:\s*profile\.name|starters:|initiation:/.test(chat)) fail('Chat must send only server-supported profile overrides.');
+if (/BASE_RULES|starters:|initiation:/.test(memoryProfileSource)) fail('Browser profile storage still owns canonical or non-executable fields.');
+
+for (const name of ['rin_prompt_profile.json', 'rin_backstory.json', 'rin_memories.json', 'rin_triggers.json']) {
+  if (!await exists(`data/canon/${name}`)) fail(`Server canon is missing: data/canon/${name}.`);
+  if (await exists(`public/data/${name}`)) fail(`Server-only canon is still public: public/data/${name}.`);
+}
+for (const obsolete of ['public/lib/stickers-v6.js', 'public/data/stickers-v6.json']) if (await exists(obsolete)) fail(`Obsolete sticker v6 artifact must be physically absent: ${obsolete}.`);
+if (!await exists('public/lib/stickers-v7.js') || !await exists('public/data/stickers-v7.json')) fail('Sticker v7 runtime and manifest must both exist.');
+
+for (const [file, token] of [
+  ['lib/cognition/belief-model.js', 'beliefInstruction'],
+  ['lib/cognition/memory-retrieval.js', 'memoryRetrievalInstruction'],
+  ['lib/cognition/reality-boundary.js', 'realityBoundaryInstruction'],
+  ['lib/cognition/emotional-state.js', 'affectiveInstruction'],
+  ['api/chat.js', 'modelMessageFromHistory']
+]) if ((await read(file)).includes(token)) fail(`Dead compatibility helper remains active: ${file}:${token}.`);
+
+const browserE2E = await read('scripts/browser-e2e.js');
+if (!browserE2E.includes('RIN_ALLOW_BROWSER_E2E_SKIP') || !browserE2E.includes('cannot be counted as passing')) fail('Browser E2E must fail closed unless skip is explicitly opted in.');
+
 for (const [file, exports] of [
-  ['lib/server/http.js', ['readJsonBody', 'requestPin', 'requirePin', 'fetchWithTimeout', 'publicError']],
+  ['lib/server/http.js', ['readJsonBody', 'requestPin', 'requirePin', 'requireMethod', 'fetchWithTimeout', 'publicError']],
   ['public/js/chat_viewport.js', ['resolveViewportMetrics', 'resolveViewportHeight', 'isNearChatBottom', 'createChatViewportController']],
   ['public/js/delivery_scheduler.js', ['computeHumanReadDelay', 'computeHumanComposeDelay', 'computeInterSegmentDelay', 'createHumanDeliveryScheduler', 'createInputAggregator']],
   ['lib/server/canon-retrieval.js', ['retrieveCanonicalLore']]
