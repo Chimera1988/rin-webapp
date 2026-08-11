@@ -8,19 +8,28 @@ import {
   replySnapshotFromMessage,
   selectTransportHistory
 } from '../lib/chat-contract.js';
+import { storageGet, storageRemove, storageSet } from './storage.js';
 
 export { CHAT_SCHEMA_VERSION, isInternalNonverbalMetaText, normalizeReplySnapshot };
 export const CHAT_STORAGE_KEY = 'rin-history-v6';
 export const LEGACY_CHAT_STORAGE_KEYS = ['rin-history-v5', 'rin-history-v4', 'rin-history-v3', 'rin-history-v2'];
-export const RESETTABLE_STORAGE_KEYS = [
-  CHAT_STORAGE_KEY,
+export const LEGACY_RESET_ONLY_STORAGE_KEYS = [
   ...LEGACY_CHAT_STORAGE_KEYS,
-  'rin-init-count', 'rin-theme', 'rin-sticker-prob', 'rin-sticker-mode', 'rin-sticker-last-mode',
-  'rin-sticker-safe', 'rin-sticker-opacity', 'rin-speak-enabled', 'rin-speak-rate', 'rin-wallpaper-data',
-  'rin-wallpaper-opacity', 'rin-debug-enabled', 'rin-profile-v1', 'rin-diary-v1', 'rin-lore-recent-v1',
-  'rin-stickers-v7-stats', 'rin-stickers-v6-stats', 'rin-stickers-v5-stats', 'rin-memory-analysis-turn',
+  'rin-init-count',
+  'rin-lore-recent-v1',
+  'rin-wallpaper-data',
+  'rin-stickers-v6-stats',
+  'rin-stickers-v5-stats',
+  'rin-memory-analysis-turn'
+];
+export const ACTIVE_RESETTABLE_STORAGE_KEYS = [
+  CHAT_STORAGE_KEY,
+  'rin-init-state-v2', 'rin-theme', 'rin-sticker-prob', 'rin-sticker-mode', 'rin-sticker-last-mode',
+  'rin-sticker-safe', 'rin-sticker-opacity', 'rin-speak-enabled', 'rin-speak-rate',
+  'rin-wallpaper-opacity', 'rin-debug-enabled', 'rin-profile-v1', 'rin-diary-v1', 'rin-stickers-v7-stats',
   'rin-memory-jobs-v1'
 ];
+export const RESETTABLE_STORAGE_KEYS = [...ACTIVE_RESETTABLE_STORAGE_KEYS, ...LEGACY_RESET_ONLY_STORAGE_KEYS];
 
 const clean = cleanInlineText;
 const randomId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -81,39 +90,11 @@ export function normalizeStoredHistory(value) {
   return normalized.filter(item => textIds.has(item.id) || visualIds.has(item.id));
 }
 
-export function safeStorageGet(storage, key, fallback = null) {
-  try {
-    const value = storage.getItem(key);
-    return value == null ? fallback : value;
-  } catch {
-    return fallback;
-  }
-}
-
-export function safeStorageRemove(storage, key) {
-  try {
-    storage.removeItem(key);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function safeStorageSet(storage, key, value) {
-  try {
-    storage.setItem(key, value);
-    return true;
-  } catch (error) {
-    console.error(`[Rin storage] failed to write ${key}`, error);
-    return false;
-  }
-}
-
 export function loadChatHistory(storage = localStorage) {
-  let raw = safeStorageGet(storage, CHAT_STORAGE_KEY);
+  let raw = storageGet(storage, CHAT_STORAGE_KEY);
   if (!raw) {
     for (const key of LEGACY_CHAT_STORAGE_KEYS) {
-      raw = safeStorageGet(storage, key);
+      raw = storageGet(storage, key);
       if (raw) break;
     }
   }
@@ -125,12 +106,25 @@ export function loadChatHistory(storage = localStorage) {
       : message
   ));
   saveChatHistory(normalized, storage);
-  LEGACY_CHAT_STORAGE_KEYS.forEach(key => safeStorageRemove(storage, key));
+  LEGACY_CHAT_STORAGE_KEYS.forEach(key => storageRemove(storage, key));
   return normalized;
 }
 
 export function saveChatHistory(history, storage = localStorage) {
-  return safeStorageSet(storage, CHAT_STORAGE_KEY, JSON.stringify(normalizeStoredHistory(history)));
+  return storageSet(storage, CHAT_STORAGE_KEY, JSON.stringify(normalizeStoredHistory(history)));
+}
+
+export function persistChatHistoryMutation(history, mutation, storage = localStorage) {
+  if (!Array.isArray(history)) throw new TypeError('History must be an array');
+  if (typeof mutation !== 'function') throw new TypeError('History mutation must be a function');
+  const snapshot = history.map(message => JSON.parse(JSON.stringify(message)));
+  try { mutation(history); } catch (error) {
+    history.splice(0, history.length, ...snapshot);
+    throw error;
+  }
+  if (saveChatHistory(history, storage)) return true;
+  history.splice(0, history.length, ...snapshot);
+  return false;
 }
 
 export function reconcilePendingDeliveryHistory(history, committedRequestId = '') {
@@ -188,6 +182,6 @@ export function hasBlockingTurn(history) {
 }
 
 export function resetApplicationStorage(storage = localStorage, { preservePin = true } = {}) {
-  RESETTABLE_STORAGE_KEYS.forEach(key => safeStorageRemove(storage, key));
-  if (!preservePin) safeStorageRemove(storage, 'rin-pin');
+  RESETTABLE_STORAGE_KEYS.forEach(key => storageRemove(storage, key));
+  if (!preservePin) storageRemove(storage, 'rin-pin');
 }

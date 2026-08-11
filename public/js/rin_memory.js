@@ -9,6 +9,7 @@ import { beliefSlot, normalizeBelief } from '../lib/epistemic-contract.js';
 import { normalizeRinIntent } from '../lib/intent-contract.js';
 import { normalizeInnerLife } from '../lib/inner-life-contract.js';
 import { contentKey } from '../lib/chat-contract.js';
+import { storageGet, storageReadJson, storageRemove, storageWriteJson } from './storage.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
@@ -17,12 +18,7 @@ const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
 const DIARY_SCHEMA_VERSION = 5;
 
-export const BASE_RULES = `
-Ты — Рин Акихара (женский род). Обращайся к собеседнику в мужском роде.
-Сохраняй непротиворечивость: факты из канона и дневника не меняются задним числом.
-Пиши естественно и бережно. Время/сезон/погоду учитывай, если они известны.
-Стикеры — только уместно, без навязчивой романтики.
-`.trim();
+
 
 function getStorage() {
   return typeof localStorage !== 'undefined' ? localStorage : null;
@@ -32,14 +28,6 @@ function clone(value) {
   return typeof structuredClone === 'function'
     ? structuredClone(value)
     : JSON.parse(JSON.stringify(value));
-}
-
-function safeParse(raw, fallback) {
-  try {
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function cleanText(value, max = 1200) {
@@ -69,99 +57,38 @@ function makeId(prefix, key = '', ts = Date.now()) {
 }
 
 function safeGet(key, fallback = null) {
-  const storage = getStorage();
-  if (!storage) return fallback;
-  try {
-    const value = storage.getItem(key);
-    return value == null ? fallback : value;
-  } catch {
-    return fallback;
-  }
+  return storageGet(getStorage(), key, fallback);
 }
 
 function safeRemove(key) {
-  const storage = getStorage();
-  if (!storage) return false;
-  try {
-    storage.removeItem(key);
-    return true;
-  } catch {
-    return false;
-  }
+  return storageRemove(getStorage(), key);
 }
 
 function safeSet(key, value) {
-  const storage = getStorage();
-  if (!storage) return false;
-  try {
-    storage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (error) {
-    console.error(`[Rin storage] Не удалось сохранить ${key}`, error);
-    return false;
-  }
+  return storageWriteJson(getStorage(), key, value);
 }
 
 export function getDefaultProfile() {
   return {
-    name: 'Рин Акихара',
     description: '',
-    base_rules: BASE_RULES,
     instructions_extra: '',
     knowledge: '',
-    starters: [
-      'Привет! Как твой день? 🌸',
-      'Я тут заварила чай и вспомнила о тебе.',
-      'Как ты себя чувствуешь сейчас?'
-    ],
-    initiation: {
-      max_per_day: 2,
-      windows: [
-        { from: '09:00', to: '11:00', pool: 'morning' },
-        { from: '19:00', to: '22:30', pool: 'evening' }
-      ]
-    },
     _updated_at: Date.now()
   };
 }
 
 function normalizeProfile(input = {}) {
-  const defaults = getDefaultProfile();
   const source = input && typeof input === 'object' ? input : {};
-  const initiation = source.initiation && typeof source.initiation === 'object'
-    ? source.initiation
-    : defaults.initiation;
   return {
-    ...defaults,
-    ...source,
-    name: cleanText(source.name || defaults.name, 80),
     description: String(source.description || '').trim().slice(0, 1800),
-    base_rules: BASE_RULES,
     instructions_extra: String(source.instructions_extra || '').trim().slice(0, 5000),
     knowledge: String(source.knowledge || '').trim().slice(0, 8000),
-    starters: Array.isArray(source.starters)
-      ? source.starters.map(item => cleanText(item, 280)).filter(Boolean).slice(0, 20)
-      : defaults.starters,
-    initiation: {
-      max_per_day: clamp(initiation.max_per_day ?? defaults.initiation.max_per_day, 0, 10),
-      windows: Array.isArray(initiation.windows)
-        ? initiation.windows
-          .map(item => ({
-            from: cleanText(item?.from, 5),
-            to: cleanText(item?.to, 5),
-            pool: ['morning', 'day', 'evening', 'night'].includes(item?.pool) ? item.pool : 'day'
-          }))
-          .filter(item => /^\d{2}:\d{2}$/.test(item.from) && /^\d{2}:\d{2}$/.test(item.to))
-          .slice(0, 8)
-        : defaults.initiation.windows
-    },
     _updated_at: finiteNumber(source._updated_at, Date.now())
   };
 }
 
 export async function loadProfile() {
-  const parsed = safeParse(safeGet(LS_PROFILE_KEY), {});
-  return normalizeProfile(parsed);
+  return normalizeProfile(storageReadJson(getStorage(), LS_PROFILE_KEY, {}));
 }
 
 export async function saveProfile(profile) {
@@ -392,7 +319,7 @@ function normalizeDiary(input = {}) {
 }
 
 function readDiarySync() {
-  return normalizeDiary(safeParse(safeGet(LS_DIARY_KEY), emptyDiary()));
+  return normalizeDiary(storageReadJson(getStorage(), LS_DIARY_KEY, emptyDiary()));
 }
 
 function writeDiarySync(diary) {
@@ -406,7 +333,7 @@ let diaryMutationQueue = Promise.resolve();
 async function withDiaryMutationLock(task) {
   const locks = globalThis.navigator?.locks;
   if (locks?.request) {
-    return locks.request('rin-diary-v2-write', { mode: 'exclusive' }, task);
+    return locks.request('rin-diary-v5-write', { mode: 'exclusive' }, task);
   }
   return task();
 }
@@ -496,40 +423,41 @@ function innerLifePart(env = {}) {
   return 'day';
 }
 
-function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Date.now()) {
+function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Date.now(), policy = {}) {
   const current = { ...defaultInnerLife(), ...(currentInput || {}) };
   const part = innerLifePart(env);
-  const expired = !current.activity || !current.expiresAt || now >= current.expiresAt || current.part !== part;
+  const minMinutes = clamp(policy?.activityMinMinutes ?? 35, 5, 24 * 60);
+  const maxMinutes = clamp(policy?.activityMaxMinutes ?? minMinutes, minMinutes, 24 * 60);
+  const continueAcrossMessages = policy?.continueAcrossMessages !== false;
+  const expired = !continueAcrossMessages || !current.activity || !current.expiresAt || now >= current.expiresAt || current.part !== part;
   if (expired) {
     const pool = INNER_LIFE_POOLS[part] || INNER_LIFE_POOLS.day;
     const recent = new Set((current.recentActivities || []).slice(-2));
     let index = Number.parseInt(stableHashBase36(`${env?.rinHuman || ''}|${part}|${current.interactionCount}`), 36) % pool.length;
     for (let offset = 0; offset < pool.length && recent.has(pool[index].activity); offset += 1) index = (index + 1) % pool.length;
     const selected = pool[index];
+    const range = Math.max(0, maxMinutes - minMinutes);
+    const durationMinutes = minMinutes + (range ? Number.parseInt(stableHashBase36(selected.activity), 36) % (range + 1) : 0);
     Object.assign(current, selected, {
       realityMode: 'simulated_character_world',
       source: 'schedule_simulation',
       sceneId: `${part}:${String(env?.rinHuman || '').slice(0, 10) || 'current'}`,
-      privateThought: '',
       part,
       startedAt: now,
       lastChangedAt: now,
-      continuityKey: `${part}:${contentKey(selected.activity)}`,
       energy: part === 'night' ? 42 : part === 'evening' ? 55 : 66,
-      expiresAt: now + (45 + (Number.parseInt(stableHashBase36(selected.activity), 36) % 80)) * 60000,
+      expiresAt: now + durationMinutes * 60000,
       recentActivities: [...(current.recentActivities || []), selected.activity].slice(-8)
     });
   }
   current.lastUserAt = now;
   current.interactionCount = finiteNumber(current.interactionCount, 0) + 1;
-  // User text is deliberately not allowed to fabricate a private thought or a completed
-  // off-screen event. New facts about Rin's current scene must come from committed state.
   return normalizeInnerLife(current);
 }
 
-export async function prepareInnerLife(env = {}, userText = '', now = Date.now()) {
+export async function prepareInnerLife(env = {}, userText = '', now = Date.now(), policy = {}) {
   const diary = await loadDiary();
-  return clone(computeInnerLife(diary.innerLife, env, userText, now));
+  return clone(computeInnerLife(diary.innerLife, env, userText, now, policy));
 }
 
 function applyMoodDecay(currentInput = {}, now = Date.now()) {
@@ -597,7 +525,6 @@ export async function commitTurnState({
   requestId = '',
   innerLife = null,
   stateTransition = null,
-  spontaneous = false,
   now = Date.now()
 } = {}) {
   const wantedRequest = cleanText(requestId, 120);
@@ -608,7 +535,6 @@ export async function commitTurnState({
     }
 
     if (innerLife && typeof innerLife === 'object') diary.innerLife = normalizeInnerLife(clone(innerLife));
-    if (spontaneous) diary.innerLife = normalizeInnerLife({ ...(diary.innerLife || {}), lastSpontaneousAt: now });
 
     const mood = applyMoodDecay(diary.mood, now);
     if (stateTransition?.moodState && typeof stateTransition.moodState === 'object') {

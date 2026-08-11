@@ -34,7 +34,7 @@ if (!pin) {
     }
   } else {
     await import(`/js/persona_ui.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
-  await import(`/chat.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
+    await import(`/chat.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
     document.documentElement.classList.add('auth-ready');
   }
 }

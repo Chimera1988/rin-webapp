@@ -56,3 +56,6 @@ form?.addEventListener('submit', async event => {
     input?.focus();
   }
 });
+
+// Explicit bootstrap boundary for UI/tests: form handlers are registered before interaction.
+document.documentElement.classList.add('login-ready');

@@ -1,15 +1,7 @@
+import { storageReadJson, storageWriteJson } from './storage.js';
 export const MEMORY_JOB_QUEUE_KEY = 'rin-memory-jobs-v1';
 
 const clean = (value, max = 2000) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-
-function safeParse(raw) {
-  try {
-    const value = JSON.parse(raw || '[]');
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
-}
 
 function normalizeJob(value = {}) {
   const id = clean(value.id, 120);
@@ -29,18 +21,17 @@ function normalizeJob(value = {}) {
 }
 
 export function loadMemoryJobs(storage = localStorage) {
-  let raw = null;
-  try { raw = storage.getItem(MEMORY_JOB_QUEUE_KEY); } catch { return []; }
-  return safeParse(raw).map(normalizeJob).filter(Boolean).slice(-40);
+  const value = storageReadJson(storage, MEMORY_JOB_QUEUE_KEY, []);
+  return (Array.isArray(value) ? value : []).map(normalizeJob).filter(Boolean).slice(-40);
 }
 
 export function saveMemoryJobs(jobs, storage = localStorage) {
-  try {
-    storage.setItem(MEMORY_JOB_QUEUE_KEY, JSON.stringify((Array.isArray(jobs) ? jobs : []).map(normalizeJob).filter(Boolean).slice(-40)));
-    return true;
-  } catch {
-    return false;
-  }
+  return storageWriteJson(
+    storage,
+    MEMORY_JOB_QUEUE_KEY,
+    (Array.isArray(jobs) ? jobs : []).map(normalizeJob).filter(Boolean).slice(-40),
+    { log: false }
+  );
 }
 
 export function enqueueMemoryJob(job, storage = localStorage) {
