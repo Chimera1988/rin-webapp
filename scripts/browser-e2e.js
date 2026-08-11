@@ -63,9 +63,7 @@ const server = createServer(async (req, res) => {
         return json(res, 502, { error: 'Temporary failure', code: 'UPSTREAM_TIMEOUT', requestId: body.requestId });
       }
       const remembered = body.memory?.facts?.user?.name;
-      const plannedTarget = current === 'RIN_REPLY_TARGET'
-        ? (body.history || []).find(item => item.role === 'user' && String(item.content || '').includes('Мой проект называется Rin'))
-        : null;
+      const plannedTarget = userEvents.length > 1 ? userEvents[0] : null;
       const stickerOnly = current.includes('Целую тебя');
       const act = body.trigger?.type === 'greeting' ? 'proactive_greeting'
         : body.trigger?.type === 'scheduled' ? 'proactive_personal_share'
@@ -78,9 +76,7 @@ const server = createServer(async (req, res) => {
           ? 'У меня появилась одна мысль, и я решила не откладывать её до завтра.'
           : current.includes('Как меня зовут')
             ? `Ты говорил, что тебя зовут ${remembered || 'неизвестно'}.`
-            : current === 'RIN_REPLY_TARGET'
-              ? 'К этому я и хотела вернуться: что в проекте сейчас самое живое для тебя?'
-              : `Ответ на: ${current}`;
+            : `Ответ на: ${current}`;
       const turnId = `rin-turn-${body.requestId}`;
       const deliveryPlan = stickerOnly ? {
         schema: 'rin-delivery-plan-v1', turnId, mode: 'sticker_only', fallbackText: '😘',
@@ -119,6 +115,7 @@ const server = createServer(async (req, res) => {
       } : body.memory?.conversationState?.rinIntent || null;
       const turnDecision = {
         schema: 'rin-turn-decision-v1', act, focus: reply, stance: 'e2e', question: { mode: /\?$/.test(reply) ? 'natural' : 'none', reason: null },
+        replyLink: { targetEventId: plannedTarget?.id || null, reason: plannedTarget ? 'disambiguate earlier event in current batch' : null },
         delivery: stickerOnly ? { mode:'sticker_only', segments:[{ type:'sticker', purpose:'kiss', stickerIntent:'kiss', maxChars:20 }] } : { mode:'single_text', segments:[{ type:'text', purpose:'main_reply', stickerIntent:null, maxChars:800 }] },
         intentTransition: reveal ? { operation:'activate', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease', nextMove:'make_specific_teasing_move', progress:0.48, commitment:82, reason:'e2e' } : activeIntent ? { operation:'preserve', goal:null, motive:null, target:null, nextMove:null, progress:null, commitment:null, reason:null } : { operation:'none', goal:null, motive:null, target:null, nextMove:null, progress:null, commitment:null, reason:null },
         openLoops:{open:[],resolveIds:[]}, realityMode:'grounded', source:'cognitive_kernel'
@@ -140,7 +137,7 @@ const server = createServer(async (req, res) => {
           },
           emotionalState, rinIntent: activeIntent
         },
-        replyTarget: plannedTarget ? { messageId: plannedTarget.id, role: 'user', kind: plannedTarget.kind || 'text', excerpt: plannedTarget.content, reason: 'browser e2e callback', confidence: 0.9 } : null,
+        visualReply: plannedTarget ? { messageId: plannedTarget.id, role: 'user', kind: plannedTarget.kind || 'text', excerpt: plannedTarget.content, reason: 'browser e2e semantic batch anchor', confidence: 0.9 } : null,
         perception: { version:'conversation-perception-v3', literalIntent:'statement', hiddenIntent:{ type: current.includes('Ты чего') ? 'ask_about_previous_nonverbal' : 'none', confidence:80 }, relation:{type:'continuation',confidence:80}, activeScene:{type:stickerOnly?'romance':'everyday',topic:current,confidence:80}, referents:[], ambiguity:{level:20} }
       });
     }
@@ -432,6 +429,13 @@ try {
   const rapidBody = chatBodies.at(-1);
   const rapid = rapidBody.history.filter(item => item.role === 'user' && item.requestId === rapidBody.requestId).map(item => item.content);
   assert(rapid.length === 2 && rapid[0] === 'Быстрый ход один' && rapid[1] === 'Быстрый ход два', `rapid aggregation order changed: ${rapid.join(' / ')}`);
+  const rapidVisualReply = await cdp.evaluate(`(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
+    const message = [...history].reverse().find(item => item.role === 'assistant' && item.replySnapshot?.excerpt === 'Быстрый ход один');
+    const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
+    return { linked: message?.inReplyTo || null, quoteVisible: Boolean(row?.querySelector('.reply-quote')) };
+  })()`);
+  assert(rapidVisualReply.linked && rapidVisualReply.quoteVisible, 'Rin semantic visual reply may anchor an earlier event inside the same rapid user batch');
 
   const beforeFailedTurnState = await cdp.evaluate(`(() => {
     const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
@@ -501,22 +505,8 @@ try {
   })()`);
   assert(manualUi.linked === selectedReply.sourceId && manualUi.quoteVisible, 'manual reply must render the quote inside the existing user bubble');
 
-  await send('RIN_REPLY_TARGET');
-  await waitFor(cdp, completedUsers(9), 'planned Rin reply target');
-  const rinReply = await cdp.evaluate(`(() => {
-    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
-    const message = [...history].reverse().find(item => item.role === 'assistant' && item.replySnapshot);
-    const row = message ? document.querySelector('[data-message-id="' + message.id + '"]') : null;
-    return {
-      targetContent: message?.replySnapshot?.excerpt || '',
-      linked: message?.inReplyTo || null,
-      quoteVisible: Boolean(row?.querySelector('.reply-quote'))
-    };
-  })()`);
-  assert(rinReply.linked && /Мой проект называется Rin/.test(rinReply.targetContent) && rinReply.quoteVisible, 'Rin planned reply must quote a specific earlier user message');
-
   await send('Меня пригласила девушка на встречу вечером');
-  await waitFor(cdp, completedUsers(10), 'affective jealousy commit');
+  await waitFor(cdp, completedUsers(9), 'affective jealousy commit');
   const jealousyState = await cdp.evaluate(`(() => {
     const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
     return { schema: diary._schema, emotion: diary.conversationState?.emotionalState?.primary?.type, cause: diary.conversationState?.emotionalState?.primary?.cause };
@@ -524,7 +514,7 @@ try {
   assert(jealousyState.schema === 4 && jealousyState.emotion === 'jealousy' && /другой девушк/.test(jealousyState.cause || ''), 'canonical jealousy state must commit to diary v4');
 
   await send('Это была шутка, хотел тебя проверить на ревность 😁');
-  await waitFor(cdp, completedUsers(11), 'affective reveal commit');
+  await waitFor(cdp, completedUsers(10), 'affective reveal commit');
   assert(chatBodies.at(-1)?.memory?.conversationState?.emotionalState?.primary?.type === 'jealousy', 'next browser request must restore committed jealousy before server transition');
   const revealState = await cdp.evaluate(`(() => {
     const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
@@ -535,7 +525,7 @@ try {
   const revealIntent = await cdp.evaluate(`(() => JSON.parse(localStorage.getItem('rin-diary-v1') || '{}').conversationState?.rinIntent || null)()`);
   assert(revealIntent?.status === 'active' && revealIntent?.id === 'intent-e2e-play', 'reveal must commit the persistent Rin intent');
   await send('Да я и не собирался выкручиваться 😏');
-  await waitFor(cdp, completedUsers(12), 'persistent intent next turn');
+  await waitFor(cdp, completedUsers(11), 'persistent intent next turn');
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.id === 'intent-e2e-play', 'next browser request must restore the committed persistent Rin intent');
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.sceneBinding?.key === 'playful_tease', 'next browser request must restore the concrete intent scene binding');
 
@@ -554,7 +544,7 @@ try {
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
   assert(lifecycle.conversationRevision >= 12, `committed conversation state did not advance with successful turns: ${lifecycle.conversationRevision}`);
 
-  console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, server-owned sticker, reply-to-selected, planned reply target and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, server-owned sticker, reply-to-selected, semantic batch visual reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError) {
     console.log(`Browser E2E SKIPPED: ${error.message}`);

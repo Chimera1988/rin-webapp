@@ -97,6 +97,8 @@ if (!apiChat.includes('retrieveCanonicalLore(canonCue)') || /body\.lore/.test(ap
 if (!apiChat.includes('validateTurnDecisionConstraints') || !apiChat.includes('validateRealization')) fail('Deterministic decision/realization validation is missing.');
 if (/responsePlan|coreDecision|conversationBrain|compatibilityResponsePlan/.test(apiChat)) fail('Chat API must not emit or reconstruct legacy decision-plan compatibility fields.');
 if (/buildTurnDelivery|\n\s*delivery,/.test(apiChat)) fail('DeliveryPlan must be the only server delivery representation.');
+if (/latestUserTarget|\breplyTarget\s*=\s*latestUserTarget/.test(apiChat)) fail('Chat API must not auto-project the latest user message into a visual reply link.');
+if (!apiChat.includes('visualReplyFromDecision') || !apiChat.includes('visualReply,')) fail('Chat API must materialize visual replies only from the Cognitive Kernel decision.');
 if (!apiChat.includes('isStickerIntentResolvable') || !apiChat.includes('validateDecisionResources')) fail('Sticker resource validation must reject unresolved semantic intents before realization.');
 const transitionContract = await read('lib/cognition/cognitive-contract.js');
 const turnDecisionSource = await read('lib/cognition/turn-decision.js');
@@ -109,6 +111,7 @@ if (!kernel.includes('Terminal intent tombstone')) fail('Kernel must explicitly 
 const kernelState = await read('lib/cognition/kernel-state.js');
 if (kernelState.includes('brain?.obligations') || kernelState.includes('brain?.responseFocus')) fail('Active Perception must not forward legacy behavioral directives into the Kernel.');
 if (!kernelState.includes('user_handed_initiative') || !kernelState.includes('direct_question_present')) fail('Active Perception semantic signals are incomplete.');
+if (!kernelState.includes('visualReplyCandidatesFromEvents') || !kernelState.includes('events.slice(0, -1)')) fail('KernelState must expose only earlier current-batch events as semantic visual-reply candidates.');
 const perception = await read('lib/conversation-brain.js');
 if (/responseFocus|obligations|shouldClarify|ambiguity\.rule|activeScene[^\n]*goal/.test(perception)) fail('Conversation Perception must describe signals only, never prescribe response behavior.');
 const continuity = await read('lib/conversation-continuity.js');
@@ -196,6 +199,8 @@ if (/rin_backstory|rin_memories|rin_triggers|rin_phrases|pickGreeting|pickInitia
 if (!clientLore.includes('export async function getSchedule')) fail('Client lore schedule-only API is missing.');
 if (/loadLoreData/.test(chat)) fail('Chat client must not call removed legacy lore API loadLoreData.');
 if (!chat.includes('module?.getSchedule')) fail('Chat client must validate the schedule-only lore API.');
+if (!chat.includes('replyLinkFromTarget(data?.visualReply)')) fail('Client must render only explicit semantic visualReply metadata from the server.');
+if (/defaultInReplyTo|replyLinkFromTarget\(data\?\.replyTarget\)/.test(chat)) fail('Client must not auto-quote the latest user message.');
 const stickerIntentContract = await read('lib/cognition/sticker-intents.js');
 if (!stickerIntentContract.includes('STICKER_INTENT_VALUES') || !stickerIntentContract.includes('tender_kiss')) fail('Finite semantic sticker vocabulary is missing.');
 const stickerStateSource = await read('lib/cognition/sticker-state.js');
@@ -212,6 +217,8 @@ if (!apiChat.includes('buildStickerState') || !apiChat.includes('recentStickerId
 if (!chat.includes("raw === '' ? true : raw === '1'")) fail('Fresh sticker safe-mode must default to enabled.');
 const turnDecisionContract = await read('lib/cognition/turn-decision.js');
 if (!turnDecisionContract.includes('buildTurnDecisionJsonSchema') || !turnDecisionContract.includes('deriveDeliveryMode')) fail('TurnDecision must use state-constrained schema and structural delivery projection.');
+if (!turnDecisionContract.includes('replyLink') || !turnDecisionContract.includes('replyCandidateIds')) fail('TurnDecision must own semantic visual-reply selection inside a constrained candidate set.');
+if (!kernel.includes('visualReplyCandidates') || !kernel.includes('Никогда не цитируй единственное или последнее сообщение')) fail('Cognitive Kernel visual-reply policy is missing.');
 if (await exists('public/data/rin_phrases.json')) fail('Legacy proactive phrase pool must be physically absent; Cognitive Kernel owns proactive content.');
 const initiationPolicy = await read('public/js/conversation_policy.js');
 if (/chooseConfiguredStarter|starter/i.test(initiationPolicy)) fail('InitiationPolicy must decide timing only, not proactive content.');
