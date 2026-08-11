@@ -104,15 +104,19 @@ function explicitReplyFromGroup(group = [], history = []) {
   };
 }
 
-function latestUserTarget(group = []) {
-  const last = group.at(-1);
-  if (!last?.id) return null;
+function visualReplyFromDecision(decision = null, group = []) {
+  const targetEventId = normalize(decision?.replyLink?.targetEventId, 120);
+  if (!targetEventId) return null;
+  const source = (Array.isArray(group) ? group : []).find(item => item?.role === 'user' && item?.id === targetEventId) || null;
+  if (!source) return null;
+  const snapshot = replySnapshotFromMessage(source);
+  if (!snapshot) return null;
   return {
-    messageId: normalize(last.id, 120),
+    messageId: targetEventId,
     role: 'user',
-    kind: last.kind === 'voice' ? 'voice' : 'text',
-    excerpt: normalize(last.content, 360),
-    reason: 'ответ на последний event текущего user turn',
+    kind: source.kind === 'voice' ? 'voice' : 'text',
+    excerpt: normalize(source.content, 360),
+    reason: normalize(decision?.replyLink?.reason, 260) || 'смысловая привязка к более ранней реплике текущего user turn',
     confidence: 1
   };
 }
@@ -304,7 +308,7 @@ export default async function handler(req, res) {
     // a different behavior. The same Cognitive Kernel gets one chance to decide again.
     let decisionUsage = kernelCompletion.usage;
     let decisionValidation = mergeDecisionValidation(
-      validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState }),
+      validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates }),
       await validateDecisionResources(decision)
     );
     if (!decisionValidation.passed) {
@@ -325,7 +329,7 @@ export default async function handler(req, res) {
       catch { return res.status(502).json({ error: 'Decision model retry returned invalid structured output', code: 'INVALID_TURN_DECISION', requestId }); }
       decisionUsage = mergeUsage(kernelCompletion.usage, retryCompletion.usage);
       decisionValidation = mergeDecisionValidation(
-        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState }),
+        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates }),
         await validateDecisionResources(decision)
       );
       if (!decisionValidation.passed) {
@@ -337,7 +341,7 @@ export default async function handler(req, res) {
     const realizationResult = await realizeDecision({ profile, state: kernelState, decision, realityBoundary, isLong });
     const deliveryPlan = await buildDeliveryPlan({ requestId, decision, realization: realizationResult.realization, scene: kernelState.scene, stickerState: kernelState.stickerState });
     const stateTransition = buildDecisionStateTransition({ kernelState, affectiveTurn, decision });
-    const replyTarget = latestUserTarget(group);
+    const visualReply = visualReplyFromDecision(decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
     const usage = mergeUsage(decisionUsage, realizationResult.usage);
 
@@ -358,7 +362,7 @@ export default async function handler(req, res) {
       perception: brain,
       cognition: compactKernelState(kernelState),
       turnDecision: decision,
-      replyTarget,
+      visualReply,
       affectiveTurn,
       validation: { decision: decisionValidation, realization: realizationResult.validation },
       deliveryPlan,
