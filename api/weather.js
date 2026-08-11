@@ -1,4 +1,4 @@
-import { fetchWithTimeout, publicError, requirePin } from '../lib/server/http.js';
+import { fetchWithTimeout, publicError, requireMethod, requirePin } from '../lib/server/http.js';
 
 const OPENWEATHER_KEY = process.env.OPENWEATHER_API_KEY;
 const ALLOWED_UNITS = new Set(['metric']);
@@ -11,30 +11,18 @@ function finiteCoordinate(value, min, max) {
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== 'GET') {
-      res.setHeader('Allow', 'GET');
-      return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
-    }
+    if (!requireMethod(req, res, 'GET')) return;
     if (!requirePin(req, res, {})) return;
-    if (!OPENWEATHER_KEY) return res.status(503).json({ error: 'Weather is not configured', code: 'WEATHER_NOT_CONFIGURED' });
 
     const query = req.query || {};
     const units = ALLOWED_UNITS.has(String(query.units)) ? String(query.units) : 'metric';
     const lang = ALLOWED_LANGS.has(String(query.lang)) ? String(query.lang) : 'ru';
     const lat = finiteCoordinate(query.lat, -90, 90);
     const lon = finiteCoordinate(query.lon, -180, 180);
-    const q = String(query.q || '').replace(/[\r\n]/g, ' ').trim().slice(0, 100);
+    if (!lat || !lon) return res.status(400).json({ error: 'Valid coordinates are required', code: 'INVALID_COORDINATES' });
+    if (!OPENWEATHER_KEY) return res.status(503).json({ error: 'Weather is not configured', code: 'WEATHER_NOT_CONFIGURED' });
 
-    const params = new URLSearchParams({ appid: OPENWEATHER_KEY, units, lang });
-    if (lat && lon) {
-      params.set('lat', lat);
-      params.set('lon', lon);
-    } else if (q) {
-      params.set('q', q);
-    } else {
-      params.set('lat', '36.5613');
-      params.set('lon', '136.6562');
-    }
+    const params = new URLSearchParams({ appid: OPENWEATHER_KEY, units, lang, lat, lon });
 
     const upstream = await fetchWithTimeout(`https://api.openweathermap.org/data/2.5/weather?${params}`, {}, 10_000);
     if (!upstream.ok) {

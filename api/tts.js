@@ -1,4 +1,4 @@
-import { fetchWithTimeout, publicError, readJsonBody, requirePin } from '../lib/server/http.js';
+import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
 
 const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
 const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'NxfO5zydfqwpYnWQJ7jJ';
@@ -7,10 +7,7 @@ const MAX_CHARS = 180;
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== 'POST') {
-      res.setHeader('Allow', 'POST');
-      return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
-    }
+    if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
     if (!requirePin(req, res, body)) return;
     if (!ELEVEN_KEY) return res.status(503).json({ error: 'TTS is not configured', code: 'TTS_NOT_CONFIGURED' });

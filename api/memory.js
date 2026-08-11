@@ -1,5 +1,5 @@
 import { contentKey } from '../lib/chat-contract.js';
-import { fetchWithTimeout, readJsonBody, requirePin } from '../lib/server/http.js';
+import { fetchWithTimeout, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MEMORY_MODEL = process.env.OPENAI_MEMORY_MODEL || process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
@@ -118,10 +118,7 @@ ${clean(assistantText, 1400)}
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
-  }
+  if (!requireMethod(req, res, 'POST')) return;
   const body = await readJsonBody(req);
   if (!requirePin(req, res, body)) return;
   if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Memory service is not configured', code: 'MEMORY_NOT_CONFIGURED' });

@@ -17,13 +17,13 @@ import {
   replySnapshotFromMessage,
   selectModelHistory
 } from '../lib/chat-contract.js';
-import { fetchWithTimeout, publicError, readJsonBody, requirePin } from '../lib/server/http.js';
+import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
 import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const KERNEL_MODEL = process.env.OPENAI_DECISION_MODEL || process.env.OPENAI_LONG_MODEL || 'gpt-4o';
-const REALIZATION_MODEL = process.env.OPENAI_REALIZATION_MODEL || process.env.OPENAI_LONG_MODEL || 'gpt-4o';
+const KERNEL_MODEL = process.env.OPENAI_DECISION_MODEL || 'gpt-4.1';
+const REALIZATION_MODEL = process.env.OPENAI_REALIZATION_MODEL || 'gpt-4.1';
 const KERNEL_PARAMS = { temperature: 0.28, max_tokens: 1100 };
 const REALIZATION_PARAMS = { temperature: 0.72, max_tokens: 760 };
 const LONG_REALIZATION_PARAMS = { temperature: 0.72, max_tokens: 1800 };
@@ -121,15 +121,6 @@ function visualReplyFromDecision(decision = null, group = []) {
   };
 }
 
-export function modelMessageFromHistory(item = {}) {
-  if (item.kind === 'silence') {
-    return { role: 'system', content: `ВНУТРЕННЕЕ СОБЫТИЕ ДИАЛОГА — НЕ ЦИТИРОВАТЬ. Рин осознанно промолчала: ${normalize(item.silence?.reason || 'микросцена завершилась', 320)}.` };
-  }
-  if (item.kind === 'sticker') {
-    return { role: 'system', content: `ВНУТРЕННЕЕ СОБЫТИЕ ДИАЛОГА — НЕ ЦИТИРОВАТЬ. Рин отправила стикер: ${normalize(item.sticker?.meaning || item.sticker?.emotion || 'эмоциональный жест', 240)}${item.sticker?.cause ? `; причина: ${normalize(item.sticker.cause, 280)}` : ''}.` };
-  }
-  return { role: item.role, content: String(item.content || '').slice(0, 8000) };
-}
 
 export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null }) {
   const body = { model, temperature, max_tokens, messages };
@@ -247,10 +238,7 @@ function mergeDecisionValidation(base = null, resourceWarnings = []) {
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== 'POST') {
-      res.setHeader('Allow', 'POST');
-      return res.status(405).json({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
-    }
+    if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
     if (!requirePin(req, res, body)) return;
     if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Chat service is not configured', code: 'CHAT_NOT_CONFIGURED' });
