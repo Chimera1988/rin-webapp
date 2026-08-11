@@ -1,22 +1,34 @@
-export const INNER_LIFE_SCHEMA = 'rin-inner-life-v2';
+export const INNER_LIFE_SCHEMA = 'rin-inner-life-v3';
 export const INNER_LIFE_REALITY_MODES = new Set(['simulated_character_world', 'grounded']);
-const clean=(v,max=300)=>String(v??'').replace(/\s+/g,' ').trim().slice(0,max);
-const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
-const clamp=(v,min=0,max=100,f=50)=>Math.max(min,Math.min(max,num(v,f)));
-export function normalizeInnerLife(input={}) {
-  const s=input&&typeof input==='object'?input:{};
-  const realityMode=INNER_LIFE_REALITY_MODES.has(s.realityMode)?s.realityMode:'simulated_character_world';
+
+const clean = (value, max = 300) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const clamp = (value, min = 0, max = 100, fallback = 50) => Math.max(min, Math.min(max, numberOr(value, fallback)));
+
+export function normalizeInnerLife(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  const realityMode = INNER_LIFE_REALITY_MODES.has(source.realityMode)
+    ? source.realityMode
+    : 'simulated_character_world';
   return {
-    schema:INNER_LIFE_SCHEMA,
+    schema: INNER_LIFE_SCHEMA,
     realityMode,
-    source:clean(s.source,80)||'persisted_simulation',
-    sceneId:clean(s.sceneId,120)||null,
-    activity:clean(s.activity,180), trace:clean(s.trace,220), focus:clean(s.focus,220), privateThought:clean(s.privateThought,260),
-    activityGoal:clean(s.activityGoal,220), continuityKey:clean(s.continuityKey,160), part:clean(s.part,30),
-    energy:clamp(s.energy,0,100,60), startedAt:Math.max(0,num(s.startedAt,0)), expiresAt:Math.max(0,num(s.expiresAt,0)),
-    lastChangedAt:Math.max(0,num(s.lastChangedAt,s.startedAt||0)), lastSpontaneousAt:Math.max(0,num(s.lastSpontaneousAt,0)), lastUserAt:Math.max(0,num(s.lastUserAt,0)),
-    interactionCount:Math.max(0,Math.round(num(s.interactionCount,0))),
-    recentActivities:(Array.isArray(s.recentActivities)?s.recentActivities:[]).map(x=>clean(x,180)).filter(Boolean).slice(-8),
-    recentThoughts:(Array.isArray(s.recentThoughts)?s.recentThoughts:[]).map(x=>clean(x,220)).filter(Boolean).slice(-6)
+    source: clean(source.source, 80) || 'persisted_simulation',
+    sceneId: clean(source.sceneId, 120) || null,
+    activity: clean(source.activity, 180),
+    trace: clean(source.trace, 220),
+    focus: clean(source.focus, 220),
+    activityGoal: clean(source.activityGoal, 220),
+    part: clean(source.part, 30),
+    energy: clamp(source.energy, 0, 100, 60),
+    startedAt: Math.max(0, numberOr(source.startedAt, 0)),
+    expiresAt: Math.max(0, numberOr(source.expiresAt, 0)),
+    lastChangedAt: Math.max(0, numberOr(source.lastChangedAt, source.startedAt || 0)),
+    lastUserAt: Math.max(0, numberOr(source.lastUserAt, 0)),
+    interactionCount: Math.max(0, Math.round(numberOr(source.interactionCount, 0))),
+    recentActivities: (Array.isArray(source.recentActivities) ? source.recentActivities : [])
+      .map(item => clean(item, 180))
+      .filter(Boolean)
+      .slice(-8)
   };
 }

@@ -81,7 +81,10 @@ export function normalizeChatMessage(value = {}, index = 0) {
     ? cleanMessageText(value.content, 8000)
     : cleanInlineText(value.content, kind === 'sticker' ? 800 : 2400);
   if (TEXT_KINDS.has(kind) && !content) return null;
-  if (kind === 'sticker' && !value.sticker?.src && !content) return null;
+  const stickerSrc = kind === 'sticker' && SAFE_STICKER_SRC.test(String(value.sticker?.src || ''))
+    ? String(value.sticker.src)
+    : null;
+  if (kind === 'sticker' && !stickerSrc) return null;
 
   const tsNumber = Number(value.ts);
   return {
@@ -105,9 +108,9 @@ export function normalizeChatMessage(value = {}, index = 0) {
         scene: cleanInlineText(value.silence?.scene, 100) || null
       }
     } : {}),
-    ...(kind === 'sticker' && value.sticker?.src ? {
+    ...(kind === 'sticker' ? {
       sticker: {
-        src: SAFE_STICKER_SRC.test(String(value.sticker.src || '')) ? String(value.sticker.src) : '',
+        src: stickerSrc,
         utterance: cleanInlineText(value.sticker.utterance, 300) || null,
         emotion: cleanInlineText(value.sticker.emotion, 80) || null,
         id: cleanInlineText(value.sticker.id, 80) || null,
