@@ -1394,19 +1394,15 @@ function persistAssistantMessageOnce(message = null) {
   return true;
 }
 
-function plannedReplyLink(data = null, defaultInReplyTo = null) {
-  const projected = replyLinkFromTarget(data?.replyTarget);
-  if (projected) return projected;
-  const source = defaultInReplyTo ? findMessageById(defaultInReplyTo) : null;
-  const snapshot = source ? createReplySnapshot(source) : null;
-  return defaultInReplyTo ? { inReplyTo: defaultInReplyTo, replySnapshot: snapshot } : { inReplyTo: null, replySnapshot: null };
+function plannedReplyLink(data = null) {
+  return replyLinkFromTarget(data?.visualReply) || { inReplyTo: null, replySnapshot: null };
 }
 
-async function prepareAssistantDelivery({ data, requestId, userText = '', defaultInReplyTo = null } = {}) {
+async function prepareAssistantDelivery({ data, requestId, userText = '' } = {}) {
   const plan = data?.deliveryPlan;
   const turnId = String(plan?.turnId || data?.turnId || `rin-turn-${requestId}`).slice(0, 120);
   const deliveryId = `delivery-${turnId}`.slice(0, 120);
-  const replyLink = plannedReplyLink(data, defaultInReplyTo);
+  const replyLink = plannedReplyLink(data);
 
   if (plan?.mode === 'silence' || data?.turnDecision?.delivery?.mode === 'silence') {
     const message = createChatMessage({
@@ -1420,8 +1416,8 @@ async function prepareAssistantDelivery({ data, requestId, userText = '', defaul
       deliveryId,
       segmentId: `${turnId}-silence`,
       segmentIndex: 0,
-      inReplyTo: defaultInReplyTo || null,
-      replySnapshot: defaultInReplyTo ? replyLink.replySnapshot : null,
+      inReplyTo: null,
+      replySnapshot: null,
       silence: {
         reason: data?.turnDecision?.focus || 'осознанное молчание',
         scene: data?.cognition?.scene?.type || null
@@ -1842,7 +1838,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
       return false;
     }
 
-    preparedDelivery = await prepareAssistantDelivery({ data, requestId, userText: '', defaultInReplyTo: null });
+    preparedDelivery = await prepareAssistantDelivery({ data, requestId, userText: '' });
     if (inputEpoch !== epochAtStart) return false;
 
     const waitResult = preparedDelivery.type === 'silence'
@@ -2074,8 +2070,7 @@ async function processUserBatch(messageIds = []) {
     preparedDelivery = await prepareAssistantDelivery({
       data,
       requestId,
-      userText: combinedUserText,
-      defaultInReplyTo: lastUserMessage?.id || null
+      userText: combinedUserText
     });
     if (inputEpoch !== epochAtStart) {
       requeueInterruptedBatch(ids);
