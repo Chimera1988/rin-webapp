@@ -88,6 +88,34 @@ test('corrupted memory falls back to a valid schema and quota failures are expli
 });
 
 
+test('profile normalization removes obsolete non-executable settings', async () => {
+  const saved = await memory.saveProfile({
+    name: 'Другое имя', base_rules: 'другие правила', starters: ['фраза'], initiation: { max_per_day: 9 },
+    description: 'Описание', instructions_extra: 'Инструкция', knowledge: 'Знание'
+  });
+  assert.deepEqual(Object.keys(saved).sort(), ['_updated_at', 'description', 'instructions_extra', 'knowledge']);
+  const reloaded = await memory.loadProfile();
+  assert.equal(reloaded.description, 'Описание');
+  assert.equal('name' in reloaded, false);
+  assert.equal('base_rules' in reloaded, false);
+  assert.equal('starters' in reloaded, false);
+  assert.equal('initiation' in reloaded, false);
+});
+
+test('inner life uses configured duration bounds and preserves the active goal across the turn', async () => {
+  const now = 1_500_000;
+  const policy = { activityMinMinutes: 35, activityMaxMinutes: 104, continueAcrossMessages: true };
+  const prepared = await memory.prepareInnerLife({ partOfDay: 'вечер', rinHuman: '2026-08-11 20:00' }, 'Тест', now, policy);
+  const durationMinutes = (prepared.expiresAt - now) / 60000;
+  assert.ok(durationMinutes >= 35 && durationMinutes <= 104, `duration=${durationMinutes}`);
+  assert.ok(prepared.activityGoal);
+  assert.equal(prepared.schema, 'rin-inner-life-v3');
+  await memory.commitTurnState({ requestId: 'inner-goal', innerLife: prepared, now, stateTransition: {} });
+  const reloaded = await memory.loadDiary();
+  assert.equal(reloaded.innerLife.activityGoal, prepared.activityGoal);
+  assert.equal(reloaded.innerLife.schema, 'rin-inner-life-v3');
+});
+
 test('prepareInnerLife is pure until a successful turn is committed', async () => {
   await memory.saveDiary(await memory.loadDiary());
   const before = await memory.loadDiary();

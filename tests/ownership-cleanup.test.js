@@ -37,7 +37,8 @@ const REMOVED_DECISION_OWNERS = [
   'lib/personality/speech.js',
   'lib/personality/utils.js',
   'lib/personality/voice-policy.js',
-  'lib/stickers-v6.js'
+  'lib/stickers-v6.js',
+  'public/lib/stickers-v6.js'
 ];
 
 test('competing legacy decision owners are physically absent', async () => {
@@ -107,7 +108,7 @@ test('affective persistence has one snapshot writer path', async () => {
 
 test('sticker selection resolves assets but never invents semantic fallback', async () => {
   const selector = await read('lib/cognition/sticker-selector.js');
-  const client = await read('public/lib/stickers-v6.js');
+  const client = await read('public/lib/stickers-v7.js');
   assert.doesNotMatch(selector, /warm_smile[^\n]*fallback|fallback[^\n]*warm_smile/i);
   assert.match(selector, /return null/);
   assert.doesNotMatch(client, /decideSticker|decidePlannedSticker|deriveStickerSignals|Math\.random/);

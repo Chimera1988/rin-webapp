@@ -24,7 +24,7 @@ const baseDecision = (overrides = {}) => ({
 
 const realization = (...texts) => ({ segments: texts.map((text, index) => ({ purpose: index === 0 ? 'main_reply' : `message_${index + 1}`, text })) });
 
-function openAiResponse(content, { finishReason = 'stop', model = 'gpt-4o' } = {}) {
+function openAiResponse(content, { finishReason = 'stop', model = 'gpt-4.1' } = {}) {
   return new Response(JSON.stringify({ choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) }, finish_reason: finishReason }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, model }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 

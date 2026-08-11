@@ -7,9 +7,9 @@ import { STICKER_INTENT_VALUES } from '../lib/cognition/sticker-intents.js';
 
 const storage=new MemoryStorage();
 globalThis.localStorage=storage;
-const client=await import('../public/lib/stickers-v6.js');
+const client=await import('../public/lib/stickers-v7.js');
 const contract=await import('../public/lib/sticker-contract.js');
-const config=JSON.parse(await readFile(new URL('../public/data/stickers-v6.json',import.meta.url),'utf8'));
+const config=JSON.parse(await readFile(new URL('../public/data/stickers-v7.json',import.meta.url),'utf8'));
 
 test.beforeEach(()=>storage.clear());
 

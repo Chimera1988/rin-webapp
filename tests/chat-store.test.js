@@ -6,6 +6,7 @@ import {
   createChatMessage,
   createSerialQueue,
   loadChatHistory,
+  persistChatHistoryMutation,
   reconcilePendingDeliveryHistory,
   resetApplicationStorage,
   saveChatHistory,
@@ -25,6 +26,39 @@ test('typed voice and sticker messages survive persistence and reload', () => {
   assert.equal(loaded[0].kind, 'voice');
   assert.equal(loaded[1].kind, 'sticker');
   assert.equal(loaded[1].sticker.src, '/stickers/smile.webp');
+});
+
+
+test('durable history mutation rolls back in-memory state when persistence fails', () => {
+  const history = [createChatMessage({ role: 'user', status: 'failed', content: 'retry me', id: 'u-quota' })];
+  const blocked = {
+    getItem() { return null; },
+    setItem() { throw new Error('quota'); },
+    removeItem() {}
+  };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    const ok = persistChatHistoryMutation(history, draft => {
+      draft[0].status = 'sent';
+      draft.push(createChatMessage({ role: 'user', status: 'pending', content: 'must rollback', id: 'u-new' }));
+    }, blocked);
+    assert.equal(ok, false);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].id, 'u-quota');
+    assert.equal(history[0].status, 'failed');
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test('durable history mutation commits only after the mutated state is stored', () => {
+  const storage = new MemoryStorage();
+  const history = [];
+  const message = createChatMessage({ role: 'user', status: 'pending', content: 'durable', id: 'u-durable' });
+  assert.equal(persistChatHistoryMutation(history, draft => draft.push(message), storage), true);
+  assert.equal(history.length, 1);
+  assert.equal(JSON.parse(storage.getItem(CHAT_STORAGE_KEY))[0].id, 'u-durable');
 });
 
 test('reset registry removes all application state and explicitly preserves PIN', () => {

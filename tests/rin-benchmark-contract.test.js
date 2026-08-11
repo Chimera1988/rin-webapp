@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const benchmarkUrl = new URL('./fixtures/rin-reference-benchmark.json', import.meta.url);
-const promptUrl = new URL('../public/data/rin_prompt_profile.json', import.meta.url);
+const promptUrl = new URL('../data/canon/rin_prompt_profile.json', import.meta.url);
 
 async function readJson(url) { return JSON.parse(await readFile(url, 'utf8')); }
 

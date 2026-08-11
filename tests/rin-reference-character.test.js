@@ -4,9 +4,9 @@ import { readFile } from 'node:fs/promises';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 
 const readJson = async file => JSON.parse(await readFile(new URL(`../${file}`, import.meta.url), 'utf8'));
-const profile = await readJson('public/data/rin_prompt_profile.json');
-const backstory = await readJson('public/data/rin_backstory.json');
-const memories = await readJson('public/data/rin_memories.json');
+const profile = await readJson('data/canon/rin_prompt_profile.json');
+const backstory = await readJson('data/canon/rin_backstory.json');
+const memories = await readJson('data/canon/rin_memories.json');
 
 test('reference profile encodes the simulated Rin mechanism rather than fixed romantic catchphrases', () => {
   const refText = JSON.stringify(profile.reference_character);

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isExplicitFarewell,
+  normalizeChatMessage,
   normalizeChatHistory,
   pruneModelHistory,
   selectModelHistory
@@ -18,7 +19,7 @@ test('history normalization rejects unknown roles and preserves typed messages',
     { role: 'user', kind: 'unknown', status: 'complete', content: 'bad kind' },
     { role: 'assistant', kind: 'text', status: 'mystery', content: 'bad status' },
     { role: 'user', kind: 'voice', status: 'complete', content: 'голос', id: 'u1' },
-    { role: 'assistant', kind: 'sticker', status: 'complete', content: 'gesture', sticker: { src: '/x.webp' }, id: 's1' }
+    { role: 'assistant', kind: 'sticker', status: 'complete', content: 'gesture', sticker: { src: '/stickers/x.webp' }, id: 's1' }
   ]);
   assert.equal(history.length, 2);
   assert.equal(history[0].kind, 'voice');
@@ -29,7 +30,7 @@ test('model history excludes failed and non-text events and moves retried curren
   const selected = selectModelHistory([
     { role: 'user', kind: 'text', status: 'sent', requestId: 'retry', id: 'old', content: 'первый вопрос' },
     { role: 'user', kind: 'text', status: 'failed', requestId: 'bad', id: 'bad', content: 'ошибка' },
-    { role: 'assistant', kind: 'sticker', status: 'complete', id: 'st', content: 'жест', sticker: { src: '/s.webp' } },
+    { role: 'assistant', kind: 'sticker', status: 'complete', id: 'st', content: 'жест', sticker: { src: '/stickers/s.webp' } },
     { role: 'user', kind: 'text', status: 'complete', id: 'u2', content: 'последующий вопрос' },
     { role: 'assistant', kind: 'text', status: 'complete', id: 'a2', content: 'последующий ответ' }
   ], { includeRequestId: 'retry' });
@@ -57,3 +58,12 @@ test('assistant meta leaks are excluded while structured sticker context is pres
   assert.equal(selected[0].kind, 'sticker');
   assert.equal(selected[0].sticker.id, 'smile');
 });
+
+
+test('malformed sticker events are rejected instead of persisting an empty bubble', () => {
+  for (const src of ['javascript:alert(1)', 'https://evil.example/x.webp', '/other/x.webp', '']) {
+    assert.equal(normalizeChatMessage({ role: 'assistant', kind: 'sticker', status: 'complete', content: 'gesture', sticker: { src } }), null, src);
+  }
+  const valid = normalizeChatMessage({ role: 'assistant', kind: 'sticker', status: 'complete', sticker: { src: '/stickers/smile.webp' } });
+  assert.equal(valid?.sticker?.src, '/stickers/smile.webp');
+})

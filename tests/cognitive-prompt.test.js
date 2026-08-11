@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { buildKernelPrompt } from '../lib/cognition/cognitive-kernel.js';
 import { buildRealizationPrompt } from '../lib/personality/rin-realization.js';
 
-const promptProfile = JSON.parse(await readFile(new URL('../public/data/rin_prompt_profile.json', import.meta.url), 'utf8'));
+const promptProfile = JSON.parse(await readFile(new URL('../data/canon/rin_prompt_profile.json', import.meta.url), 'utf8'));
 
 test('reference character is the simulated Rin: warm-independent, observant, contextual and follow-through oriented', () => {
   const ref = promptProfile.reference_character;

@@ -39,3 +39,18 @@ test('login accepts only the configured PIN', async () => {
   assert.equal(res.body.ok, true);
   assert.equal(res.headers['cache-control'], 'no-store');
 });
+
+test('all communication endpoints reject unsupported methods before handler-specific work', async () => {
+  for (const [name, handler] of Object.entries(handlers)) {
+    const req = createReq({
+      method: name === 'weather' ? 'POST' : 'GET',
+      headers: { 'x-rin-pin': '2468' },
+      body: {}
+    });
+    const res = createRes();
+    await handler(req, res);
+    assert.equal(res.statusCode, 405, name);
+    assert.equal(res.body.code, 'METHOD_NOT_ALLOWED', name);
+    assert.equal(res.headers.allow, name === 'weather' ? 'GET' : 'POST', name);
+  }
+});

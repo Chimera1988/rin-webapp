@@ -1,25 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { modelMessageFromHistory } from '../api/chat.js';
+import { conversationEventText, normalizeChatMessage } from '../lib/chat-contract.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('a structured sticker becomes a protected system event for the model', () => {
-  const message = modelMessageFromHistory({
+test('a structured sticker stays a structured conversation event with semantic model text', () => {
+  const event = normalizeChatMessage({
     role: 'assistant',
     kind: 'sticker',
+    status: 'complete',
     sticker: {
       id: 'mild_jealousy',
+      src: '/stickers/mild_jealousy.webp',
       meaning: 'лёгкая ревность',
       cause: 'упоминание другой девушки'
     }
   });
-  assert.equal(message.role, 'system');
-  assert.match(message.content, /ВНУТРЕННЕЕ СОБЫТИЕ ДИАЛОГА/);
-  assert.match(message.content, /лёгкая ревность/);
-  assert.match(message.content, /НЕ ЦИТИРОВАТЬ/);
-  assert.doesNotMatch(message.content, /^\[/);
+  assert.equal(event?.kind, 'sticker');
+  const text = conversationEventText(event);
+  assert.match(text, /Невербальный жест Рин/);
+  assert.match(text, /лёгкая ревность/);
+  assert.match(text, /упоминание другой девушки/);
+  assert.doesNotMatch(text, /^\[/);
 });
 
 test('sticker UI inherits the message bubble border, surface and tail', async () => {
