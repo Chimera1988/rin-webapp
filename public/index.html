@@ -27,7 +27,7 @@
   </script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-08-10-rin-cognitive-kernel-v1.4-semantic-reply-link" />
+  <link rel="stylesheet" href="/style.css?v=2026-08-11-rin-system-consistency-v2" />
 </head>
 <body class="chat-app">
 
@@ -339,70 +339,41 @@
     </div>
   </div>
 
-  <!-- Окно редактора «Персонаж и канон» -->
+  <!-- Пользовательские дополнения к серверному канону -->
   <div id="personaPanel" class="sheet hidden" aria-hidden="true">
     <div class="sheet__header">
-      <h3>Персонаж и канон</h3>
+      <h3>Дополнения к персонажу</h3>
       <button id="personaClose" class="icon-btn" aria-label="Закрыть">✕</button>
     </div>
 
     <div class="sheet__body">
+      <p class="muted">Имя, канон, базовые правила, расписание инициатив и внутренняя жизнь управляются единым системным контуром и здесь не переопределяются.</p>
+
       <label class="fld">
-        <span>Имя</span>
-        <input id="pName" type="text" placeholder="Рин Акихара"/>
+        <span>Дополнительное описание</span>
+        <textarea id="pDesc" rows="4" placeholder="Необязательный пользовательский контекст, вторичный к канону"></textarea>
       </label>
 
       <label class="fld">
-        <span>Короткое описание</span>
-        <textarea id="pDesc" rows="2" placeholder="Как представить персонажа в одном-двух предложениях"></textarea>
-      </label>
-
-      <details class="fld">
-        <summary>Базовые правила (read-only)</summary>
-        <pre id="pInstrBase" class="mono readonly"></pre>
-      </details>
-
-      <label class="fld">
-        <span>Доп. инструкции (персональные правила)</span>
-        <textarea id="pInstrExtra" rows="4" placeholder="Как она себя ведёт, чего избегает…"></textarea>
+        <span>Дополнительные инструкции</span>
+        <textarea id="pInstrExtra" rows="6" placeholder="Не могут переписать канон, reality boundary или protocol"></textarea>
       </label>
 
       <label class="fld">
-        <span>Знания (канон, кратко)</span>
-        <textarea id="pKnowledge" rows="3" placeholder="Город, работа, интересы…"></textarea>
+        <span>Пользовательские знания</span>
+        <textarea id="pKnowledge" rows="6" placeholder="Используются только если не конфликтуют с каноном и подтверждённой памятью"></textarea>
       </label>
-
-      <label class="fld">
-        <span>Стартовые фразы (по одной в строке)</span>
-        <textarea id="pStarters" rows="4" placeholder="Привет! Как проходит твой день?&#10;Уютный вечер — самое время поговорить. Как ты?"></textarea>
-      </label>
-
-      <fieldset class="fld">
-        <legend>Инициативы (авто-сообщения)</legend>
-        <div class="grid2">
-          <label>Максимум в день
-            <input id="pInitMax" type="number" min="0" max="10"/>
-          </label>
-          <label>Окно 1 (HH:MM–HH:MM, pool)
-            <input id="pWin1" type="text" placeholder="08:00-10:30 morning"/>
-          </label>
-          <label>Окно 2
-            <input id="pWin2" type="text" placeholder="18:30-22:30 evening"/>
-          </label>
-        </div>
-        <small class="muted">pool: <code>morning</code> | <code>day</code> | <code>evening</code> | <code>night</code></small>
-      </fieldset>
     </div>
 
     <div class="sheet__footer">
-      <button id="personaReset" class="ghost" type="button">Сбросить к дефолту</button>
+      <button id="personaReset" class="ghost" type="button">Сбросить дополнения</button>
       <div class="spacer"></div>
       <button id="personaSave" class="primary" type="button">Сохранить</button>
     </div>
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-08-10-rin-cognitive-kernel-v1.4-semantic-reply-link"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-08-11-rin-system-consistency-v2"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>
@@ -413,18 +384,15 @@
     .sheet__footer{padding-bottom:calc(16px + env(safe-area-inset-bottom,0));border-top:1px solid rgba(255,255,255,.075);border-bottom:0}
     .sheet__body{padding:12px 16px 24px;overflow:auto}
     .fld{display:block;margin:14px 0}
-    .fld > span, .fld > legend{display:block;margin:4px 0 7px;color:#d8d1d3;font-size:.95rem}
-    .fld input[type=text], .fld input[type=number], .fld textarea{width:100%;background:rgba(24,24,34,.92);border:1px solid rgba(255,255,255,.09);color:#f7f2f3;border-radius:12px;padding:11px 12px;font-size:14px;outline:none}
-    .fld input:focus,.fld textarea:focus{border-color:#8f2a3e;box-shadow:0 0 0 2px rgba(143,42,62,.18)}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .fld > span{display:block;margin:4px 0 7px;color:#d8d1d3;font-size:.95rem}
+    .fld textarea{width:100%;background:rgba(24,24,34,.92);border:1px solid rgba(255,255,255,.09);color:#f7f2f3;border-radius:12px;padding:11px 12px;font-size:14px;outline:none}
+    .fld textarea:focus{border-color:#8f2a3e;box-shadow:0 0 0 2px rgba(143,42,62,.18)}
     .icon-btn{background:transparent;border:0;color:#c76678;font-size:22px;cursor:pointer}
-    .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;white-space:pre-wrap;background:rgba(8,8,13,.72);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:11px}
     .ghost{background:transparent;border:1px solid rgba(255,255,255,.14);color:#bbb4b6;border-radius:11px;padding:10px 13px}
     .primary{background:linear-gradient(135deg,#932b40,#691829);border:0;color:#fff;border-radius:11px;padding:11px 16px;box-shadow:0 6px 18px rgba(91,16,32,.28)}
     .spacer{flex:1}
     .muted{color:#948c90}
     .settings .btn{white-space:nowrap}
-    @media(max-width:560px){.grid2{grid-template-columns:1fr}}
   </style>
 </body>
 </html>

@@ -10,23 +10,26 @@ import {
   reconcilePendingDeliveryHistory,
   resetApplicationStorage,
   saveChatHistory,
+  persistChatHistoryMutation,
   toApiHistory,
   updateMessage
 } from './js/chat_store.js';
 import { RIN_RELEASE_ID } from './js/release.js';
 import { createMemoryJobRunner, enqueueMemoryJob } from './js/memory_job_queue.js';
-import { canAutoInitiate, canGreet, resolveInitiationPolicy } from './js/conversation_policy.js';
+import { activeInitiationWindow, canAutoInitiate, canGreet, initiationWindowKey, resolveInitiationPolicy } from './js/conversation_policy.js';
+import { createInitiationStateStore } from './js/initiation_state.js';
+import { storageGet as safeLocalGet, storageSet as safeLocalSet } from './js/storage.js';
 import { shouldRefreshEnvironment } from './js/environment_intent.js';
 import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
 import { createPresenceController } from './js/presence_controller.js';
 import { createHumanDeliveryScheduler, createInputAggregator } from './js/delivery_scheduler.js';
 import { createChatViewportController } from './js/chat_viewport.js';
+import { createWallpaperStore } from './js/wallpaper_store.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
 const RIN_BUILD_VERSION = RIN_RELEASE_ID;
 
-const DAILY_INIT_KEY = 'rin-init-count';
 const THEME_KEY      = 'rin-theme';
 
 /* настройки, что храним в LS */
@@ -37,47 +40,10 @@ const LS_STICKER_SAFE   = 'rin-sticker-safe';    // '1' | '0'  (доп. запр
 const LS_STICKER_OPACITY = 'rin-sticker-opacity'; // 20..100 (%)
 const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0'
 const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
-const LS_WP_DATA        = 'rin-wallpaper-data';  // dataURL
 const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
 const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'
 const DEFAULT_DEBUG_ENABLED = true;
 
-function safeLocalGet(key, fallback = '') {
-  try {
-    const value = localStorage.getItem(key);
-    return value == null ? fallback : value;
-  } catch {
-    return fallback;
-  }
-}
-
-function safeLocalRemove(key) {
-  try {
-    localStorage.removeItem(key);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function safeLocalSet(key, value) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch (error) {
-    console.error(`[Rin storage] Не удалось сохранить ${key}`, error);
-    return false;
-  }
-}
-
-function safeLocalJson(key, fallback = {}) {
-  try {
-    const parsed = JSON.parse(safeLocalGet(key, 'null'));
-    return parsed && typeof parsed === 'object' ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 /* DOM */
 const chatEl        = document.getElementById('chat');
@@ -137,14 +103,11 @@ const debugToggle   = document.getElementById('debugToggle');
 const debugLogEl    = document.getElementById('debugLog');
 
 /* === Окружение Рин (время/сезон/погода) === */
-const RIN_TZ     = 'Asia/Tokyo';
-const RIN_CITY   = 'Kanazawa';
-const RIN_COUNTRY= 'JP';
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // раз в 20 минут
 
 /* ✔️ РАННЕЕ БЕЗОПАСНОЕ ОБЪЯВЛЕНИЕ — чтобы не ловить "Can't find variable: currentEnv" */
 let currentEnv = {
-  rinTz: RIN_TZ,
+  rinTz: '',
   rinHuman: '',
   season: '',
   month: '',
@@ -193,16 +156,19 @@ function fmtRinHuman(d){ // "YYYY-MM-DD HH:mm"
   const m=String(d.getMinutes()).padStart(2,'0');
   return `${Y}-${M}-${D} ${h}:${m}`;
 }
-function hoursDiffWithRin(){
+function hoursDiffWithRin(timezone){
   const here = new Date();
-  const rin  = nowInTz(RIN_TZ);
+  const rin = nowInTz(timezone);
   return Math.round((rin - here) / 3600000);
 }
 
 /* — API погоды (через наш /api/weather) — */
-async function fetchRinWeather(){
+async function fetchRinWeather(location = null){
   try{
-    const u = `/api/weather?q=${encodeURIComponent(RIN_CITY)},${RIN_COUNTRY}&units=metric&lang=ru`;
+    const lat = Number(location?.lat);
+    const lon = Number(location?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const u = `/api/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&units=metric&lang=ru`;
     const r = await fetchWithTimeout(u, { headers: authenticatedHeaders() }, 12_000);
     if (!r.ok) return null;
     const w = await r.json();
@@ -258,33 +224,11 @@ if (_debugOn) dbg('debug enabled');
 const resetApp      = document.getElementById('resetApp');
 
 /* state */
-let profile = null;         // профиль из persona_ui / rin_memory
-const dossierCaches = new Map();
+let profile = null;         // поддерживаемые пользовательские дополнения
 let loreLib = null;
-
-/**
- * Единый загрузчик JSON-досье. Сохраняет прежнее поведение,
- * но убирает четыре одинаковых fetch/cache/error блока.
- */
-async function loadDossierForChat(key, url, invalidMessage) {
-  if (dossierCaches.has(key)) return dossierCaches.get(key);
-
-  try {
-    const response = await fetchWithTimeout(url, { cache: 'no-store' }, 12_000);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const value = await response.json();
-    if (!value || typeof value !== 'object') {
-      throw new Error(invalidMessage || `invalid ${key} dossier`);
-    }
-
-    dossierCaches.set(key, value);
-    return value;
-  } catch (error) {
-    dbg(`${key} dossier load failed: ${error?.message || error}`);
-    return null;
-  }
-}
+let runtimeSchedule = null;
+const initiationState = createInitiationStateStore(localStorage);
+const wallpaperStore = createWallpaperStore({ indexedDBRef: window.indexedDB, legacyStorage: localStorage });
 
 async function ensureLoreReady() {
   if (loreLib) return loreLib;
@@ -292,7 +236,7 @@ async function ensureLoreReady() {
   try {
     const module = await import(`/js/rin_lore.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`);
     if (typeof module?.getSchedule !== 'function') throw new Error('rin_lore schedule API is unavailable');
-    await module.getSchedule();
+    runtimeSchedule = await module.getSchedule();
     loreLib = module;
     dbg('lore schedule metadata ready');
     return loreLib;
@@ -305,23 +249,24 @@ async function ensureLoreReady() {
   }
 }
 
+async function ensureRuntimeSchedule() {
+  if (runtimeSchedule) return runtimeSchedule;
+  const lore = await ensureLoreReady();
+  if (!lore?.getSchedule) return null;
+  runtimeSchedule = await lore.getSchedule();
+  return runtimeSchedule;
+}
+
 async function ensureActiveProfile() {
-  // persona_ui может обновить пользовательские поля позже chat.js.
+  // Клиент передаёт только поддерживаемые пользовательские дополнения.
   const globalProfile = window.RIN_PROFILE;
   if (globalProfile && typeof globalProfile === 'object') profile = globalProfile;
   if (!profile || typeof profile !== 'object') profile = {};
-
-  // Канонический prompt-профиль принадлежит серверу. Клиент передаёт только
-  // пользовательские overrides и настройки инициативы, но не может подменить canon.
   profile = {
-    name: profile.name || 'Рин Акихара',
-    description: profile.description || '',
-    instructions_extra: profile.instructions_extra || '',
-    knowledge: profile.knowledge || '',
-    starters: Array.isArray(profile.starters) ? profile.starters : [],
-    initiation: profile.initiation || null
+    description: String(profile.description || ''),
+    instructions_extra: String(profile.instructions_extra || ''),
+    knowledge: String(profile.knowledge || '')
   };
-
   return profile;
 }
 
@@ -437,15 +382,20 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
               activity: String(state.activity || '').slice(0, 180),
               trace: String(state.trace || '').slice(0, 220),
               focus: String(state.focus || '').slice(0, 220),
-              privateThought: String(state.privateThought || '').slice(0, 260),
+              activityGoal: String(state.activityGoal || '').slice(0, 220),
               part: String(state.part || '').slice(0, 20),
               realityMode: String(state.realityMode || 'simulated_character_world').slice(0, 40),
               source: String(state.source || 'schedule_simulation').slice(0, 80),
               sceneId: String(state.sceneId || '').slice(0, 120) || null,
+              energy: numberOr(state.energy),
               startedAt: numberOr(state.startedAt),
               expiresAt: numberOr(state.expiresAt),
-              lastSpontaneousAt: numberOr(state.lastSpontaneousAt),
-              interactionCount: numberOr(state.interactionCount, 0)
+              lastChangedAt: numberOr(state.lastChangedAt),
+              lastUserAt: numberOr(state.lastUserAt),
+              interactionCount: numberOr(state.interactionCount, 0),
+              recentActivities: Array.isArray(state.recentActivities)
+                ? state.recentActivities.slice(-6).map(item => String(item || '').slice(0, 180)).filter(Boolean)
+                : []
             };
           })()
         : null,
@@ -552,13 +502,10 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
   const transition = data?.stateTransition || null;
   const decision = data?.turnDecision || null;
   const committedRequestId = requestId || userMessage?.requestId || null;
-  const spontaneous = ['activate', 'advance'].includes(decision?.intentTransition?.operation)
-    || ['callback', 'challenge', 'return_to_open_loop'].includes(decision?.act);
   const committed = await memoryModule?.commitTurnState?.({
     requestId: committedRequestId,
     innerLife: preparedInnerLife,
     stateTransition: transition,
-    spontaneous,
     now: Date.now()
   });
 
@@ -568,18 +515,18 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
 }
 
 /* Стикеры вызываются внутри сериализованного диалогового потока. */
-/* === stickers v6: смысловая двухканальная система === */
+/* === stickers v7: смысловая двухканальная система === */
 let STICKERS_CFG = null;
 let stickersLib = null;
 
 async function ensureStickersReady(){
   if (!stickersLib) {
-    try { stickersLib = await import(`/lib/stickers-v6.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`); }
-    catch(e){ dbg('stickers v6 import failed: '+(e?.message||e)); stickersLib=null; }
+    try { stickersLib = await import(`/lib/stickers-v7.js?v=${encodeURIComponent(RIN_BUILD_VERSION)}`); }
+    catch(e){ dbg('stickers v7 import failed: '+(e?.message||e)); stickersLib=null; }
   }
   if (stickersLib && !STICKERS_CFG) {
-    try { STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers-v6.json'); dbg('stickers v6 loaded'); }
-    catch(e){ dbg('stickers v6 load failed: '+(e?.message||e)); STICKERS_CFG=null; }
+    try { STICKERS_CFG = await stickersLib.loadStickerConfig('/data/stickers-v7.json'); dbg('stickers v7 loaded'); }
+    catch(e){ dbg('stickers v7 load failed: '+(e?.message||e)); STICKERS_CFG=null; }
   }
 }
 
@@ -594,15 +541,6 @@ function saveHistory(h){
   const ok = saveChatHistory(h, localStorage);
   if (!ok) dbg('history save failed: storage quota or unavailable');
   return ok;
-}
-function getInitCountFor(k){
-  const m = safeLocalJson(DAILY_INIT_KEY, {});
-  return m[k] || 0;
-}
-function bumpInitCount(k){
-  const m = safeLocalJson(DAILY_INIT_KEY, {});
-  m[k] = (m[k] || 0) + 1;
-  safeLocalSet(DAILY_INIT_KEY, JSON.stringify(m));
 }
 
 /* === UI: SETTINGS === */
@@ -681,9 +619,9 @@ window.addEventListener('storage', event => {
 syncThemeChoices();
 
 /* — Обои — */
-function applyWallpaper(){
-  const data = safeLocalGet(LS_WP_DATA) || '';
-  const op   = +(safeLocalGet(LS_WP_OPACITY) || '90') / 100;
+async function applyWallpaper(){
+  const data = await wallpaperStore.get();
+  const op = +(safeLocalGet(LS_WP_OPACITY) || '90') / 100;
 
   document.documentElement.style.setProperty('--wallpaper-url', data ? `url("${data}")` : 'none');
   document.documentElement.style.setProperty('--wallpaper-opacity', String(op));
@@ -691,7 +629,7 @@ function applyWallpaper(){
   if (wpOpacity) wpOpacity.value = Math.round(op * 100);
   if (wpOpacityVal) wpOpacityVal.textContent = `${Math.round(op * 100)}%`;
 }
-applyWallpaper();
+void applyWallpaper();
 
 if (wpFile){
   wpFile.addEventListener('change', (e)=>{
@@ -703,20 +641,20 @@ if (wpFile){
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => {
-      if (!safeLocalSet(LS_WP_DATA, reader.result)) {
-        alert('Не удалось сохранить обои: локальное хранилище заполнено.');
+    reader.onload = async () => {
+      if (!await wallpaperStore.set(reader.result)) {
+        alert('Не удалось сохранить обои в локальном медиахранилище.');
         return;
       }
-      applyWallpaper();
+      await applyWallpaper();
     };
     reader.readAsDataURL(f);
   });
 }
 if (wpClear){
-  wpClear.onclick=()=>{
-    safeLocalRemove(LS_WP_DATA);
-    applyWallpaper();
+  wpClear.onclick=async()=>{
+    await wallpaperStore.remove();
+    await applyWallpaper();
   };
 }
 if (wpOpacity){
@@ -835,12 +773,12 @@ syncVoiceSettings();
 
 /* — Сброс — */
 if (resetApp){
-  resetApp.onclick=()=>{
+  resetApp.onclick=async()=>{
     if (!confirm('Удалить локальную историю, память, профиль, настройки и кэш приложения на этом устройстве? PIN входа будет сохранён.')) return;
+    await wallpaperStore.remove();
     resetApplicationStorage(localStorage, { preservePin: true });
     try { loreLib?.resetLoreCache?.(); } catch {}
-    try { stickersLib?.resetStickerState?.(); } catch {}
-    dossierCaches.clear();
+    try { stickersLib?.resetStickerState?.(localStorage); } catch {}
     window.location.reload();
   };
 }
@@ -1261,14 +1199,6 @@ window.addEventListener('offline', syncPeerAvailability);
 document.addEventListener('visibilitychange', syncPeerAvailability);
 window.addEventListener('pagehide', () => presence.dispose(), { once: true });
 
-function inWindow(local, from, to) {
-  if (!from || !to) return false;
-  const [fh, fm] = from.split(':').map(Number);
-  const [th, tm] = to.split(':').map(Number);
-  if (![fh, fm, th, tm].every(Number.isFinite)) return false;
-  const minute = local.getHours() * 60 + local.getMinutes();
-  return minute >= fh * 60 + fm && minute <= th * 60 + tm;
-}
 
 
 async function renderStoredMessage(message) {
@@ -1293,9 +1223,11 @@ async function renderStoredMessage(message) {
 
 (async function init(){
   syncPeerAvailability();
+  let initiationPolicy = null;
   try {
     await ensureActiveProfile();
-    await ensureLoreReady();
+    const schedule = await ensureRuntimeSchedule();
+    initiationPolicy = resolveInitiationPolicy(schedule);
     await ensureStickersReady();
     await refreshRinEnv();
   } catch (error) {
@@ -1315,8 +1247,10 @@ async function renderStoredMessage(message) {
   if (!history.length) await greet();
 
   setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
-  setInterval(() => { void tryInitiateBySchedule(); }, 60_000);
-  void tryInitiateBySchedule();
+  if (initiationPolicy) {
+    setInterval(() => { void tryInitiateBySchedule(); }, initiationPolicy.pollIntervalMs);
+    void tryInitiateBySchedule();
+  }
 })();
 
 async function greet() {
@@ -1387,12 +1321,6 @@ function markUserBatchComplete(messageIds = []) {
   saveHistory(history);
 }
 
-function persistAssistantMessageOnce(message = null) {
-  if (!message) return false;
-  if (!history.some(item => item?.id === message.id)) history.push(message);
-  saveHistory(history);
-  return true;
-}
 
 function plannedReplyLink(data = null) {
   return replyLinkFromTarget(data?.visualReply) || { inReplyTo: null, replySnapshot: null };
@@ -1763,18 +1691,24 @@ function resetBatchRows(messageIds = [], status = 'pending') {
 }
 
 function requeueInterruptedBatch(messageIds = []) {
-  assignMessageBatch(history, messageIds, { requestId: null, turnId: null, status: 'pending' });
+  const persisted = persistChatHistoryMutation(history, draft => {
+    assignMessageBatch(draft, messageIds, { requestId: null, turnId: null, status: 'pending' });
+  }, localStorage);
+  if (!persisted) {
+    markBatchFailed(messageIds, 'HISTORY_STORAGE_FAILED', { persist: false });
+    return false;
+  }
   resetBatchRows(messageIds, 'pending');
-  saveHistory(history);
   inputAggregator.prepend(messageIds);
+  return true;
 }
 
-function markBatchFailed(messageIds = [], code = 'CHAT_REQUEST_FAILED') {
+function markBatchFailed(messageIds = [], code = 'CHAT_REQUEST_FAILED', { persist = true } = {}) {
   for (const id of messageIds) {
     const failed = updateMessage(history, id, { status: 'failed', errorCode: code });
     if (failed) renderFailedState(failed);
   }
-  saveHistory(history);
+  if (persist) saveHistory(history);
 }
 
 async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = {}) {
@@ -1800,7 +1734,8 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
   try {
     await memoryJobRunner.drain();
     const memoryModule = await ensureMemoryReady();
-    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, '');
+    const schedule = await ensureRuntimeSchedule();
+    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, '', schedule?.innerLife || {});
     const [memory, activeProfile] = await Promise.all([
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
       ensureActiveProfile()
@@ -1878,24 +1813,39 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
 }
 
 async function tryInitiateBySchedule() {
-  if (!canAutoInitiate({ profile, history, greetingActive, activeRequests })) return false;
-  const lore = await ensureLoreReady();
-  const defaults = await lore?.getSchedule?.();
-  const policy = resolveInitiationPolicy(profile, defaults || {});
-  const date = nowInTz(RIN_TZ);
-  const dateKey = fmtDateKey(date);
-  if (getInitCountFor(dateKey) >= policy.maxPerDay) return false;
-  const windows = policy.windows;
-  const window = windows.find(item => inWindow(date, item.from, item.to) && Math.random() < Number(item.probability ?? 0.35));
+  if (!canAutoInitiate({ history, greetingActive, activeRequests })) return false;
+  const schedule = await ensureRuntimeSchedule();
+  const policy = resolveInitiationPolicy(schedule);
+  if (!policy || policy.maxPerDay <= 0) return false;
+
+  const localDate = nowInTz(policy.timezone);
+  const dateKey = fmtDateKey(localDate);
+  if (initiationState.getSentCount(dateKey) >= policy.maxPerDay) return false;
+
+  const window = activeInitiationWindow(localDate, policy);
   if (!window) return false;
+  const windowKey = initiationWindowKey(window);
+  if (initiationState.hasAttempted(dateKey, windowKey)) return false;
+
   const last = [...history].reverse().find(item => ['text', 'voice', 'sticker', 'silence'].includes(item?.kind || 'text'));
   if (!last || last.role !== 'assistant' || Date.now() - Number(last.ts || Date.now()) < policy.minimumSilenceMinutes * 60_000) return false;
-  if (!canAutoInitiate({ profile, history, greetingActive, activeRequests })) return false;
+  if (!canAutoInitiate({ history, greetingActive, activeRequests })) return false;
+
+  // Persist the draw before sampling so refreshes/timer ticks cannot re-roll the same window.
+  if (!initiationState.recordAttempt(dateKey, windowKey)) {
+    dbg(`initiative state write failed: ${dateKey}/${windowKey}`);
+    return false;
+  }
+  if (Math.random() >= Number(window.probability)) {
+    dbg(`initiative draw skipped: ${windowKey}`);
+    return false;
+  }
+
   const sent = await requestAssistantInitiative({
     type:'scheduled',
     reason:`окно самостоятельной инициативы ${window.pool || 'day'} после ${policy.minimumSilenceMinutes}+ минут тишины`
   });
-  if (sent) bumpInitCount(dateKey);
+  if (sent && !initiationState.recordSent(dateKey)) dbg(`initiative sent count write failed: ${dateKey}`);
   return sent;
 }
 
@@ -1905,9 +1855,15 @@ async function beginUserBatch(messageIds = []) {
   if (!ids.length) return false;
   const requestId = newRequestId();
   const turnId = `user-turn-${requestId}`;
-  assignMessageBatch(history, ids, { requestId, turnId, status: 'pending' });
+  const persisted = persistChatHistoryMutation(history, draft => {
+    assignMessageBatch(draft, ids, { requestId, turnId, status: 'pending' });
+  }, localStorage);
+  if (!persisted) {
+    markBatchFailed(ids, 'HISTORY_STORAGE_FAILED', { persist: false });
+    dbg(`user batch blocked before request: history persistence failed; request=${requestId}`);
+    return false;
+  }
   resetBatchRows(ids, 'pending');
-  saveHistory(history);
   enqueueBatch(ids);
   return true;
 }
@@ -1923,11 +1879,6 @@ formEl.addEventListener('submit', event => {
   const text = inputEl.value.trim();
   if (!text) return;
   const selectedReply = replySelection;
-  inputEl.value = '';
-  clearReplySelection();
-
-  // Any new user event invalidates a prepared-but-not-yet-committed assistant turn.
-  inputEpoch += 1;
   const message = createChatMessage({
     role: 'user',
     kind: 'text',
@@ -1938,8 +1889,17 @@ formEl.addEventListener('submit', event => {
     inReplyTo: selectedReply?.messageId || null,
     replySnapshot: selectedReply?.snapshot || null
   });
-  history.push(message);
-  saveHistory(history);
+  const persisted = persistChatHistoryMutation(history, draft => { draft.push(message); }, localStorage);
+  if (!persisted) {
+    dbg('user message blocked before queue: history persistence failed');
+    inputEl?.focus({ preventScroll: false });
+    return;
+  }
+
+  inputEl.value = '';
+  clearReplySelection();
+  // Any durably stored user event invalidates a prepared-but-not-yet-committed assistant turn.
+  inputEpoch += 1;
   addBubble(text, 'user', message.ts, { message });
   inputAggregator.push(message.id);
 });
@@ -1958,10 +1918,15 @@ function findMessageRow(messageId) {
 function retryMessage(messageId) {
   const message = history.find(item => item.id === messageId);
   if (!message || message.status !== 'failed') return;
+  const persisted = persistChatHistoryMutation(history, draft => {
+    assignMessageBatch(draft, [messageId], { requestId: null, turnId: null, status: 'pending' });
+  }, localStorage);
+  if (!persisted) {
+    dbg(`retry blocked before queue: history persistence failed; message=${messageId}`);
+    return;
+  }
   inputEpoch += 1;
-  assignMessageBatch(history, [messageId], { requestId: null, turnId: null, status: 'pending' });
   resetBatchRows([messageId], 'pending');
-  saveHistory(history);
   inputAggregator.push(messageId);
 }
 
@@ -1991,13 +1956,16 @@ async function processUserBatch(messageIds = []) {
   if (!messages.length || messages.some(item => !['pending', 'failed'].includes(item.status))) return;
 
   let requestId = messages[0]?.requestId || null;
-  if (!requestId || messages.some(item => item.requestId !== requestId)) {
-    requestId = newRequestId();
-    assignMessageBatch(history, ids, { requestId, turnId: `user-turn-${requestId}`, status: 'pending' });
+  if (!requestId || messages.some(item => item.requestId !== requestId)) requestId = newRequestId();
+  const persistedForRequest = persistChatHistoryMutation(history, draft => {
+    assignMessageBatch(draft, ids, { requestId, turnId: `user-turn-${requestId}`, status: 'sent' });
+  }, localStorage);
+  if (!persistedForRequest) {
+    markBatchFailed(ids, 'HISTORY_STORAGE_FAILED', { persist: false });
+    dbg(`user request blocked: sent state could not be persisted; request=${requestId}`);
+    return;
   }
-  assignMessageBatch(history, ids, { requestId, turnId: `user-turn-${requestId}`, status: 'sent' });
   resetBatchRows(ids, 'sent');
-  saveHistory(history);
 
   const epochAtStart = inputEpoch;
   const combinedUserText = userBatchText(messages);
@@ -2022,7 +1990,8 @@ async function processUserBatch(messageIds = []) {
     await memoryJobRunner.drain();
     if (shouldRefreshEnvironment(combinedUserText)) await refreshRinEnv();
     const memoryModule = await ensureMemoryReady();
-    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, combinedUserText);
+    const schedule = await ensureRuntimeSchedule();
+    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, combinedUserText, schedule?.innerLife || {});
     const [memory, activeProfile] = await Promise.all([
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
       ensureActiveProfile()
@@ -2154,19 +2123,21 @@ async function processUserBatch(messageIds = []) {
 
 async function refreshRinEnv() {
   try {
-    const rin = nowInTz(RIN_TZ);
+    const schedule = await ensureRuntimeSchedule();
+    if (!schedule?.timezone) return;
+    const rin = nowInTz(schedule.timezone);
     const monthIdx = rin.getMonth();
     const env = {
       _ts: Date.now(),
-      rinTz: RIN_TZ,
+      rinTz: schedule.timezone,
       rinHuman: fmtRinHuman(rin),
       season: seasonFromMonth(monthIdx),
       month: monthNameRu(monthIdx),
       partOfDay: partOfDayFromHour(rin.getHours()),
-      userVsRinHoursDiff: hoursDiffWithRin(),
+      userVsRinHoursDiff: hoursDiffWithRin(schedule.timezone),
       weather: null
     };
-    const weather = await fetchRinWeather();
+    const weather = await fetchRinWeather(schedule.location);
     if (weather) env.weather = weather;
     currentEnv = env;
   } catch (error) {
