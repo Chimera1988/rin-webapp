@@ -267,7 +267,7 @@ const stickerConfig = JSON.parse(await read('public/data/stickers-v7.json'));
 const stickerAssets = new Set((await readdir(path.join(root, 'public/stickers'))).map(file => `/stickers/${file}`));
 const stickerValidation = stickerContract.validateStickerConfig(stickerConfig, stickerAssets);
 if (!stickerValidation.ok) fail(`Sticker manifest invalid: ${stickerValidation.errors.join('; ')}`);
-if (stickerAssets.size !== 34) fail(`Expected 34 sticker assets, found ${stickerAssets.size}.`);
+if (stickerAssets.size !== 54) fail(`Expected 54 sticker assets, found ${stickerAssets.size}.`);
 if (Number(stickerConfig.defaults?.rollingWindowTurns) !== 10 || Number(stickerConfig.defaults?.minGapAssistantTurns) !== 2) fail('Sticker manifest rolling frequency defaults are not canonical.');
 if (stickerConfig.defaults?.semanticContract !== 'sticker-emotion-v2') fail('Sticker manifest semantic contract must be sticker-emotion-v2.');
 
