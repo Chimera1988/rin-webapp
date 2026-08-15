@@ -61,8 +61,9 @@ test('pending delivery journal is persisted before semantic commit and reload ve
   const persistStart = chat.indexOf('function persistPreparedDelivery');
   const renderStart = chat.indexOf('async function renderPreparedSegment', persistStart);
   const persistSource = chat.slice(persistStart, renderStart);
-  assert.match(persistSource, /history\.push\(message\)/u);
-  assert.match(persistSource, /saveHistory\(history\)/u);
+  assert.match(persistSource, /persistChatHistoryMutation\(history/u);
+  assert.match(persistSource, /draft\.push\(message\)/u);
+  assert.doesNotMatch(persistSource, /history\.push\(message\)/u);
 
   const reconcile = functionBody('reconcilePendingAssistantDeliveryCommitState', 'function setTypingRow');
   assert.match(reconcile, /lastCommittedRequestId/u);

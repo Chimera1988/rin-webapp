@@ -39,3 +39,23 @@ test('failed persistence refuses an initiation attempt instead of enabling re-ro
     console.error = originalError;
   }
 });
+
+test('legacy initiation counters remain intact when v2 migration persistence fails', () => {
+  const legacyValue = JSON.stringify({ '2026-08-11': 2 });
+  const storage = new MemoryStorage({ [LEGACY_INITIATION_COUNT_KEY]: legacyValue });
+  const originalSet = storage.setItem.bind(storage);
+  storage.setItem = (key, value) => {
+    if (String(key) === INITIATION_STATE_KEY) throw new Error('quota');
+    originalSet(key, value);
+  };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    const state = createInitiationStateStore(storage);
+    assert.equal(state.getSentCount('2026-08-11'), 2);
+    assert.equal(storage.getItem(INITIATION_STATE_KEY), null);
+    assert.equal(storage.getItem(LEGACY_INITIATION_COUNT_KEY), legacyValue);
+  } finally {
+    console.error = originalError;
+  }
+});

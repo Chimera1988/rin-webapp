@@ -172,3 +172,35 @@ test('uncommitted pending delivery journal is discarded and user retry state rem
   assert.equal(reconciled.find(item => item.id === 'u-lost')?.status, 'failed');
   assert.equal(reconciled.some(item => item.id === 'a-lost'), false);
 });
+
+test('legacy history is never deleted when the v6 migration commit fails', () => {
+  const legacyKey = 'rin-history-v5';
+  const legacyValue = JSON.stringify([{ role: 'user', content: 'не потерять', ts: 1 }]);
+  const storage = new MemoryStorage({ [legacyKey]: legacyValue });
+  const originalSet = storage.setItem.bind(storage);
+  storage.setItem = (key, value) => {
+    if (String(key) === CHAT_STORAGE_KEY) throw new Error('quota');
+    originalSet(key, value);
+  };
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    const loaded = loadChatHistory(storage);
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].content, 'не потерять');
+    assert.equal(storage.getItem(CHAT_STORAGE_KEY), null);
+    assert.equal(storage.getItem(legacyKey), legacyValue);
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test('verified history persistence detects a silent storage write failure', () => {
+  const storage = new MemoryStorage();
+  storage.setItem = () => {};
+  const history = [];
+  const message = createChatMessage({ role: 'user', status: 'pending', content: 'silent failure', id: 'u-silent' });
+  assert.equal(persistChatHistoryMutation(history, draft => draft.push(message), storage), false);
+  assert.deepEqual(history, []);
+  assert.equal(storage.getItem(CHAT_STORAGE_KEY), null);
+});

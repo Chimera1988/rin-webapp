@@ -98,3 +98,43 @@ test('user request lifecycle has a durable history boundary before network work'
   assert.match(chat, /persistedForRequest = persistChatHistoryMutation/);
   assert.match(chat, /HISTORY_STORAGE_FAILED/);
 });
+
+test('strict script CSP is compatible with the HTML entrypoint and theme bootstrap', async () => {
+  const vercel = JSON.parse(await read('vercel.json'));
+  const csp = (vercel.headers || [])
+    .flatMap(rule => Array.isArray(rule?.headers) ? rule.headers : [])
+    .find(header => String(header?.key || '').toLowerCase() === 'content-security-policy')?.value || '';
+  const index = await read('public/index.html');
+  assert.match(csp, /script-src\s+'self'/);
+  assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
+  assert.doesNotMatch(index, /<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i);
+  assert.doesNotMatch(index, /\son[a-z]+\s*=/i);
+  assert.match(index, /\/js\/theme_bootstrap\.js/);
+  assert.equal(await exists('public/js/theme_bootstrap.js'), true);
+});
+
+test('prepared assistant delivery uses durable mutation rollback before ConversationState commit', async () => {
+  const chat = await read('public/chat.js');
+  assert.match(chat, /function persistPreparedDelivery[\s\S]*persistChatHistoryMutation\(history/);
+  assert.match(chat, /persistPreparedDeliveryOrThrow\(preparedDelivery\)[\s\S]*commitSuccessfulTurnState/);
+  assert.match(chat, /if \(preparedPersisted\) discardPreparedDelivery\(preparedDelivery\)/);
+});
+
+test('memory extraction completion is diary-owned and memory queue skips already completed jobs', async () => {
+  const memory = await read('public/js/rin_memory.js');
+  const queue = await read('public/js/memory_job_queue.js');
+  const chat = await read('public/chat.js');
+  assert.match(memory, /processedMemoryJobs/);
+  assert.match(memory, /export async function applyMemoryExtraction/);
+  assert.match(memory, /export async function hasProcessedMemoryJob/);
+  assert.match(queue, /isCompleted/);
+  assert.match(chat, /hasProcessedMemoryJob/);
+});
+
+test('authenticated UI becomes visible only after local chat recovery is complete', async () => {
+  const chat = await read('public/chat.js');
+  const bootstrap = await read('public/js/app_bootstrap.js');
+  assert.match(chat, /export const RIN_CHAT_READY/);
+  assert.match(chat, /await resumePendingAssistantDeliveries\(\);[\s\S]*resolveChatReady/);
+  assert.match(bootstrap, /await chatModule\.RIN_CHAT_READY;[\s\S]*classList\.add\('auth-ready'\)/);
+});

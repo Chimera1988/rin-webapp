@@ -55,7 +55,7 @@ test('legacy top-level open loops migrate once into canonical ConversationState 
     ]
   }));
   let diary = await memory.loadDiary();
-  assert.equal(diary._schema, 5);
+  assert.equal(diary._schema, 6);
   assert.equal('openLoops' in diary, false);
   assert.deepEqual(diary.conversationState.openLoops.map(item => item.id), ['loop-a','loop-b']);
   await memory.commitTurnState({ requestId:'resolve-loop-a', now:5000, stateTransition:{ resolvedLoopIds:['loop-a'] } });
@@ -67,7 +67,7 @@ test('legacy top-level open loops migrate once into canonical ConversationState 
 test('corrupted memory falls back to a valid schema and quota failures are explicit', async () => {
   storage.setItem('rin-diary-v1', '{broken');
   const recovered = await memory.loadDiary();
-  assert.equal(recovered._schema, 5);
+  assert.equal(recovered._schema, 6);
   assert.deepEqual(recovered.events, []);
 
   const normalStorage = globalThis.localStorage;
@@ -299,4 +299,56 @@ test('scene-bound persistent intent survives diary commit and reload byte-for-by
   assert.equal(reloaded.conversationState.rinIntent.sceneBinding.key, 'shared_kitsune_identity');
   assert.equal(reloaded.conversationState.rinIntent.nextMove, 'advance_kitsune_thread');
   assert.match(reloaded.conversationState.rinIntent.sceneBinding.anchor, /кицунэ/iu);
+});
+
+test('memory extraction and its completion marker commit atomically and are idempotent by job id', async () => {
+  const extracted = {
+    facts: [{ path: 'user.preference.tea', value: 'сэнтя', confidence: 0.95 }],
+    events: [{ text: 'Пользователь особенно любит сэнтю', importance: 8, type: 'preference' }],
+    sharedMoments: [{ text: 'Разговор о любимом чае', importance: 8 }]
+  };
+  const first = await memory.applyMemoryExtraction(extracted, { jobId: 'memory-job-1', now: 20_000_000 });
+  assert.equal(first.applied, true);
+  assert.deepEqual(first.savedFactPaths, ['user.preference.tea']);
+  let diary = await memory.loadDiary();
+  assert.equal(diary.facts.user.preference.tea, 'сэнтя');
+  assert.deepEqual(diary.processedMemoryJobs, ['memory-job-1']);
+  const eventCount = diary.events.length;
+  const momentCount = diary.relationship.sharedMoments.length;
+
+  const duplicate = await memory.applyMemoryExtraction(extracted, { jobId: 'memory-job-1', now: 20_000_100 });
+  assert.equal(duplicate.applied, false);
+  assert.equal(duplicate.duplicate, true);
+  diary = await memory.loadDiary();
+  assert.equal(diary.events.length, eventCount);
+  assert.equal(diary.relationship.sharedMoments.length, momentCount);
+  assert.deepEqual(diary.processedMemoryJobs, ['memory-job-1']);
+  assert.equal(await memory.hasProcessedMemoryJob('memory-job-1'), true);
+});
+
+test('failed diary persistence cannot partially apply a memory extraction or completion marker', async () => {
+  await memory.saveDiary(await memory.loadDiary());
+  const originalRaw = storage.getItem('rin-diary-v1');
+  const failing = new MemoryStorage({ 'rin-diary-v1': originalRaw });
+  const originalSet = failing.setItem.bind(failing);
+  failing.setItem = (key, value) => {
+    if (String(key) === 'rin-diary-v1') throw new Error('quota');
+    originalSet(key, value);
+  };
+  const normalStorage = globalThis.localStorage;
+  const originalError = console.error;
+  console.error = () => {};
+  globalThis.localStorage = failing;
+  try {
+    await assert.rejects(
+      memory.applyMemoryExtraction({ facts: [{ path: 'user.name', value: 'Не должен сохраниться', confidence: 1 }] }, { jobId: 'failed-memory-job' }),
+      /DIARY_STORAGE_FAILED/
+    );
+    const persisted = JSON.parse(failing.getItem('rin-diary-v1'));
+    assert.equal(persisted.facts?.user?.name, undefined);
+    assert.equal((persisted.processedMemoryJobs || []).includes('failed-memory-job'), false);
+  } finally {
+    globalThis.localStorage = normalStorage;
+    console.error = originalError;
+  }
 });

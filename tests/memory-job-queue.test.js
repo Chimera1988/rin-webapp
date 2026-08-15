@@ -68,3 +68,34 @@ test('failed memory job becomes recoverable after the failed retry cooldown', as
   assert.equal(calls, 3);
   assert.equal(loadMemoryJobs(storage).length, 0);
 });
+
+test('a completed memory job is not processed twice when queue removal persistence fails once', async () => {
+  const storage = new MemoryStorage();
+  enqueueMemoryJob({ id: 'job-once', userText: 'важный факт', assistantText: 'запомнила' }, storage);
+  let failRemovalOnce = true;
+  const originalSet = storage.setItem.bind(storage);
+  storage.setItem = (key, value) => {
+    if (String(key) === 'rin-memory-jobs-v1' && String(value) === '[]' && failRemovalOnce) {
+      failRemovalOnce = false;
+      return;
+    }
+    originalSet(key, value);
+  };
+  let calls = 0;
+  let completed = false;
+  const runner = createMemoryJobRunner(async () => {
+    calls += 1;
+    completed = true;
+    return { ok: true };
+  }, {
+    storage,
+    isCompleted: async job => job.id === 'job-once' && completed
+  });
+
+  await runner.drain();
+  assert.equal(calls, 1);
+  assert.equal(loadMemoryJobs(storage).length, 1, 'failed queue cleanup must leave the durable job for recovery');
+  await runner.drain();
+  assert.equal(calls, 1, 'completion marker must prevent a duplicate processor/API call');
+  assert.equal(loadMemoryJobs(storage).length, 0);
+});
