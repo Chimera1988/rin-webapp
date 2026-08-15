@@ -19,7 +19,7 @@ export function semanticStickerText(sticker = {}) {
 export function validateStickerConfig(config, availablePaths = null) {
   const errors = [];
   if (!config || config._schema !== STICKER_SCHEMA) errors.push(`schema must be ${STICKER_SCHEMA}`);
-  if (!Array.isArray(config?.stickers) || config.stickers.length !== 34) errors.push('manifest must contain exactly 34 stickers');
+  if (!Array.isArray(config?.stickers) || config.stickers.length !== 54) errors.push('manifest must contain exactly 54 stickers');
   const ids = new Set();
   const srcs = new Set();
   for (const sticker of config?.stickers || []) {
@@ -31,6 +31,7 @@ export function validateStickerConfig(config, availablePaths = null) {
     if (availablePaths && !availablePaths.has(sticker.src)) errors.push(`missing asset: ${sticker.src}`);
     if (!clean(sticker.emotion, 80)) errors.push(`${id}: emotion is required`);
     if (!clean(sticker.meaning, 240)) errors.push(`${id}: meaning is required`);
+    if (!Array.isArray(sticker.intents) || sticker.intents.length === 0) errors.push(`${id}: intents must contain at least one canonical semantic intent`);
     if (!Array.isArray(sticker.responseModes) || !sticker.responseModes.includes('sticker_only')) errors.push(`${id}: sticker_only mode is required`);
     for (const mode of sticker.responseModes || []) if (!STICKER_DELIVERIES.includes(mode)) errors.push(`${id}: unknown response mode ${mode}`);
     if (!sticker.followUp || typeof sticker.followUp.canExplain !== 'boolean') errors.push(`${id}: followUp.canExplain is required`);
