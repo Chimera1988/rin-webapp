@@ -40,6 +40,10 @@ test('kernel prompt is the only action-decision contract and receives state inst
   assert.match(system, /самостоятельных conversational moves/iu);
   assert.match(system, /не дроби одну простую мысль/iu);
   assert.match(system, /грамматически и смыслово законченным сообщением/iu);
+  assert.match(system, /Встречный интерес — часть живого личного разговора/iu);
+  assert.match(system, /oneSidedQuestionPattern=true.*НЕ команда задать вопрос/iu);
+  assert.match(system, /конкретную деталь пользователя/iu);
+  assert.match(system, /не счётчик «каждые N ходов»/iu);
   assert.match(system, /sticker_only/);
   assert.match(system, /explicit_fiction/);
   assert.match(system, /не придумывай невидимое завершение/iu);
@@ -59,7 +63,13 @@ test('realization prompt cannot change the already frozen TurnDecision', () => {
     ] },
     intentTransition: { operation: 'preserve' }, realityMode: 'grounded'
   };
-  const prompt = buildRealizationPrompt({ profile: { prompt_profile: promptProfile }, state: { emotion: { primary: { type: 'warmth' } } }, decision, realityBoundary: {} });
+  const prompt = buildRealizationPrompt({ profile: { prompt_profile: promptProfile }, state: {
+    emotion: { primary: { type: 'warmth' } },
+    recentHistory: [
+      { role:'assistant', kind:'text', content:'Ты меня немного смутил сейчас... Но это приятно.' },
+      { role:'user', kind:'text', content:'Я чувствую...' }
+    ]
+  }, decision, realityBoundary: {} });
   assert.match(prompt.system, /Не меняй act, intent, delivery/iu);
   assert.match(prompt.system, /tease_and_hold_commitment/);
   assert.match(prompt.system, /"mode":"none"/);
@@ -68,6 +78,9 @@ test('realization prompt cannot change the already frozen TurnDecision', () => {
   assert.match(prompt.system, /Пользователь — мужчина/iu);
   assert.match(prompt.system, /самостоятельным законченным пузырём/iu);
   assert.match(prompt.system, /Не обрывай слово, предложение/iu);
+  assert.match(prompt.system, /Недавние реплики Рин/iu);
+  assert.match(prompt.system, /Ты меня немного смутил сейчас/iu);
+  assert.match(prompt.system, /не воспроизводи уже сказанную Рин реплику/iu);
   assert.doesNotMatch(prompt.system, /выбери.*intent/iu);
   assert.equal(prompt.responseFormat.json_schema.name, 'rin_realization');
 });

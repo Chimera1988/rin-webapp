@@ -86,3 +86,59 @@ test('realization validator checks protocol and reality without mutating TurnDec
   assert.equal(result.passed,true);
   assert.equal(JSON.stringify(d),before);
 });
+
+test('realization validator rejects exact and conservative near repeats of recent Rin messages', () => {
+  const d=validDecision();
+  const previous='Ты меня немного смутил сейчас... Но это приятно. Я улыбаюсь — пусть ты этого не видишь.';
+  const exact=validateRealization({segments:[{purpose:'answer',text:previous}]},{
+    decision:d, realityBoundary:{}, currentUserText:'Я чувствую...',
+    recentHistory:[{role:'assistant',kind:'text',content:previous},{role:'user',kind:'text',content:'Я чувствую...'}]
+  });
+  assert.equal(exact.passed,false);
+  assert.ok(exact.warnings.includes('recent_assistant_duplicate'));
+
+  const near=validateRealization({segments:[{purpose:'answer',text:'Ты меня немного смутил сейчас... Но это приятно. Я улыбаюсь — просто ты этого не видишь.'}]},{
+    decision:d, realityBoundary:{}, currentUserText:'Я чувствую...',
+    recentHistory:[{role:'assistant',kind:'text',content:previous}]
+  });
+  assert.equal(near.passed,false);
+  assert.ok(near.warnings.includes('recent_assistant_near_duplicate'));
+
+  const fresh=validateRealization({segments:[{purpose:'answer',text:'Тогда я, пожалуй, не буду от этого прятаться.'}]},{
+    decision:d, realityBoundary:{}, currentUserText:'Я чувствую...',
+    recentHistory:[{role:'assistant',kind:'text',content:previous}]
+  });
+  assert.equal(fresh.passed,true);
+});
+
+test('realization duplicate guard allows an explicit request to repeat and does not police tiny conventional phrases', () => {
+  const d=validDecision();
+  const repeated='Ты меня немного смутил сейчас... Но это приятно.';
+  const requested=validateRealization({segments:[{purpose:'answer',text:repeated}]},{
+    decision:d, realityBoundary:{}, currentUserText:'Повтори, пожалуйста, что ты сказала.',
+    recentHistory:[{role:'assistant',kind:'text',content:repeated}]
+  });
+  assert.equal(requested.passed,true);
+  const short=validateRealization({segments:[{purpose:'answer',text:'Спасибо.'}]},{
+    decision:d, realityBoundary:{}, currentUserText:'Не за что)', recentHistory:[{role:'assistant',kind:'text',content:'Спасибо.'}]
+  });
+  assert.equal(short.passed,true);
+  const notARepeatRequest=validateRealization({segments:[{purpose:'answer',text:repeated}]},{
+    decision:d, realityBoundary:{}, currentUserText:'Ещё раз спасибо тебе)', recentHistory:[{role:'assistant',kind:'text',content:repeated}]
+  });
+  assert.equal(notARepeatRequest.passed,false);
+  assert.ok(notARepeatRequest.warnings.includes('recent_assistant_duplicate'));
+});
+
+test('realization validator rejects duplicate text segments inside one multi-message delivery', () => {
+  const d=validDecision({delivery:{segments:[
+    {type:'text',purpose:'reaction',stickerIntent:null,maxChars:180},
+    {type:'text',purpose:'afterthought',stickerIntent:null,maxChars:180}
+  ]}});
+  const result=validateRealization({segments:[
+    {purpose:'reaction',text:'Я это заметила. И да, мне приятно.'},
+    {purpose:'afterthought',text:'Я это заметила. И да, мне приятно.'}
+  ]},{decision:d,realityBoundary:{}});
+  assert.equal(result.passed,false);
+  assert.ok(result.warnings.includes('duplicate_text_segments'));
+});

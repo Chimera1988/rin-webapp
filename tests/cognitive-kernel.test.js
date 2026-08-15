@@ -202,3 +202,35 @@ test('visual reply is structurally unavailable for ordinary single-message turns
   assert.equal(validation.passed,false);
   assert.ok(validation.warnings.includes('visual_reply_target_not_allowed'));
 });
+
+test('kernel state exposes question reciprocity as an observation, not a scheduling rule', () => {
+  const history = [
+    { role:'user', kind:'text', status:'complete', id:'u1', content:'Как твой день?' },
+    { role:'assistant', kind:'text', status:'complete', id:'a1', content:'Спокойный, уже выдыхаю.' },
+    { role:'user', kind:'text', status:'complete', id:'u2', content:'А настроение как?' },
+    { role:'assistant', kind:'text', status:'complete', id:'a2', content:'Ровное. Мне сейчас хорошо.' },
+    { role:'user', kind:'text', status:'sent', requestId:'r-curiosity', id:'u3', content:'Я сегодня наконец закончил сложную задачу.' }
+  ];
+  const state = buildKernelState({
+    requestId:'r-curiosity', userText:'Я сегодня наконец закончил сложную задачу.', history,
+    memory:{ conversationState:{ revision:3, openLoops:[] } }, conversationState:'ongoing'
+  });
+  assert.equal(state.reciprocity.userQuestionTurns, 2);
+  assert.equal(state.reciprocity.rinQuestionTurns, 0);
+  assert.equal(state.reciprocity.oneSidedQuestionPattern, true);
+  assert.equal(state.reciprocity.userTurns, 3);
+  assert.equal(state.reciprocity.rinTurns, 2);
+});
+
+test('reciprocity snapshot stays neutral when Rin has already shown recent curiosity', () => {
+  const history = [
+    { role:'user', kind:'text', status:'complete', id:'u1', content:'Как настроение?' },
+    { role:'assistant', kind:'text', status:'complete', id:'a1', content:'Спокойное. А у тебя день как прошёл?' },
+    { role:'user', kind:'text', status:'complete', id:'u2', content:'Неплохо. Ты устала?' },
+    { role:'assistant', kind:'text', status:'complete', id:'a2', content:'Немного, но уже отдыхаю.' }
+  ];
+  const state = buildKernelState({ requestId:'', userText:'', history, memory:{ conversationState:{ revision:4, openLoops:[] } }, conversationState:'ongoing' });
+  assert.equal(state.reciprocity.userQuestionTurns, 2);
+  assert.equal(state.reciprocity.rinQuestionTurns, 1);
+  assert.equal(state.reciprocity.oneSidedQuestionPattern, false);
+});
