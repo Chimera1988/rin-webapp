@@ -412,44 +412,15 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
 /**
  * Сохраняет результат анализа памяти в локальный дневник.
  */
-async function applyExtractedMemory(extracted, userText = '') {
+async function applyExtractedMemory(extracted, _userText = '', jobId = '') {
   try {
     const lib = await ensureMemoryReady();
-    if (!lib) return false;
-
-    for (const retraction of Array.isArray(extracted?.factRetractions) ? extracted.factRetractions : []) {
-      const path = String(retraction?.path || '').trim();
-      if (path.startsWith('user.')) await lib.removeFact?.(path);
-    }
-
-    for (const fact of Array.isArray(extracted?.facts) ? extracted.facts : []) {
-      const path = String(fact?.path || '').trim();
-      const value = String(fact?.value || '').trim();
-      const confidence = Number(fact?.confidence);
-      if (!path.startsWith('user.') || !value || (Number.isFinite(confidence) && confidence < 0.75)) continue;
-      await lib.upsertFact(path, value);
+    if (!lib?.applyMemoryExtraction) return false;
+    const result = await lib.applyMemoryExtraction(extracted, { jobId, now: Date.now() });
+    for (const path of Array.isArray(result?.savedFactPaths) ? result.savedFactPaths : []) {
       dbg(`memory fact saved: ${path}`);
     }
-
-    for (const event of Array.isArray(extracted?.events) ? extracted.events : []) {
-      const text = String(event?.text || '').trim();
-      const importance = Number.isFinite(Number(event?.importance)) ? Number(event.importance) : 5;
-      if (!text || importance < 6) continue;
-      await lib.addEvent(text, {
-        id: event?.id || null,
-        key: event?.key || null,
-        type: String(event?.type || 'memory'),
-        tags: Array.isArray(event?.tags) ? event.tags.slice(0, 8) : [],
-        importance
-      });
-    }
-
-    for (const moment of Array.isArray(extracted?.sharedMoments) ? extracted.sharedMoments : []) {
-      if ((Number(moment?.importance) || 0) >= 7) await lib.addSharedMoment?.(moment);
-    }
-    await lib.consolidateDiary?.();
-
-    return true;
+    return result?.applied === true || result?.duplicate === true;
   } catch (error) {
     dbg('apply extracted memory failed: ' + (error?.message || error));
     return false;
@@ -467,7 +438,7 @@ function shouldAnalyzeConversationForMemory(userText = '') {
   return !trivial && (meaningful || substantial || periodicCatchUp);
 }
 
-async function analyzeConversationForMemory(userText, assistantText) {
+async function analyzeConversationForMemory(userText, assistantText, jobId = '') {
   try {
     const existingMemory = await buildMemoryPayload();
     const res = await fetchWithTimeout('/api/memory', {
@@ -479,7 +450,7 @@ async function analyzeConversationForMemory(userText, assistantText) {
     if (!res.ok) return { ok: false, code: 'MEMORY_HTTP_ERROR' };
     const extracted = await res.json();
     if (extracted?.warning) return { ok: false, code: extracted.warning };
-    const applied = await applyExtractedMemory(extracted, userText);
+    const applied = await applyExtractedMemory(extracted, userText, jobId);
     return { ok: applied, code: applied ? null : 'MEMORY_APPLY_FAILED' };
   } catch (error) {
     dbg('memory analysis failed: ' + (error?.message || error));
@@ -488,8 +459,14 @@ async function analyzeConversationForMemory(userText, assistantText) {
 }
 
 const memoryJobRunner = createMemoryJobRunner(
-  job => analyzeConversationForMemory(job.userText, job.assistantText),
-  { storage: localStorage }
+  job => analyzeConversationForMemory(job.userText, job.assistantText, job.id),
+  {
+    storage: localStorage,
+    isCompleted: async job => {
+      const lib = await ensureMemoryReady();
+      return Boolean(await lib?.hasProcessedMemoryJob?.(job.id));
+    }
+  }
 );
 setTimeout(() => { void memoryJobRunner.drain(); }, 0);
 setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
@@ -606,6 +583,7 @@ function applyTheme(next, { persist = true } = {}){
   else {
     document.documentElement.classList.remove('theme-dark', 'theme-light');
     document.documentElement.classList.add(normalized);
+    if (persist) safeLocalSet(THEME_KEY, normalized);
   }
   syncThemeChoices();
 }
@@ -1221,6 +1199,9 @@ async function renderStoredMessage(message) {
   });
 }
 
+let resolveChatReady;
+export const RIN_CHAT_READY = new Promise(resolve => { resolveChatReady = resolve; });
+
 (async function init(){
   syncPeerAvailability();
   let initiationPolicy = null;
@@ -1244,6 +1225,8 @@ async function renderStoredMessage(message) {
   for (const message of history) await renderStoredMessage(message);
   chatViewport.requestScrollToBottom({ force: true });
   await resumePendingAssistantDeliveries();
+  resolveChatReady?.(true);
+  resolveChatReady = null;
   if (!history.length) await greet();
 
   setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
@@ -1456,10 +1439,11 @@ function preparedDeliveryMessages(prepared = null) {
 
 function persistPreparedDelivery(prepared = null) {
   const messages = preparedDeliveryMessages(prepared);
-  for (const message of messages) {
-    if (!history.some(item => item?.id === message.id)) history.push(message);
-  }
-  return saveHistory(history);
+  return persistChatHistoryMutation(history, draft => {
+    for (const message of messages) {
+      if (!draft.some(item => item?.id === message.id)) draft.push(message);
+    }
+  }, localStorage);
 }
 
 function persistPreparedDeliveryOrThrow(prepared = null) {
@@ -1474,8 +1458,9 @@ function discardPreparedDelivery(prepared = null) {
   if (!ids.size) return false;
   const before = history.length;
   history = history.filter(item => !ids.has(item?.id));
-  if (history.length !== before) saveHistory(history);
-  return history.length !== before;
+  if (history.length === before) return false;
+  if (!saveHistory(history)) dbg('prepared delivery rollback remains pending only in persisted recovery journal');
+  return true;
 }
 
 async function reconcilePendingAssistantDeliveryCommitState() {
