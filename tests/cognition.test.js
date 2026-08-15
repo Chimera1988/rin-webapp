@@ -56,6 +56,29 @@ test('realization is subordinate to frozen decision and parser returns only segm
   assert.equal('act' in parsed,false);
 });
 
+
+
+test('realization parser preserves full model text so validator can reject overlong segments instead of clipping them', () => {
+  const d=validDecision({delivery:{segments:[{type:'text',purpose:'answer',stickerIntent:null,maxChars:80}]}});
+  const long='Это законченное предложение намеренно длиннее лимита, чтобы проверить, что parser не обрежет его посреди слова и не скроет нарушение.';
+  const parsed=parseRealization(JSON.stringify({segments:[{text:long}]}),d);
+  assert.equal(parsed.segments[0].text,long);
+  const result=validateRealization(parsed,{decision:d,realityBoundary:{}});
+  assert.equal(result.passed,false);
+  assert.ok(result.warnings.includes('segment_0_too_long'));
+});
+
+test('realization validator rejects feminine second-person agreement for the male user', () => {
+  const d=validDecision();
+  const wrong=validateRealization({segments:[{purpose:'answer',text:'О, ты решила добавить искру.'}]},{decision:d,realityBoundary:{}});
+  assert.equal(wrong.passed,false);
+  assert.ok(wrong.warnings.includes('user_feminine_address'));
+  const right=validateRealization({segments:[{purpose:'answer',text:'О, ты решил добавить искру.'}]},{decision:d,realityBoundary:{}});
+  assert.equal(right.passed,true);
+  const noFalsePositive=validateRealization({segments:[{purpose:'answer',text:'Ты сначала послушай, потом решай.'}]},{decision:d,realityBoundary:{}});
+  assert.equal(noFalsePositive.passed,true);
+});
+
 test('realization validator checks protocol and reality without mutating TurnDecision', () => {
   const d=validDecision();
   const before=JSON.stringify(d);

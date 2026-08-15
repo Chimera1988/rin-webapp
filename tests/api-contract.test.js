@@ -274,6 +274,58 @@ test('realization validator may retry wording but cannot change TurnDecision', a
   } finally { mock.restore(); }
 });
 
+
+
+test('overlong realization is retried from the full text instead of being clipped at maxChars', async () => {
+  const decision = baseDecision({ delivery: { segments: [{ type:'text', purpose:'main_reply', stickerIntent:null, maxChars:80 }] } });
+  const tooLong = 'Это специально слишком длинная формулировка, которая должна быть замечена валидатором целиком, а не обрезана на восьмидесятом символе.';
+  const bodies = [];
+  const mock = installStructuredMock({ bodies, decisions:[decision], realizations:[realization(tooLong), realization('Скажу короче: я рядом и внимательно слушаю.')] });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId:'realization-length-retry',text:'Расскажи)'}),res);
+    assert.equal(res.statusCode,200);
+    assert.equal(mock.counts().decision,1);
+    assert.equal(mock.counts().realization,2);
+    assert.equal(res.body.reply,'Скажу короче: я рядом и внимательно слушаю.');
+    assert.match(bodies[2].messages[0].content,/segment_0_too_long/);
+    assert.match(bodies[2].messages[0].content,/maxChars=80/);
+    assert.match(bodies[2].messages[0].content,/запрещено обрывать слово/iu);
+  } finally { mock.restore(); }
+});
+
+test('feminine address to the male user is rejected and realization retries with masculine agreement', async () => {
+  const bodies=[];
+  const mock=installStructuredMock({ bodies, decisions:[baseDecision()], realizations:[realization('О, ты решила добавить искру.'), realization('О, ты решил добавить искру.')] });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId:'realization-gender-retry',text:'А если я сделаю вот так? 😘'}),res);
+    assert.equal(res.statusCode,200);
+    assert.equal(mock.counts().decision,1);
+    assert.equal(mock.counts().realization,2);
+    assert.equal(res.body.reply,'О, ты решил добавить искру.');
+    assert.match(bodies[2].messages[0].content,/user_feminine_address/);
+    assert.match(bodies[2].messages[0].content,/пользователь — мужчина/iu);
+  } finally { mock.restore(); }
+});
+
+test('multi-message TurnDecision stays as separate complete delivery bubbles', async () => {
+  const decision=baseDecision({ delivery:{ segments:[
+    {type:'text',purpose:'reaction',stickerIntent:null,maxChars:180},
+    {type:'text',purpose:'afterthought',stickerIntent:null,maxChars:180}
+  ] } });
+  const mock=installStructuredMock({ decisions:[decision], realizations:[realization('Хитро придумал.', 'Но ложку я всё равно спрячу.')] });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId:'multi-complete',text:'Ну попробуй 😏'}),res);
+    assert.equal(res.statusCode,200);
+    assert.equal(res.body.turnDecision.delivery.mode,'multi_message');
+    assert.equal(res.body.deliveryPlan.mode,'multi_message');
+    assert.deepEqual(res.body.deliveryPlan.segments.map(item=>item.text),['Хитро придумал.','Но ложку я всё равно спрячу.']);
+    assert.equal(res.body.reply,'Хитро придумал.\n\nНо ложку я всё равно спрячу.');
+  } finally { mock.restore(); }
+});
+
 test('invalid kernel decision is rejected and only the same kernel may choose again', async () => {
   const invalid = baseDecision({ delivery: { mode: 'sticker_only', segments: [{ type: 'sticker', purpose: 'reaction', stickerIntent: 'kiss', maxChars: 20 }] } });
   const valid = baseDecision();

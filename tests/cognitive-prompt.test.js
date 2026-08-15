@@ -37,6 +37,9 @@ test('kernel prompt is the only action-decision contract and receives state inst
   assert.match(system, /ЕДИНСТВЕННЫЙ ВЛАДЕЛЕЦ РЕШЕНИЯ/iu);
   assert.match(system, /Live persistent intent/iu);
   assert.match(system, /multi_message/);
+  assert.match(system, /самостоятельных conversational moves/iu);
+  assert.match(system, /не дроби одну простую мысль/iu);
+  assert.match(system, /грамматически и смыслово законченным сообщением/iu);
   assert.match(system, /sticker_only/);
   assert.match(system, /explicit_fiction/);
   assert.match(system, /не придумывай невидимое завершение/iu);
@@ -62,6 +65,9 @@ test('realization prompt cannot change the already frozen TurnDecision', () => {
   assert.match(prompt.system, /"mode":"none"/);
   assert.match(prompt.system, /reaction/);
   assert.match(prompt.system, /afterthought/);
+  assert.match(prompt.system, /Пользователь — мужчина/iu);
+  assert.match(prompt.system, /самостоятельным законченным пузырём/iu);
+  assert.match(prompt.system, /Не обрывай слово, предложение/iu);
   assert.doesNotMatch(prompt.system, /выбери.*intent/iu);
   assert.equal(prompt.responseFormat.json_schema.name, 'rin_realization');
 });
