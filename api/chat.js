@@ -167,7 +167,12 @@ async function realizeDecision({ profile, state, decision, realityBoundary, isLo
   });
   if (first.finishReason === 'length' || !first.content) throw Object.assign(new Error('Realization incomplete'), { code: 'MODEL_RESPONSE_TRUNCATED' });
   let realization = parseRealization(first.content, decision);
-  let validation = validateRealization(realization, { decision, realityBoundary });
+  let validation = validateRealization(realization, {
+    decision,
+    realityBoundary,
+    recentHistory: state?.recentHistory || [],
+    currentUserText: state?.userText || ''
+  });
   if (validation.passed) return { realization, validation, usage: first.usage, retried: false };
 
   const retry = await openaiChat({
@@ -178,7 +183,12 @@ async function realizeDecision({ profile, state, decision, realityBoundary, isLo
   });
   if (retry.finishReason === 'length' || !retry.content) throw Object.assign(new Error('Realization retry incomplete'), { code: 'MODEL_RESPONSE_TRUNCATED' });
   realization = parseRealization(retry.content, decision);
-  validation = validateRealization(realization, { decision, realityBoundary });
+  validation = validateRealization(realization, {
+    decision,
+    realityBoundary,
+    recentHistory: state?.recentHistory || [],
+    currentUserText: state?.userText || ''
+  });
   if (!validation.passed) throw Object.assign(new Error(`Realization validation failed: ${validation.warnings.join(',')}`), { code: 'REALIZATION_VALIDATION_FAILED', warnings: validation.warnings });
   return { realization, validation, usage: mergeUsage(first.usage, retry.usage), retried: true };
 }
