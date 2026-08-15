@@ -67,18 +67,22 @@ const server = createServer(async (req, res) => {
       const remembered = body.memory?.facts?.user?.name;
       const plannedTarget = userEvents.length > 1 ? userEvents[0] : null;
       const stickerOnly = current.includes('Целую тебя');
+      const multiMessage = current === 'MULTI_MESSAGE_E2E';
       const act = body.trigger?.type === 'greeting' ? 'proactive_greeting'
         : body.trigger?.type === 'scheduled' ? 'proactive_personal_share'
           : stickerOnly ? 'return_kiss'
             : current.includes('Это была шутка, хотел тебя проверить на ревность') ? 'tease_after_reveal'
               : 'direct_response';
+      const multiTexts = ['Хитро придумал.', 'Но ложку я всё равно спрячу.'];
       const reply = body.trigger?.type === 'greeting'
         ? 'Я сама решила написать первой — просто захотелось.'
         : body.trigger?.type === 'scheduled'
           ? 'У меня появилась одна мысль, и я решила не откладывать её до завтра.'
-          : current.includes('Как меня зовут')
-            ? `Ты говорил, что тебя зовут ${remembered || 'неизвестно'}.`
-            : `Ответ на: ${current}`;
+          : multiMessage
+            ? multiTexts.join('\n\n')
+            : current.includes('Как меня зовут')
+              ? `Ты говорил, что тебя зовут ${remembered || 'неизвестно'}.`
+              : `Ответ на: ${current}`;
       const turnId = `rin-turn-${body.requestId}`;
       const deliveryPlan = stickerOnly ? {
         schema: 'rin-delivery-plan-v1', turnId, mode: 'sticker_only', fallbackText: '😘',
@@ -86,6 +90,12 @@ const server = createServer(async (req, res) => {
           sticker: { id: 'kiss', src: '/stickers/kiss.webp', emotion: 'kiss', meaning: 'поцелуй', utterance: null },
           semantic: { delivery: 'sticker_only', cause: 'ответ на поцелуй пользователя', intensity: 90, canExplain: true, expiresAfterTurns: 2 }
         }]
+      } : multiMessage ? {
+        schema: 'rin-delivery-plan-v1', turnId, mode: 'multi_message', fallbackText: multiTexts[0],
+        segments: [
+          { id: `${turnId}-seg-1`, segmentIndex: 0, purpose: 'reaction', type: 'text', text: multiTexts[0] },
+          { id: `${turnId}-seg-2`, segmentIndex: 1, purpose: 'afterthought', type: 'text', text: multiTexts[1] }
+        ]
       } : {
         schema: 'rin-delivery-plan-v1', turnId, mode: 'single_text', fallbackText: reply,
         segments: [{ id: `${turnId}-seg-1`, segmentIndex: 0, purpose: 'main_reply', type: 'text', text: reply }]
@@ -118,7 +128,12 @@ const server = createServer(async (req, res) => {
       const turnDecision = {
         schema: 'rin-turn-decision-v1', act, focus: reply, stance: 'e2e', question: { mode: /\?$/.test(reply) ? 'natural' : 'none', reason: null },
         replyLink: { targetEventId: plannedTarget?.id || null, reason: plannedTarget ? 'disambiguate earlier event in current batch' : null },
-        delivery: stickerOnly ? { mode:'sticker_only', segments:[{ type:'sticker', purpose:'kiss', stickerIntent:'kiss', maxChars:20 }] } : { mode:'single_text', segments:[{ type:'text', purpose:'main_reply', stickerIntent:null, maxChars:800 }] },
+        delivery: stickerOnly ? { mode:'sticker_only', segments:[{ type:'sticker', purpose:'kiss', stickerIntent:'kiss', maxChars:20 }] }
+          : multiMessage ? { mode:'multi_message', segments:[
+              { type:'text', purpose:'reaction', stickerIntent:null, maxChars:180 },
+              { type:'text', purpose:'afterthought', stickerIntent:null, maxChars:180 }
+            ] }
+          : { mode:'single_text', segments:[{ type:'text', purpose:'main_reply', stickerIntent:null, maxChars:800 }] },
         intentTransition: reveal ? { operation:'activate', goal:'продвинуть игровую линию', motive:'пользователь поддержал поддразнивание', target:'playful_tease', nextMove:'make_specific_teasing_move', progress:0.48, commitment:82, reason:'e2e' } : activeIntent ? { operation:'preserve', goal:null, motive:null, target:null, nextMove:null, progress:null, commitment:null, reason:null } : { operation:'none', goal:null, motive:null, target:null, nextMove:null, progress:null, commitment:null, reason:null },
         openLoops:{open:[],resolveIds:[]}, realityMode:'grounded', source:'cognitive_kernel'
       };
@@ -587,6 +602,27 @@ try {
   await cdp.evaluate("document.querySelector('.message-retry').click(); true");
   await waitFor(cdp, completedUsers(12), 'retry after prepared delivery storage failure');
 
+  await send('MULTI_MESSAGE_E2E');
+  await waitFor(cdp, `(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
+    const user = [...history].reverse().find(item => item.role === 'user' && item.content === 'MULTI_MESSAGE_E2E');
+    return Boolean(user?.requestId) && history.filter(item => item.role === 'assistant' && item.requestId === user.requestId && item.status === 'complete').length === 2;
+  })()`, 'multi-message delivery', 20_000);
+  const multiMessageDelivery = await cdp.evaluate(`(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
+    const user = [...history].reverse().find(item => item.role === 'user' && item.content === 'MULTI_MESSAGE_E2E');
+    const assistants = history.filter(item => item.role === 'assistant' && item.requestId === user?.requestId && item.status === 'complete')
+      .sort((a,b) => Number(a.segmentIndex || 0) - Number(b.segmentIndex || 0));
+    return {
+      texts: assistants.map(item => item.content),
+      distinctSegments: new Set(assistants.map(item => item.segmentId)).size,
+      visibleRows: assistants.filter(item => document.querySelector('[data-message-id="' + item.id + '"]')).length
+    };
+  })()`);
+  assert(JSON.stringify(multiMessageDelivery.texts) === JSON.stringify(['Хитро придумал.','Но ложку я всё равно спрячу.']), `multi-message text order changed: ${JSON.stringify(multiMessageDelivery.texts)}`);
+  assert(multiMessageDelivery.distinctSegments === 2 && multiMessageDelivery.visibleRows === 2, 'multi-message delivery must persist and render two distinct assistant bubbles');
+  phase('multi-message delivery complete');
+
   phase('affective, intent and storage recovery complete');
   const lifecycle = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
@@ -605,7 +641,7 @@ try {
   assert(lifecycle.conversationRevision === expectedCommittedRevision, `conversation revision must advance exactly once per committed turn: expected ${expectedCommittedRevision}, got ${lifecycle.conversationRevision}`);
 
   phase('lifecycle assertions complete');
-  console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, storage rollback/retry, server-owned sticker, reply-to-selected, semantic batch visual reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, storage rollback/retry, multi-message bubbles, server-owned sticker, reply-to-selected, semantic batch visual reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError && process.env.RIN_ALLOW_BROWSER_E2E_SKIP === '1') {
     console.log(`Browser E2E SKIPPED by explicit opt-in: ${error.message}`);

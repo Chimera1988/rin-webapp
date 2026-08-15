@@ -106,6 +106,14 @@ if (!apiChat.includes('OPENAI_DECISION_MODEL') || !apiChat.includes('OPENAI_REAL
 if (!apiChat.includes("'gpt-4.1'") || /OPENAI_LONG_MODEL|['"]gpt-4o['"]/.test(apiChat)) fail('Chat model defaults must use the current explicit role fallback without deprecated compatibility aliases.');
 if (!apiChat.includes('retrieveCanonicalLore(canonCue)') || /body\.lore/.test(apiChat)) fail('Canonical lore must be server-retrieved and client lore must not be trusted.');
 if (!apiChat.includes('validateTurnDecisionConstraints') || !apiChat.includes('validateRealization')) fail('Deterministic decision/realization validation is missing.');
+if (!apiChat.includes('buildRealizationRetryInstruction')) fail('Realization retry must be constraint-aware.');
+const realizationSource = await read('lib/personality/rin-realization.js');
+if (/text:\s*clean\(raw\[index\]\?\.text,\s*plan\.maxChars/.test(realizationSource) || /raw\[index\]\?\.text[\s\S]{0,100}\.slice\(0,\s*plan\.maxChars/.test(realizationSource)) fail('Voice Realization must not mechanically clip model text to maxChars.');
+if (!realizationSource.includes('Пользователь — мужчина') || !realizationSource.includes('buildRealizationRetryInstruction')) fail('Realization gender/completeness contract is missing.');
+const validatorSource = await read('lib/cognition/turn-validator.js');
+if (!validatorSource.includes('user_feminine_address') || !validatorSource.includes('segment_${index}_too_long')) fail('Realization validator must enforce gender and raw length before delivery.');
+const kernelSource = await read('lib/cognition/cognitive-kernel.js');
+if (!kernelSource.includes('самостоятельных conversational moves') || !kernelSource.includes('не дроби одну простую мысль')) fail('Kernel multi-message completeness contract is missing.');
 if (/responsePlan|coreDecision|conversationBrain|compatibilityResponsePlan/.test(apiChat)) fail('Chat API must not emit or reconstruct legacy decision-plan compatibility fields.');
 if (/buildTurnDelivery|\n\s*delivery,/.test(apiChat)) fail('DeliveryPlan must be the only server delivery representation.');
 if (/latestUserTarget|\breplyTarget\s*=\s*latestUserTarget/.test(apiChat)) fail('Chat API must not auto-project the latest user message into a visual reply link.');
