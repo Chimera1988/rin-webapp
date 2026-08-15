@@ -52,7 +52,53 @@
       "reachability": {
         "userText": "Я закончил сложный проект и получил награду",
         "preferredStickerId": "admiration"
-      }
+      },
+      "intents": [
+        "tender",
+        "joy"
+      ]
+    },
+    {
+      "id": "affectionate",
+      "src": "/stickers/affectionate.webp",
+      "family": "positive",
+      "signals": [
+        "affection",
+        "care",
+        "tenderness"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt",
+        "romance",
+        "farewell"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.12,
+      "emotion": "affectionate",
+      "meaning": "открытая тёплая привязанность",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Мне с тобой очень тепло."
+      },
+      "reachability": {
+        "userText": "Мне с тобой очень хорошо и спокойно",
+        "preferredStickerId": "affectionate"
+      },
+      "intents": [
+        "tender",
+        "warmth",
+        "gratitude"
+      ]
     },
     {
       "src": "/stickers/agreement.webp",
@@ -86,7 +132,48 @@
       "reachability": {
         "userText": "Договорились, делаем именно так",
         "preferredStickerId": "agreement"
-      }
+      },
+      "intents": [
+        "agreement"
+      ]
+    },
+    {
+      "id": "amused",
+      "src": "/stickers/amused.webp",
+      "family": "positive",
+      "signals": [
+        "tease",
+        "light_joy",
+        "playfulness"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "early",
+      "weight": 1.0,
+      "emotion": "amused",
+      "meaning": "мягкая весёлая реакция на забавный момент",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Ты меня забавляешь."
+      },
+      "reachability": {
+        "userText": "Ну да, я снова сделал это самым нелепым способом",
+        "preferredStickerId": "amused"
+      },
+      "intents": [
+        "playful"
+      ]
     },
     {
       "src": "/stickers/annoyance.webp",
@@ -126,7 +213,252 @@
       "reachability": {
         "userText": "Ты опять перебиваешь меня",
         "preferredStickerId": "annoyance"
-      }
+      },
+      "intents": [
+        "annoyance"
+      ]
+    },
+    {
+      "id": "bashful_delight",
+      "src": "/stickers/bashful_delight.webp",
+      "family": "shy",
+      "signals": [
+        "shy",
+        "praise",
+        "affection",
+        "light_joy"
+      ],
+      "scenes": [
+        "playful_flirt",
+        "romance",
+        "everyday"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.1,
+      "emotion": "bashful_delight",
+      "meaning": "радостное смущение от тёплого внимания",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Ты меня смутил, но мне очень приятно."
+      },
+      "reachability": {
+        "userText": "Ты сегодня особенно красивая",
+        "preferredStickerId": "bashful_delight"
+      },
+      "intents": [
+        "shy",
+        "playful",
+        "joy"
+      ]
+    },
+    {
+      "id": "bright_joy",
+      "src": "/stickers/bright_joy.webp",
+      "family": "celebration",
+      "signals": [
+        "strong_joy",
+        "celebration",
+        "praise"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 3,
+      "maxIntensity": 5,
+      "minTier": "warm",
+      "weight": 1.25,
+      "emotion": "bright_joy",
+      "meaning": "яркая открытая радость",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Я правда очень рада."
+      },
+      "reachability": {
+        "userText": "У меня получилось то, над чем я долго работал!",
+        "preferredStickerId": "bright_joy"
+      },
+      "intents": [
+        "joy"
+      ]
+    },
+    {
+      "id": "caring",
+      "src": "/stickers/caring.webp",
+      "family": "support",
+      "signals": [
+        "care",
+        "sad",
+        "tenderness"
+      ],
+      "scenes": [
+        "emotional_support",
+        "everyday",
+        "farewell"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "early",
+      "weight": 1.12,
+      "emotion": "caring",
+      "meaning": "заботливое участие и внимание",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Я рядом и хочу тебя поддержать."
+      },
+      "reachability": {
+        "userText": "Сегодня был очень тяжёлый день",
+        "preferredStickerId": "caring"
+      },
+      "intents": [
+        "support",
+        "tender"
+      ]
+    },
+    {
+      "id": "cheerful",
+      "src": "/stickers/cheerful.webp",
+      "family": "positive",
+      "signals": [
+        "light_joy",
+        "greeting",
+        "playfulness"
+      ],
+      "scenes": [
+        "greeting",
+        "everyday",
+        "playful_flirt"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "early",
+      "weight": 1.0,
+      "emotion": "cheerful",
+      "meaning": "бодрая лёгкая радость",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "У меня сейчас хорошее настроение."
+      },
+      "reachability": {
+        "userText": "Кажется, сегодня отличный день",
+        "preferredStickerId": "cheerful"
+      },
+      "intents": [
+        "joy",
+        "warmth",
+        "playful"
+      ]
+    },
+    {
+      "id": "confident_rounded",
+      "src": "/stickers/confident_rounded.webp",
+      "family": "positive",
+      "signals": [
+        "confidence",
+        "agreement"
+      ],
+      "scenes": [
+        "everyday",
+        "practical_task",
+        "playful_flirt"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "early",
+      "weight": 0.95,
+      "emotion": "confident",
+      "meaning": "спокойная уверенность без давления",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Да, тут я уверена."
+      },
+      "reachability": {
+        "userText": "Значит, решено — делаем так",
+        "preferredStickerId": "confident_rounded"
+      },
+      "intents": [
+        "agreement",
+        "neutral"
+      ]
+    },
+    {
+      "id": "content",
+      "src": "/stickers/content.webp",
+      "family": "positive",
+      "signals": [
+        "calm",
+        "care",
+        "light_joy"
+      ],
+      "scenes": [
+        "everyday",
+        "reflective",
+        "romance",
+        "farewell"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 2,
+      "minTier": "warm",
+      "weight": 0.95,
+      "emotion": "content",
+      "meaning": "тихое довольство и внутреннее спокойствие",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Мне сейчас просто хорошо и спокойно."
+      },
+      "reachability": {
+        "userText": "Можно просто немного побыть спокойно вместе",
+        "preferredStickerId": "content"
+      },
+      "intents": [
+        "warmth",
+        "neutral"
+      ]
     },
     {
       "src": "/stickers/curiosity.webp",
@@ -166,7 +498,10 @@
       "reachability": {
         "userText": "Расскажу тебе один секрет",
         "preferredStickerId": "curiosity"
-      }
+      },
+      "intents": [
+        "curiosity"
+      ]
     },
     {
       "src": "/stickers/curious.webp",
@@ -204,7 +539,51 @@
       "reachability": {
         "userText": "Представляешь, я внезапно выиграл поездку",
         "preferredStickerId": "curious"
-      }
+      },
+      "intents": [
+        "curiosity",
+        "surprise"
+      ]
+    },
+    {
+      "id": "delighted",
+      "src": "/stickers/delighted.webp",
+      "family": "celebration",
+      "signals": [
+        "strong_joy",
+        "praise",
+        "affection"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.15,
+      "emotion": "delighted",
+      "meaning": "искренняя радость и восторг",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Вот это меня правда порадовало."
+      },
+      "reachability": {
+        "userText": "Я приготовил для тебя приятный сюрприз",
+        "preferredStickerId": "delighted"
+      },
+      "intents": [
+        "joy",
+        "surprise"
+      ]
     },
     {
       "src": "/stickers/disappointment.webp",
@@ -241,7 +620,11 @@
       "reachability": {
         "userText": "Я обещал, но снова не пришёл",
         "preferredStickerId": "disappointment"
-      }
+      },
+      "intents": [
+        "annoyance",
+        "regret"
+      ]
     },
     {
       "src": "/stickers/dreamy.webp",
@@ -276,7 +659,11 @@
       "reachability": {
         "userText": "Представь наш тихий вечер у моря",
         "preferredStickerId": "dreamy"
-      }
+      },
+      "intents": [
+        "thoughtful",
+        "tender"
+      ]
     },
     {
       "src": "/stickers/dreamy_smile.webp",
@@ -313,7 +700,11 @@
       "reachability": {
         "userText": "Я думаю о нашем будущем вместе",
         "preferredStickerId": "dreamy_smile"
-      }
+      },
+      "intents": [
+        "tender",
+        "warmth"
+      ]
     },
     {
       "src": "/stickers/embrace.webp",
@@ -354,6 +745,9 @@
       },
       "requireAny": [
         "hug"
+      ],
+      "intents": [
+        "hug"
       ]
     },
     {
@@ -389,7 +783,49 @@
       "reachability": {
         "userText": "Хочешь расскажу, как прошёл мой день?",
         "preferredStickerId": "engaged"
-      }
+      },
+      "intents": [
+        "curiosity"
+      ]
+    },
+    {
+      "id": "excited",
+      "src": "/stickers/excited.webp",
+      "family": "celebration",
+      "signals": [
+        "strong_joy",
+        "surprise",
+        "interest"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt"
+      ],
+      "minIntensity": 3,
+      "maxIntensity": 5,
+      "minTier": "early",
+      "weight": 1.2,
+      "emotion": "excited",
+      "meaning": "воодушевление и возбуждённая радость",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "О, вот теперь я загорелась."
+      },
+      "reachability": {
+        "userText": "Есть идея, от которой ты точно будешь в восторге",
+        "preferredStickerId": "excited"
+      },
+      "intents": [
+        "joy",
+        "surprise"
+      ]
     },
     {
       "src": "/stickers/fatigue.webp",
@@ -426,6 +862,9 @@
       },
       "requireAny": [
         "tired"
+      ],
+      "intents": [
+        "fatigue"
       ]
     },
     {
@@ -462,7 +901,11 @@
       "reachability": {
         "userText": "Какая же ты красивая 😉",
         "preferredStickerId": "flirty"
-      }
+      },
+      "intents": [
+        "flirt",
+        "playful"
+      ]
     },
     {
       "src": "/stickers/frustrated.webp",
@@ -500,7 +943,10 @@
       "reachability": {
         "userText": "Опять всё сломалось, я уже злюсь",
         "preferredStickerId": "frustrated"
-      }
+      },
+      "intents": [
+        "annoyance"
+      ]
     },
     {
       "src": "/stickers/gentle.webp",
@@ -536,7 +982,11 @@
       "reachability": {
         "userText": "Мне сейчас тяжело и одиноко",
         "preferredStickerId": "gentle"
-      }
+      },
+      "intents": [
+        "support",
+        "tender"
+      ]
     },
     {
       "src": "/stickers/gentle_kiss.webp",
@@ -578,6 +1028,51 @@
       },
       "requireAny": [
         "kiss"
+      ],
+      "intents": [
+        "kiss",
+        "tender_kiss"
+      ]
+    },
+    {
+      "id": "grateful",
+      "src": "/stickers/grateful.webp",
+      "family": "positive",
+      "signals": [
+        "thanks",
+        "care",
+        "affection"
+      ],
+      "scenes": [
+        "everyday",
+        "emotional_support",
+        "romance",
+        "farewell"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "early",
+      "weight": 1.1,
+      "emotion": "grateful",
+      "meaning": "искренняя благодарность",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Спасибо. Для меня это важно."
+      },
+      "reachability": {
+        "userText": "Я рядом, можешь на меня рассчитывать",
+        "preferredStickerId": "grateful"
+      },
+      "intents": [
+        "gratitude",
+        "warmth"
       ]
     },
     {
@@ -613,7 +1108,10 @@
       "reachability": {
         "userText": "Надеюсь, завтра всё получится",
         "preferredStickerId": "hopeful"
-      }
+      },
+      "intents": [
+        "support"
+      ]
     },
     {
       "src": "/stickers/interested_smile.webp",
@@ -649,7 +1147,49 @@
       "reachability": {
         "userText": "Я хочу рассказать тебе кое-что важное",
         "preferredStickerId": "interested_smile"
-      }
+      },
+      "intents": [
+        "curiosity"
+      ]
+    },
+    {
+      "id": "interested_smile_2",
+      "src": "/stickers/interested_smile_2.webp",
+      "family": "interest",
+      "signals": [
+        "interest",
+        "question",
+        "care"
+      ],
+      "scenes": [
+        "everyday",
+        "reflective",
+        "practical_task"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 2,
+      "minTier": "early",
+      "weight": 1.0,
+      "emotion": "interested",
+      "meaning": "тёплая внимательная заинтересованность",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Продолжай, мне интересно."
+      },
+      "reachability": {
+        "userText": "Хочешь расскажу, что сегодня произошло?",
+        "preferredStickerId": "interested_smile_2"
+      },
+      "intents": [
+        "curiosity"
+      ]
     },
     {
       "src": "/stickers/inviting.webp",
@@ -687,6 +1227,9 @@
       },
       "requireAny": [
         "invitation"
+      ],
+      "intents": [
+        "flirt"
       ]
     },
     {
@@ -730,6 +1273,9 @@
       "requireAny": [
         "celebration",
         "strong_joy"
+      ],
+      "intents": [
+        "joy"
       ]
     },
     {
@@ -767,6 +1313,134 @@
       },
       "requireAny": [
         "kiss"
+      ],
+      "intents": [
+        "kiss"
+      ]
+    },
+    {
+      "id": "kiss_1",
+      "src": "/stickers/kiss_1.webp",
+      "family": "kiss",
+      "signals": [
+        "kiss",
+        "affection",
+        "tenderness"
+      ],
+      "scenes": [
+        "romance",
+        "farewell"
+      ],
+      "minIntensity": 3,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.18,
+      "emotion": "tender_kiss",
+      "meaning": "мягкий нежный поцелуй",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Целую тебя нежно."
+      },
+      "reachability": {
+        "userText": "Поцелуй меня нежно",
+        "preferredStickerId": "kiss_1"
+      },
+      "requireAny": [
+        "kiss"
+      ],
+      "intents": [
+        "kiss",
+        "tender_kiss"
+      ]
+    },
+    {
+      "id": "kiss_2",
+      "src": "/stickers/kiss_2.webp",
+      "family": "kiss",
+      "signals": [
+        "kiss",
+        "affection"
+      ],
+      "scenes": [
+        "playful_flirt",
+        "romance",
+        "farewell"
+      ],
+      "minIntensity": 3,
+      "maxIntensity": 5,
+      "minTier": "warm",
+      "weight": 1.16,
+      "emotion": "kiss",
+      "meaning": "тёплый ответный поцелуй",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Целую в ответ."
+      },
+      "reachability": {
+        "userText": "Иди сюда, поцелую тебя",
+        "preferredStickerId": "kiss_2"
+      },
+      "requireAny": [
+        "kiss"
+      ],
+      "intents": [
+        "kiss"
+      ]
+    },
+    {
+      "id": "kiss_3",
+      "src": "/stickers/kiss_3.webp",
+      "family": "kiss",
+      "signals": [
+        "kiss",
+        "flirt",
+        "tease"
+      ],
+      "scenes": [
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 3,
+      "maxIntensity": 5,
+      "minTier": "warm",
+      "weight": 1.15,
+      "emotion": "playful_kiss",
+      "meaning": "игривый поцелуй с лёгким вызовом",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Лови ещё один."
+      },
+      "reachability": {
+        "userText": "Ну что, осмелишься поцеловать меня ещё раз?",
+        "preferredStickerId": "kiss_3"
+      },
+      "requireAny": [
+        "kiss"
+      ],
+      "intents": [
+        "kiss",
+        "playful_kiss"
       ]
     },
     {
@@ -809,6 +1483,10 @@
       },
       "requireAny": [
         "kiss"
+      ],
+      "intents": [
+        "kiss",
+        "playful_kiss"
       ]
     },
     {
@@ -846,6 +1524,49 @@
       },
       "requireAny": [
         "jealousy"
+      ],
+      "intents": [
+        "jealousy"
+      ]
+    },
+    {
+      "id": "mischievous",
+      "src": "/stickers/mischievous.webp",
+      "family": "flirt",
+      "signals": [
+        "tease",
+        "flirt",
+        "playfulness"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.1,
+      "emotion": "mischievous",
+      "meaning": "озорное поддразнивание",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "У меня появилась одна вредная мысль."
+      },
+      "reachability": {
+        "userText": "Только не вздумай меня сейчас дразнить",
+        "preferredStickerId": "mischievous"
+      },
+      "intents": [
+        "playful",
+        "flirt"
       ]
     },
     {
@@ -879,7 +1600,10 @@
       "reachability": {
         "userText": "Хорошо",
         "preferredStickerId": "neutral"
-      }
+      },
+      "intents": [
+        "neutral"
+      ]
     },
     {
       "src": "/stickers/pensive.webp",
@@ -914,7 +1638,91 @@
       "reachability": {
         "userText": "Мне кажется, мы отдалились",
         "preferredStickerId": "pensive"
-      }
+      },
+      "intents": [
+        "thoughtful",
+        "fatigue"
+      ]
+    },
+    {
+      "id": "playful",
+      "src": "/stickers/playful.webp",
+      "family": "flirt",
+      "signals": [
+        "tease",
+        "flirt",
+        "light_joy"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "warm",
+      "weight": 1.05,
+      "emotion": "playful",
+      "meaning": "лёгкая игривость без сильного флирта",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Я просто немного тебя дразню."
+      },
+      "reachability": {
+        "userText": "Ты опять решила меня подколоть?",
+        "preferredStickerId": "playful"
+      },
+      "intents": [
+        "playful",
+        "flirt"
+      ]
+    },
+    {
+      "id": "proud",
+      "src": "/stickers/proud.webp",
+      "family": "admiration",
+      "signals": [
+        "pride",
+        "praise",
+        "achievement"
+      ],
+      "scenes": [
+        "everyday",
+        "practical_task",
+        "reflective"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.05,
+      "emotion": "proud",
+      "meaning": "спокойная гордость за достижение",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Я тобой горжусь."
+      },
+      "reachability": {
+        "userText": "Я всё-таки закончил то сложное дело",
+        "preferredStickerId": "proud"
+      },
+      "intents": [
+        "joy",
+        "agreement"
+      ]
     },
     {
       "src": "/stickers/questioning.webp",
@@ -953,7 +1761,10 @@
       "reachability": {
         "userText": "Я сказал странную вещь без объяснения, понимаешь?",
         "preferredStickerId": "questioning"
-      }
+      },
+      "intents": [
+        "curiosity"
+      ]
     },
     {
       "src": "/stickers/regret_1.webp",
@@ -990,6 +1801,9 @@
       },
       "requireAny": [
         "apology",
+        "regret"
+      ],
+      "intents": [
         "regret"
       ]
     },
@@ -1030,6 +1844,49 @@
       "requireAny": [
         "apology",
         "regret"
+      ],
+      "intents": [
+        "regret"
+      ]
+    },
+    {
+      "id": "relieved",
+      "src": "/stickers/relieved.webp",
+      "family": "support",
+      "signals": [
+        "relief",
+        "care",
+        "light_joy"
+      ],
+      "scenes": [
+        "emotional_support",
+        "conflict_repair",
+        "everyday"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "early",
+      "weight": 1.1,
+      "emotion": "relieved",
+      "meaning": "облегчение после напряжения",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Фух. Теперь мне спокойнее."
+      },
+      "reachability": {
+        "userText": "Всё закончилось хорошо, можно выдохнуть",
+        "preferredStickerId": "relieved"
+      },
+      "intents": [
+        "support",
+        "warmth"
       ]
     },
     {
@@ -1065,7 +1922,10 @@
       "reachability": {
         "userText": "Ты самая прекрасная девушка",
         "preferredStickerId": "shy"
-      }
+      },
+      "intents": [
+        "shy"
+      ]
     },
     {
       "src": "/stickers/shy_pride.webp",
@@ -1101,7 +1961,11 @@
       "reachability": {
         "userText": "Я горжусь тобой, умница",
         "preferredStickerId": "shy_pride"
-      }
+      },
+      "intents": [
+        "shy",
+        "joy"
+      ]
     },
     {
       "src": "/stickers/smile.webp",
@@ -1138,7 +2002,13 @@
       "reachability": {
         "userText": "Спасибо тебе",
         "preferredStickerId": "smile"
-      }
+      },
+      "intents": [
+        "warmth",
+        "gratitude",
+        "agreement",
+        "neutral"
+      ]
     },
     {
       "src": "/stickers/soft_shy_smile.webp",
@@ -1175,7 +2045,12 @@
       "reachability": {
         "userText": "Ты такая милая, когда улыбаешься",
         "preferredStickerId": "soft_shy_smile"
-      }
+      },
+      "intents": [
+        "shy",
+        "tender",
+        "warmth"
+      ]
     },
     {
       "src": "/stickers/surprise_interest.webp",
@@ -1212,6 +2087,52 @@
       },
       "requireAny": [
         "surprise"
+      ],
+      "intents": [
+        "surprise",
+        "curiosity"
+      ]
+    },
+    {
+      "id": "tender",
+      "src": "/stickers/tender.webp",
+      "family": "positive",
+      "signals": [
+        "tenderness",
+        "affection",
+        "care"
+      ],
+      "scenes": [
+        "emotional_support",
+        "everyday",
+        "romance",
+        "farewell"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "warm",
+      "weight": 1.15,
+      "emotion": "tender",
+      "meaning": "тихая искренняя нежность",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Мне хочется ответить тебе нежно."
+      },
+      "reachability": {
+        "userText": "Мне просто хочется побыть с тобой рядом",
+        "preferredStickerId": "tender"
+      },
+      "intents": [
+        "tender",
+        "warmth",
+        "support"
       ]
     },
     {
@@ -1248,7 +2169,10 @@
       "reachability": {
         "userText": "Как ты думаешь, что для нас важно?",
         "preferredStickerId": "thoughtful"
-      }
+      },
+      "intents": [
+        "thoughtful"
+      ]
     },
     {
       "src": "/stickers/warm_smile.webp",
@@ -1292,7 +2216,13 @@
       "reachability": {
         "userText": "Я рад, что ты рядом",
         "preferredStickerId": "warm_smile"
-      }
+      },
+      "intents": [
+        "warmth",
+        "tender",
+        "gratitude",
+        "joy"
+      ]
     }
   ]
 }
