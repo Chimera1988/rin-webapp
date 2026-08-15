@@ -13,16 +13,20 @@ const config=JSON.parse(await readFile(new URL('../public/data/stickers-v7.json'
 
 test.beforeEach(()=>storage.clear());
 
-test('manifest has one v7 contract, exactly 34 assets, and every exact semantic id resolves server-side', async () => {
+test('manifest has one v7 contract, exactly 54 assets, and every asset is registered exactly once', async () => {
   const assets=new Set((await readdir(new URL('../public/stickers/',import.meta.url))).map(name=>`/stickers/${name}`));
   const validation=contract.validateStickerConfig(config,assets);
   assert.equal(validation.ok,true,validation.errors.join('\n'));
-  assert.equal(config.stickers.length,34);
+  assert.equal(config.stickers.length,54);
+  assert.deepEqual([...new Set(config.stickers.map(item => item.src))].sort(), [...assets].sort());
+});
+
+
+test('every manifest sticker declares at least one canonical Kernel intent and is therefore selectable', () => {
+  const allowed = new Set(STICKER_INTENT_VALUES);
   for (const sticker of config.stickers) {
-    const resolved=await selectStickerForIntent(sticker.id,{delivery:'sticker_only',cause:'reachability test',intensity:70});
-    assert.ok(resolved,sticker.id);
-    assert.equal(resolved.sticker.id,sticker.id);
-    assert.equal(resolved.sticker.src,sticker.src);
+    assert.ok(Array.isArray(sticker.intents) && sticker.intents.length > 0, `${sticker.id} has no semantic intents`);
+    for (const intent of sticker.intents) assert.equal(allowed.has(intent), true, `${sticker.id} uses unknown Kernel intent ${intent}`);
   }
 });
 
@@ -33,6 +37,31 @@ test('every sticker intent allowed by the strict Kernel schema resolves to a rea
     assert.ok(resolved, intent);
     assert.match(resolved.sticker.src, /^\/stickers\/[a-z0-9_]+\.webp$/i);
   }
+});
+
+
+test('canonical intent rotation can reach all 54 registered visual assets', async () => {
+  const scenes=['greeting','everyday','practical_task','reflective','emotional_support','playful_flirt','romance','farewell','conflict_repair'];
+  const selected=new Set();
+  for (const intent of STICKER_INTENT_VALUES) {
+    for (const scene of scenes) {
+      for (const intensity of [20,40,60,80,100]) {
+        let recent=[];
+        for (let step=0; step<12; step += 1) {
+          const resolved=await selectStickerForIntent(intent, {
+            scene,
+            intensity,
+            recentStickerIds:recent,
+            rotationSeed:`coverage-${intent}-${scene}-${intensity}-${step}`
+          });
+          if (!resolved) continue;
+          selected.add(resolved.sticker.id);
+          recent=[resolved.sticker.id,...recent.filter(id=>id!==resolved.sticker.id)].slice(0,8);
+        }
+      }
+    }
+  }
+  assert.deepEqual([...selected].sort(), config.stickers.map(item=>item.id).sort());
 });
 
 test('unknown semantic sticker intent is unresolved instead of silently becoming warm_smile', async () => {
@@ -84,7 +113,7 @@ test('kiss family rotates away from an immediately repeated kiss asset without c
   });
   assert.ok(next);
   assert.notEqual(next.sticker.id, 'kiss');
-  assert.ok(['gentle_kiss', 'kiss_gesture'].includes(next.sticker.id));
+  assert.equal(config.stickers.find(item => item.id === next.sticker.id)?.family, 'kiss');
 });
 
 test('asset rotation is deterministic for the same turn seed and recent history', async () => {
