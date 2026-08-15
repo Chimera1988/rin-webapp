@@ -7,7 +7,7 @@ import { validateRealization, validateTurnDecisionConstraints } from '../lib/cog
 import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
-import { buildRealizationPrompt, parseRealization } from '../lib/personality/rin-realization.js';
+import { buildRealizationPrompt, buildRealizationRetryInstruction, parseRealization } from '../lib/personality/rin-realization.js';
 import {
   cleanInlineText,
   currentUserTurn,
@@ -172,7 +172,7 @@ async function realizeDecision({ profile, state, decision, realityBoundary, isLo
 
   const retry = await openaiChat({
     model: REALIZATION_MODEL,
-    messages: [{ role: 'system', content: `${prompt.system}\n\nПредыдущая формулировка нарушила deterministic validation: ${validation.warnings.join(', ')}. Реализуй ТО ЖЕ TurnDecision заново; решение не меняй.` }],
+    messages: [{ role: 'system', content: `${prompt.system}\n\n${buildRealizationRetryInstruction(validation.warnings, decision)}` }],
     response_format: prompt.responseFormat,
     ...params
   });
