@@ -1,4 +1,4 @@
-import { storageReadJson, storageWriteJson } from './storage.js';
+import { storageReadJson, storageWriteJsonVerified } from './storage.js';
 export const MEMORY_JOB_QUEUE_KEY = 'rin-memory-jobs-v1';
 
 const clean = (value, max = 2000) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -26,7 +26,7 @@ export function loadMemoryJobs(storage = localStorage) {
 }
 
 export function saveMemoryJobs(jobs, storage = localStorage) {
-  return storageWriteJson(
+  return storageWriteJsonVerified(
     storage,
     MEMORY_JOB_QUEUE_KEY,
     (Array.isArray(jobs) ? jobs : []).map(normalizeJob).filter(Boolean).slice(-40),
@@ -49,9 +49,11 @@ export function createMemoryJobRunner(processor, {
   now = () => Date.now(),
   maxAttempts = 3,
   retryDelayMs = 30_000,
-  failedRetryDelayMs = 15 * 60_000
+  failedRetryDelayMs = 15 * 60_000,
+  isCompleted = null
 } = {}) {
   if (typeof processor !== 'function') throw new TypeError('Memory job processor must be a function');
+  if (isCompleted != null && typeof isCompleted !== 'function') throw new TypeError('Memory job completion probe must be a function');
   let running = null;
 
   async function drain() {
@@ -60,6 +62,22 @@ export function createMemoryJobRunner(processor, {
       const jobs = loadMemoryJobs(storage);
       for (const job of jobs) {
         if (job.nextAttemptAt > now()) continue;
+
+        let alreadyCompleted = false;
+        if (isCompleted) {
+          try { alreadyCompleted = await isCompleted(job) === true; } catch { alreadyCompleted = false; }
+        }
+
+        if (alreadyCompleted) {
+          const current = loadMemoryJobs(storage);
+          const index = current.findIndex(item => item.id === job.id);
+          if (index >= 0) {
+            current.splice(index, 1);
+            if (!saveMemoryJobs(current, storage)) break;
+          }
+          continue;
+        }
+
         let ok = false;
         let code = 'MEMORY_JOB_FAILED';
         try {
@@ -86,7 +104,7 @@ export function createMemoryJobRunner(processor, {
             lastError: code
           };
         }
-        saveMemoryJobs(current, storage);
+        if (!saveMemoryJobs(current, storage)) break;
       }
       return loadMemoryJobs(storage);
     })().finally(() => { running = null; });

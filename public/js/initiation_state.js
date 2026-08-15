@@ -1,4 +1,4 @@
-import { storageReadJson, storageRemove, storageWriteJson } from './storage.js';
+import { storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
 
 export const INITIATION_STATE_KEY = 'rin-init-state-v2';
 export const LEGACY_INITIATION_COUNT_KEY = 'rin-init-count';
@@ -48,24 +48,28 @@ function migrateLegacyCounts(storage) {
     if (!cleanDate) continue;
     days[cleanDate] = { sent: Math.max(0, Math.round(Number(count) || 0)), attemptedWindowKeys: [] };
   }
-  storageRemove(storage, LEGACY_INITIATION_COUNT_KEY);
   return normalizeState({ schema: STATE_SCHEMA, days });
 }
 
 export function createInitiationStateStore(storage = localStorage) {
   function read() {
     const current = storageReadJson(storage, INITIATION_STATE_KEY, null);
-    if (current) return normalizeState(current);
+    if (current) {
+      storageRemove(storage, LEGACY_INITIATION_COUNT_KEY);
+      return normalizeState(current);
+    }
     const migrated = migrateLegacyCounts(storage);
     if (migrated) {
-      storageWriteJson(storage, INITIATION_STATE_KEY, migrated);
+      if (storageWriteJsonVerified(storage, INITIATION_STATE_KEY, migrated)) {
+        storageRemove(storage, LEGACY_INITIATION_COUNT_KEY);
+      }
       return migrated;
     }
     return normalizeState({});
   }
 
   function write(state) {
-    return storageWriteJson(storage, INITIATION_STATE_KEY, normalizeState(state));
+    return storageWriteJsonVerified(storage, INITIATION_STATE_KEY, normalizeState(state));
   }
 
   function getDay(dateKey) {

@@ -6,6 +6,10 @@ function redirectToLogin(reason = '') {
   window.location.replace(`/login.html${query}`);
 }
 
+document.getElementById('backButton')?.addEventListener('click', () => {
+  if (window.history.length > 1) window.history.back();
+});
+
 async function validateSession(pin) {
   try {
     const response = await fetchWithTimeout('/api/login', {
@@ -34,7 +38,8 @@ if (!pin) {
     }
   } else {
     await import(`/js/persona_ui.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
-    await import(`/chat.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
+    const chatModule = await import(`/chat.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
+    await chatModule.RIN_CHAT_READY;
     document.documentElement.classList.add('auth-ready');
   }
 }

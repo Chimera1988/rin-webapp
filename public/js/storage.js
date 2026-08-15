@@ -17,6 +17,17 @@ export function storageSet(storage, key, value, { log = true } = {}) {
   }
 }
 
+export function storageSetVerified(storage, key, value, { log = true } = {}) {
+  const encoded = String(value);
+  if (!storageSet(storage, key, encoded, { log })) return false;
+  try {
+    return storage?.getItem?.(key) === encoded;
+  } catch (error) {
+    if (log) console.error(`[Rin storage] failed to verify ${key}`, error);
+    return false;
+  }
+}
+
 export function storageRemove(storage, key) {
   try {
     storage?.removeItem?.(key);
@@ -45,4 +56,15 @@ export function storageWriteJson(storage, key, value, options = {}) {
     return false;
   }
   return storageSet(storage, key, encoded, options);
+}
+
+export function storageWriteJsonVerified(storage, key, value, options = {}) {
+  let encoded;
+  try {
+    encoded = JSON.stringify(value);
+  } catch (error) {
+    if (options.log !== false) console.error(`[Rin storage] failed to serialize ${key}`, error);
+    return false;
+  }
+  return storageSetVerified(storage, key, encoded, options);
 }

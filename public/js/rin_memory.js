@@ -9,14 +9,14 @@ import { beliefSlot, normalizeBelief } from '../lib/epistemic-contract.js';
 import { normalizeRinIntent } from '../lib/intent-contract.js';
 import { normalizeInnerLife } from '../lib/inner-life-contract.js';
 import { contentKey } from '../lib/chat-contract.js';
-import { storageGet, storageReadJson, storageRemove, storageWriteJson } from './storage.js';
+import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
-const DIARY_SCHEMA_VERSION = 5;
+const DIARY_SCHEMA_VERSION = 6;
 
 
 
@@ -65,7 +65,7 @@ function safeRemove(key) {
 }
 
 function safeSet(key, value) {
-  return storageWriteJson(getStorage(), key, value);
+  return storageWriteJsonVerified(getStorage(), key, value);
 }
 
 export function getDefaultProfile() {
@@ -165,6 +165,7 @@ function emptyDiary() {
     innerLife: defaultInnerLife(),
     relationship: defaultRelationship(),
     summaries: [],
+    processedMemoryJobs: [],
     conversationState: defaultConversationState(),
     _updated_at: Date.now()
   };
@@ -313,6 +314,11 @@ function normalizeDiary(input = {}) {
     innerLife: normalizeInnerLife(source.innerLife || {}),
     relationship,
     summaries: uniqueSummaries,
+    processedMemoryJobs: [...new Set(
+      (Array.isArray(source.processedMemoryJobs) ? source.processedMemoryJobs : [])
+        .map(item => cleanText(item, 120))
+        .filter(Boolean)
+    )].slice(-80),
     conversationState,
     _updated_at: finiteNumber(source._updated_at, now)
   };
@@ -612,6 +618,93 @@ export async function getFact(path, fallback = undefined) {
   return cursor;
 }
 
+export async function hasProcessedMemoryJob(jobId = '') {
+  const id = cleanText(jobId, 120);
+  if (!id) return false;
+  return (await loadDiary()).processedMemoryJobs.includes(id);
+}
+
+export async function applyMemoryExtraction(extracted = {}, { jobId = '', now = Date.now() } = {}) {
+  const id = cleanText(jobId, 120);
+  return mutateDiary(diary => {
+    if (id && diary.processedMemoryJobs.includes(id)) {
+      return { applied: false, duplicate: true, jobId: id, savedFactPaths: [], retractedFactPaths: [], eventCount: 0, momentCount: 0 };
+    }
+
+    const savedFactPaths = [];
+    const retractedFactPaths = [];
+    for (const retraction of Array.isArray(extracted?.factRetractions) ? extracted.factRetractions : []) {
+      const path = cleanText(retraction?.path, 240);
+      const parts = path.split('.').map(item => item.trim()).filter(Boolean);
+      if (parts.length < 2 || parts[0] !== 'user') continue;
+      let cursor = diary.facts;
+      for (let index = 0; index < parts.length - 1; index += 1) {
+        cursor = cursor?.[parts[index]];
+        if (!cursor || typeof cursor !== 'object') break;
+      }
+      const key = parts.at(-1);
+      if (cursor && typeof cursor === 'object' && Object.prototype.hasOwnProperty.call(cursor, key)) {
+        delete cursor[key];
+        retractedFactPaths.push(path);
+      }
+    }
+
+    for (const fact of Array.isArray(extracted?.facts) ? extracted.facts : []) {
+      const path = cleanText(fact?.path, 240);
+      const value = cleanText(fact?.value, 2000);
+      const confidence = Number(fact?.confidence);
+      if (!path.startsWith('user.') || !value || (Number.isFinite(confidence) && confidence < 0.75)) continue;
+      const parts = path.split('.').map(item => item.trim()).filter(Boolean);
+      let cursor = diary.facts;
+      for (let index = 0; index < parts.length; index += 1) {
+        const part = parts[index];
+        if (index === parts.length - 1) cursor[part] = value;
+        else {
+          if (!cursor[part] || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])) cursor[part] = {};
+          cursor = cursor[part];
+        }
+      }
+      savedFactPaths.push(path);
+    }
+
+    let eventCount = 0;
+    for (const event of Array.isArray(extracted?.events) ? extracted.events : []) {
+      const text = cleanText(event?.text, 1800);
+      const importance = Number.isFinite(Number(event?.importance)) ? Number(event.importance) : 5;
+      if (!text || importance < 6) continue;
+      const normalized = normalizeEvent({
+        ...event,
+        text,
+        type: cleanText(event?.type || 'memory', 40),
+        tags: Array.isArray(event?.tags) ? event.tags.slice(0, 8) : [],
+        importance,
+        ts: event?.ts ?? now
+      });
+      if (!normalized || diary.events.some(item => item.key === normalized.key)) continue;
+      diary.events = [...diary.events, normalized].slice(-120);
+      eventCount += 1;
+    }
+
+    let momentCount = 0;
+    for (const moment of Array.isArray(extracted?.sharedMoments) ? extracted.sharedMoments : []) {
+      if ((Number(moment?.importance) || 0) < 7) continue;
+      const normalized = normalizeMoment({ ...moment, ts: moment?.ts ?? now });
+      if (!normalized) continue;
+      const relationship = { ...defaultRelationship(), ...(diary.relationship || {}) };
+      const current = Array.isArray(relationship.sharedMoments) ? relationship.sharedMoments : [];
+      if (current.some(existing => existing.id === normalized.id || existing.key === normalized.key)) continue;
+      relationship.sharedMoments = [...current, normalized].slice(-20);
+      relationship.updatedAt = now;
+      diary.relationship = relationship;
+      momentCount += 1;
+    }
+
+    consolidateDiaryInPlace(diary, now);
+    if (id) diary.processedMemoryJobs = [...new Set([...(diary.processedMemoryJobs || []), id])].slice(-80);
+    return { applied: true, duplicate: false, jobId: id || null, savedFactPaths, retractedFactPaths, eventCount, momentCount };
+  });
+}
+
 export async function recallDays(days = 30) {
   const since = Date.now() - Math.max(1, finiteNumber(days, 30)) * 86400000;
   return (await loadDiary()).events.filter(event => event.ts >= since);
@@ -653,21 +746,23 @@ export async function addSharedMoment(item = {}) {
   });
 }
 
-export async function consolidateDiary() {
-  return mutateDiary(diary => {
-    if (diary.events.length <= 80) return false;
-    const archived = diary.events.slice(0, diary.events.length - 50);
-    const important = archived.filter(event => event.importance >= 7).slice(-12);
-    if (important.length) {
-      const text = important.map(event => event.text).join(' • ').slice(0, 1800);
-      const summary = normalizeSummary({ text, sourceCount: archived.length, ts: Date.now() });
-      if (summary && !diary.summaries.some(item => item.key === summary.key)) {
-        diary.summaries = [...diary.summaries, summary].slice(-12);
-      }
+function consolidateDiaryInPlace(diary, now = Date.now()) {
+  if (diary.events.length <= 80) return false;
+  const archived = diary.events.slice(0, diary.events.length - 50);
+  const important = archived.filter(event => event.importance >= 7).slice(-12);
+  if (important.length) {
+    const text = important.map(event => event.text).join(' • ').slice(0, 1800);
+    const summary = normalizeSummary({ text, sourceCount: archived.length, ts: now });
+    if (summary && !diary.summaries.some(item => item.key === summary.key)) {
+      diary.summaries = [...diary.summaries, summary].slice(-12);
     }
-    diary.events = diary.events.slice(-50);
-    return true;
-  });
+  }
+  diary.events = diary.events.slice(-50);
+  return true;
+}
+
+export async function consolidateDiary() {
+  return mutateDiary(diary => consolidateDiaryInPlace(diary, Date.now()));
 }
 
 (async function bootstrapWindowProfile() {

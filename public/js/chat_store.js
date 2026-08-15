@@ -8,7 +8,7 @@ import {
   replySnapshotFromMessage,
   selectTransportHistory
 } from '../lib/chat-contract.js';
-import { storageGet, storageRemove, storageSet } from './storage.js';
+import { storageGet, storageRemove, storageSetVerified } from './storage.js';
 
 export { CHAT_SCHEMA_VERSION, isInternalNonverbalMetaText, normalizeReplySnapshot };
 export const CHAT_STORAGE_KEY = 'rin-history-v6';
@@ -105,13 +105,13 @@ export function loadChatHistory(storage = localStorage) {
       ? { ...message, status: 'failed', errorCode: 'INTERRUPTED_REQUEST' }
       : message
   ));
-  saveChatHistory(normalized, storage);
-  LEGACY_CHAT_STORAGE_KEYS.forEach(key => storageRemove(storage, key));
+  const committed = saveChatHistory(normalized, storage);
+  if (committed) LEGACY_CHAT_STORAGE_KEYS.forEach(key => storageRemove(storage, key));
   return normalized;
 }
 
 export function saveChatHistory(history, storage = localStorage) {
-  return storageSet(storage, CHAT_STORAGE_KEY, JSON.stringify(normalizeStoredHistory(history)));
+  return storageSetVerified(storage, CHAT_STORAGE_KEY, JSON.stringify(normalizeStoredHistory(history)));
 }
 
 export function persistChatHistoryMutation(history, mutation, storage = localStorage) {
