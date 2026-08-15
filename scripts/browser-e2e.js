@@ -407,9 +407,14 @@ try {
   await cdp.evaluate("document.querySelector('[data-settings-page=voice] [data-settings-back]').click(); document.querySelector('[data-settings-target=general]').click(); true");
   await waitFor(cdp, "document.querySelector('[data-settings-page=general]')?.classList.contains('is-active')", 'general settings page');
   await cdp.evaluate("document.querySelector('[data-theme-choice=theme-light]').click(); true");
-  assert(await cdp.evaluate("document.documentElement.classList.contains('theme-light') && document.querySelector('[data-theme-choice=theme-light]').classList.contains('is-active')"), 'light theme must apply to the whole app');
+  assert(await cdp.evaluate("document.documentElement.classList.contains('theme-light') && document.querySelector('[data-theme-choice=theme-light]').classList.contains('is-active') && localStorage.getItem('rin-theme') === 'theme-light'"), 'light theme must apply and persist');
+  await cdp.send('Page.reload', { ignoreCache: true });
+  await waitFor(cdp, "document.documentElement.classList.contains('auth-ready')", 'app reload after persisted theme', 20_000);
+  assert(await cdp.evaluate("document.documentElement.classList.contains('theme-light') && localStorage.getItem('rin-theme') === 'theme-light' && typeof window.__rinSetTheme === 'function'"), 'persisted light theme must restore under deployment CSP');
+  await cdp.evaluate("document.querySelector('#settingsToggle').click(); document.querySelector('[data-settings-target=general]').click(); true");
+  await waitFor(cdp, "document.querySelector('[data-settings-page=general]')?.classList.contains('is-active')", 'general settings page after reload');
   await cdp.evaluate("document.querySelector('[data-theme-choice=theme-dark]').click(); true");
-  assert(await cdp.evaluate("document.documentElement.classList.contains('theme-dark') && document.querySelector('[data-theme-choice=theme-dark]').classList.contains('is-active')"), 'dark theme must apply to the whole app');
+  assert(await cdp.evaluate("document.documentElement.classList.contains('theme-dark') && document.querySelector('[data-theme-choice=theme-dark]').classList.contains('is-active') && localStorage.getItem('rin-theme') === 'theme-dark'"), 'dark theme must apply and persist');
   await cdp.evaluate("document.querySelector('#closeSettingsBtn').click(); true");
 
   phase('settings and viewport complete');
@@ -519,7 +524,7 @@ try {
     const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
     return { schema: diary._schema, emotion: diary.conversationState?.emotionalState?.primary?.type, cause: diary.conversationState?.emotionalState?.primary?.cause };
   })()`);
-  assert(jealousyState.schema === 5 && jealousyState.emotion === 'jealousy' && /другой девушк/.test(jealousyState.cause || ''), 'canonical jealousy state must commit to diary v5');
+  assert(jealousyState.schema === 6 && jealousyState.emotion === 'jealousy' && /другой девушк/.test(jealousyState.cause || ''), 'canonical jealousy state must commit to diary v6');
 
   await send('Это была шутка, хотел тебя проверить на ревность 😁');
   await waitFor(cdp, completedUsers(10), 'affective reveal commit');
@@ -537,7 +542,52 @@ try {
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.id === 'intent-e2e-play', 'next browser request must restore the committed persistent Rin intent');
   assert(chatBodies.at(-1)?.memory?.conversationState?.rinIntent?.sceneBinding?.key === 'playful_tease', 'next browser request must restore the concrete intent scene binding');
 
-  phase('affective and intent continuity complete');
+  const beforeStorageFault = await cdp.evaluate(`(() => {
+    const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
+    return { revision: diary.conversationState?.revision || 0, committedRequestId: diary.conversationState?.lastCommittedRequestId || null };
+  })()`);
+  await cdp.evaluate(`(() => {
+    const original = Storage.prototype.setItem;
+    let armed = true;
+    Storage.prototype.setItem = function(key, value) {
+      const text = String(value || '');
+      let pendingAssistant = false;
+      if (String(key) === 'rin-history-v6') {
+        try {
+          const parsed = JSON.parse(text || '[]');
+          pendingAssistant = Array.isArray(parsed) && parsed.some(message =>
+            message?.role === 'assistant' && message?.status === 'pending' && message?.deliveryId
+          );
+        } catch {}
+      }
+      if (armed && pendingAssistant) {
+        armed = false;
+        Storage.prototype.setItem = original;
+        throw new DOMException('Injected history persistence failure', 'QuotaExceededError');
+      }
+      return original.call(this, key, value);
+    };
+    return true;
+  })()`);
+  await send('STORAGE_FAIL_ONCE');
+  await waitFor(cdp, "JSON.parse(localStorage.getItem('rin-history-v6') || '[]').some(m => m.role === 'user' && m.content === 'STORAGE_FAIL_ONCE' && m.status === 'failed')", 'prepared delivery storage failure');
+  const storageFault = await cdp.evaluate(`(() => {
+    const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
+    const user = [...history].reverse().find(m => m.role === 'user' && m.content === 'STORAGE_FAIL_ONCE');
+    const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
+    return {
+      requestId: user?.requestId || null,
+      pendingAssistants: history.filter(m => m.role === 'assistant' && m.status === 'pending' && (!user?.requestId || m.requestId === user.requestId)).length,
+      revision: diary.conversationState?.revision || 0,
+      committedRequestId: diary.conversationState?.lastCommittedRequestId || null
+    };
+  })()`);
+  assert(storageFault.pendingAssistants === 0, 'failed prepared-delivery persistence must not leave an orphan pending assistant');
+  assert(storageFault.revision === beforeStorageFault.revision && storageFault.committedRequestId === beforeStorageFault.committedRequestId, 'failed prepared-delivery persistence must not commit ConversationState');
+  await cdp.evaluate("document.querySelector('.message-retry').click(); true");
+  await waitFor(cdp, completedUsers(12), 'retry after prepared delivery storage failure');
+
+  phase('affective, intent and storage recovery complete');
   const lifecycle = await cdp.evaluate(`(() => {
     const history = JSON.parse(localStorage.getItem('rin-history-v6') || '[]');
     return {
@@ -551,11 +601,11 @@ try {
   assert(lifecycle.allTyped, 'all persisted chat events must use schema v6');
   assert(lifecycle.failed === 0 && lifecycle.pending === 0, 'successful retry must leave no failed/pending turn');
   assert(lifecycle.peer === 'онлайн', `unexpected operational status: ${lifecycle.peer}`);
-  const expectedCommittedRevision = chatBodies.length - 1; // exactly one intentional upstream failure is retried successfully
+  const expectedCommittedRevision = chatBodies.length - 2; // one intentional upstream failure + one client storage failure are both retried
   assert(lifecycle.conversationRevision === expectedCommittedRevision, `conversation revision must advance exactly once per committed turn: expected ${expectedCommittedRevision}, got ${lifecycle.conversationRevision}`);
 
   phase('lifecycle assertions complete');
-  console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, server-owned sticker, reply-to-selected, semantic batch visual reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
+  console.log(`Browser E2E OK: login, viewport/design, proactive shared pipeline, memory-before-next-turn, rapid aggregation, failure/retry, storage rollback/retry, server-owned sticker, reply-to-selected, semantic batch visual reply and affective + persistent-intent persistence; ${chatBodies.length} chat requests.`);
 } catch (error) {
   if (error instanceof BrowserPolicyBlockedError && process.env.RIN_ALLOW_BROWSER_E2E_SKIP === '1') {
     console.log(`Browser E2E SKIPPED by explicit opt-in: ${error.message}`);

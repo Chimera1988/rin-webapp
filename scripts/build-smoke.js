@@ -73,6 +73,12 @@ const headerText = JSON.stringify(vercel.headers || []);
 if (!headerText.includes('/api/(.*)') || !headerText.includes('no-store')) fail('API no-store cache policy is missing.');
 if (!headerText.includes('css|js') || !headerText.includes('must-revalidate')) fail('Client revalidation cache policy is missing.');
 if (!headerText.includes('Content-Security-Policy') || !headerText.includes("default-src 'self'") || !headerText.includes("object-src 'none'")) fail('Baseline browser security headers are missing.');
+const csp = (vercel.headers || []).flatMap(rule => Array.isArray(rule?.headers) ? rule.headers : [])
+  .find(header => String(header?.key || '').toLowerCase() === 'content-security-policy')?.value || '';
+if (!/script-src\s+'self'/.test(csp) || /script-src[^;]*'unsafe-inline'/.test(csp)) fail('Script CSP must stay strict and self-only.');
+if (/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(index)) fail('Strict script CSP forbids inline scripts in public/index.html.');
+if (/\son[a-z]+\s*=/i.test(index)) fail('Strict script CSP forbids inline event handlers in public/index.html.');
+if ((index.match(/theme_bootstrap\.js/g) || []).length !== 1 || !await exists('public/js/theme_bootstrap.js')) fail('Theme bootstrap must be one external CSP-compatible script.');
 
 const apiChat = await read('api/chat.js');
 for (const required of ['cognitive-kernel.js', 'kernel-state.js', 'turn-decision.js', 'turn-validator.js', 'sticker-state.js', 'sticker-selector.js', 'rin-realization.js', 'canon-retrieval.js']) {
