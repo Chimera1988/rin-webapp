@@ -2223,6 +2223,246 @@
         "gratitude",
         "joy"
       ]
+    },
+    {
+      "id": "blushing",
+      "src": "/stickers/Blushing.webp",
+      "family": "shy",
+      "signals": [
+        "shy",
+        "flirt",
+        "praise"
+      ],
+      "scenes": [
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.08,
+      "emotion": "blushing",
+      "meaning": "естественное смущение от флирта или личного внимания",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Ты меня правда немного смутил."
+      },
+      "reachability": {
+        "userText": "Ты сегодня особенно красивая 😉",
+        "preferredStickerId": "blushing"
+      },
+      "intents": [
+        "shy",
+        "tender",
+        "flirt"
+      ]
+    },
+    {
+      "id": "flattered",
+      "src": "/stickers/Flattered.webp",
+      "family": "positive",
+      "signals": [
+        "praise",
+        "affection",
+        "gratitude"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.06,
+      "emotion": "flattered",
+      "meaning": "приятно польщена комплиментом или тёплым вниманием",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Мне очень приятно это слышать."
+      },
+      "reachability": {
+        "userText": "Мне очень нравится, какая ты",
+        "preferredStickerId": "flattered"
+      },
+      "intents": [
+        "gratitude",
+        "tender",
+        "warmth"
+      ]
+    },
+    {
+      "id": "flirty_1",
+      "src": "/stickers/Flirty_1.webp",
+      "family": "flirt",
+      "signals": [
+        "flirt",
+        "tease",
+        "affection"
+      ],
+      "scenes": [
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.1,
+      "playfulnessMin": 45,
+      "emotion": "flirt",
+      "meaning": "ответный уверенный флирт",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Ладно, отвечу тебе тем же настроением."
+      },
+      "reachability": {
+        "userText": "Флиртуешь со мной? 😉",
+        "preferredStickerId": "flirty_1"
+      },
+      "intents": [
+        "flirt",
+        "playful"
+      ]
+    },
+    {
+      "id": "playful_1",
+      "src": "/stickers/Playful_1.webp",
+      "family": "flirt",
+      "signals": [
+        "tease",
+        "playful",
+        "light_joy"
+      ],
+      "scenes": [
+        "everyday",
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 1,
+      "maxIntensity": 3,
+      "minTier": "warm",
+      "weight": 1.04,
+      "emotion": "playful",
+      "meaning": "игривая реакция с лёгким поддразниванием",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Я просто немного тебя дразню."
+      },
+      "reachability": {
+        "userText": "Ну давай, удиви меня 😏",
+        "preferredStickerId": "playful_1"
+      },
+      "intents": [
+        "playful",
+        "flirt"
+      ]
+    },
+    {
+      "id": "shy_1",
+      "src": "/stickers/Shy_1.webp",
+      "family": "shy",
+      "signals": [
+        "shy",
+        "affection",
+        "praise"
+      ],
+      "scenes": [
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 2,
+      "maxIntensity": 4,
+      "minTier": "warm",
+      "weight": 1.06,
+      "emotion": "shy",
+      "meaning": "застенчивая тёплая реакция на близость",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Я немного застеснялась."
+      },
+      "reachability": {
+        "userText": "Иди сюда, я скажу тебе кое-что приятное",
+        "preferredStickerId": "shy_1"
+      },
+      "intents": [
+        "shy",
+        "tender"
+      ]
+    },
+    {
+      "id": "smitten",
+      "src": "/stickers/Smitten.webp",
+      "family": "positive",
+      "signals": [
+        "affection",
+        "tenderness",
+        "flirt"
+      ],
+      "scenes": [
+        "playful_flirt",
+        "romance"
+      ],
+      "minIntensity": 3,
+      "maxIntensity": 5,
+      "minTier": "warm",
+      "weight": 1.12,
+      "emotion": "smitten",
+      "meaning": "явно очарована и эмоционально зацеплена флиртом",
+      "responseModes": [
+        "sticker_only",
+        "before_text",
+        "after_text"
+      ],
+      "followUp": {
+        "remember": false,
+        "canExplain": true,
+        "maxTurns": 1,
+        "explanation": "Кажется, ты меня всё-таки окончательно очаровал."
+      },
+      "reachability": {
+        "userText": "Ты для меня правда особенная ❤️",
+        "preferredStickerId": "smitten"
+      },
+      "intents": [
+        "tender",
+        "flirt",
+        "joy"
+      ]
     }
   ]
 }
