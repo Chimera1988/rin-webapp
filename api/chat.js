@@ -122,24 +122,68 @@ function visualReplyFromDecision(decision = null, group = []) {
 }
 
 
+const RETRYABLE_OPENAI_STATUSES = new Set([429, 500, 502, 503, 504]);
+const OPENAI_RETRY_DELAY_MS = 180;
+
+function upstreamCodeForStatus(status = 0) {
+  if (Number(status) === 429) return 'UPSTREAM_RATE_LIMITED';
+  if (Number(status) >= 500) return 'UPSTREAM_UNAVAILABLE';
+  return 'UPSTREAM_REJECTED';
+}
+
+function upstreamError(message, code, status = null) {
+  return Object.assign(new Error(message), { code, upstreamStatus: status });
+}
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null }) {
   const body = { model, temperature, max_tokens, messages };
   if (response_format) body.response_format = response_format;
-  const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  }, 45_000);
-  const raw = await response.text();
-  if (!response.ok) throw new Error(`OpenAI ${response.status}: ${raw.slice(0, 300)}`);
-  const data = JSON.parse(raw);
-  const choice = data?.choices?.[0] || {};
-  return {
-    content: choice?.message?.content?.trim() || '',
-    finishReason: choice?.finish_reason || null,
-    usage: data?.usage || null,
-    model: data?.model || model
-  };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response;
+    try {
+      response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }, 45_000);
+    } catch (error) {
+      if (error?.name === 'AbortError' || String(error?.message || '').toLowerCase().includes('timeout')) throw error;
+      if (attempt === 0) {
+        await wait(OPENAI_RETRY_DELAY_MS);
+        continue;
+      }
+      throw upstreamError('OpenAI network request failed', 'UPSTREAM_NETWORK_ERROR');
+    }
+
+    const raw = await response.text();
+    if (!response.ok) {
+      const status = Number(response.status) || 0;
+      if (attempt === 0 && RETRYABLE_OPENAI_STATUSES.has(status)) {
+        const retryAfterSeconds = Number(response.headers?.get?.('retry-after'));
+        const retryDelay = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.min(1000, retryAfterSeconds * 1000)
+          : OPENAI_RETRY_DELAY_MS;
+        await wait(retryDelay);
+        continue;
+      }
+      throw upstreamError(`OpenAI ${status}`, upstreamCodeForStatus(status), status);
+    }
+
+    let data;
+    try { data = JSON.parse(raw); }
+    catch { throw upstreamError('OpenAI returned invalid JSON', 'UPSTREAM_UNAVAILABLE', Number(response.status) || 502); }
+    const choice = data?.choices?.[0] || {};
+    return {
+      content: choice?.message?.content?.trim() || '',
+      finishReason: choice?.finish_reason || null,
+      usage: data?.usage || null,
+      model: data?.model || model
+    };
+  }
+  throw upstreamError('OpenAI request failed', 'UPSTREAM_UNAVAILABLE');
 }
 
 function mergeUsage(...usages) {
@@ -306,7 +350,7 @@ export default async function handler(req, res) {
     // a different behavior. The same Cognitive Kernel gets one chance to decide again.
     let decisionUsage = kernelCompletion.usage;
     let decisionValidation = mergeDecisionValidation(
-      validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates }),
+      validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
       await validateDecisionResources(decision)
     );
     if (!decisionValidation.passed) {
@@ -327,7 +371,7 @@ export default async function handler(req, res) {
       catch { return res.status(502).json({ error: 'Decision model retry returned invalid structured output', code: 'INVALID_TURN_DECISION', requestId }); }
       decisionUsage = mergeUsage(kernelCompletion.usage, retryCompletion.usage);
       decisionValidation = mergeDecisionValidation(
-        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates }),
+        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
         await validateDecisionResources(decision)
       );
       if (!decisionValidation.passed) {
@@ -370,7 +414,6 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('Chat error', error);
     const mapped = publicError(error, 'Chat internal error');
-    if (error?.code && mapped?.body && !mapped.body.code) mapped.body.code = error.code;
     return res.status(mapped.status).json(mapped.body);
   }
 }
