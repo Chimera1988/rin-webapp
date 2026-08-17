@@ -197,44 +197,138 @@ function mergeUsage(...usages) {
   return out;
 }
 
+const MAX_REALIZATION_REWRITES = 2;
+
+function realizationFailure(validation = null, attempts = 1, phase = 'validation_failed') {
+  const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
+  return Object.assign(new Error(`Realization validation failed: ${warnings.join(',')}`), {
+    code: 'REALIZATION_VALIDATION_FAILED',
+    warnings,
+    hardWarnings: Array.isArray(validation?.hardWarnings) ? validation.hardWarnings : [],
+    rewriteableWarnings: Array.isArray(validation?.rewriteableWarnings) ? validation.rewriteableWarnings : [],
+    validationClass: phase,
+    attempts
+  });
+}
+
+function parseRealizationOrThrow(content = '', decision = null, attempts = 1) {
+  try { return parseRealization(content, decision); }
+  catch (error) {
+    throw Object.assign(new Error('Realization returned invalid structured output'), {
+      code: 'REALIZATION_PARSE_FAILED',
+      validationClass: 'hard_parse_failure',
+      attempts,
+      cause: error
+    });
+  }
+}
+
 async function realizeDecision({ profile, state, decision, realityBoundary, isLong = false }) {
   const textSegments = decision.delivery.segments.filter(item => item.type === 'text');
-  if (!textSegments.length) return { realization: { segments: [] }, validation: { version: 'rin-turn-validator-v1', passed: true, warnings: [], reply: '' }, usage: null, retried: false };
+  if (!textSegments.length) {
+    return {
+      realization: { segments: [] },
+      validation: {
+        version: 'rin-turn-validator-v2', passed: true, retryable: false,
+        warnings: [], hardWarnings: [], rewriteableWarnings: [], reply: '',
+        attempts: 0, rewrites: 0, trace: []
+      },
+      usage: null,
+      retried: false,
+      attempts: 0
+    };
+  }
 
   const prompt = buildRealizationPrompt({ profile, state, decision, realityBoundary });
   const params = isLong ? LONG_REALIZATION_PARAMS : REALIZATION_PARAMS;
-  const first = await openaiChat({
-    model: REALIZATION_MODEL,
-    messages: [{ role: 'system', content: prompt.system }],
-    response_format: prompt.responseFormat,
-    ...params
-  });
-  if (first.finishReason === 'length' || !first.content) throw Object.assign(new Error('Realization incomplete'), { code: 'MODEL_RESPONSE_TRUNCATED' });
-  let realization = parseRealization(first.content, decision);
-  let validation = validateRealization(realization, {
-    decision,
-    realityBoundary,
-    recentHistory: state?.recentHistory || [],
-    currentUserText: state?.userText || ''
-  });
-  if (validation.passed) return { realization, validation, usage: first.usage, retried: false };
+  const trace = [];
+  let usage = null;
+  let previousRealization = null;
+  let previousValidation = null;
 
-  const retry = await openaiChat({
-    model: REALIZATION_MODEL,
-    messages: [{ role: 'system', content: `${prompt.system}\n\n${buildRealizationRetryInstruction(validation.warnings, decision)}` }],
-    response_format: prompt.responseFormat,
-    ...params
-  });
-  if (retry.finishReason === 'length' || !retry.content) throw Object.assign(new Error('Realization retry incomplete'), { code: 'MODEL_RESPONSE_TRUNCATED' });
-  realization = parseRealization(retry.content, decision);
-  validation = validateRealization(realization, {
-    decision,
-    realityBoundary,
-    recentHistory: state?.recentHistory || [],
-    currentUserText: state?.userText || ''
-  });
-  if (!validation.passed) throw Object.assign(new Error(`Realization validation failed: ${validation.warnings.join(',')}`), { code: 'REALIZATION_VALIDATION_FAILED', warnings: validation.warnings });
-  return { realization, validation, usage: mergeUsage(first.usage, retry.usage), retried: true };
+  for (let rewriteAttempt = 0; rewriteAttempt <= MAX_REALIZATION_REWRITES; rewriteAttempt += 1) {
+    const attemptNumber = rewriteAttempt + 1;
+    const retryInstruction = rewriteAttempt > 0
+      ? buildRealizationRetryInstruction(
+          previousValidation?.rewriteableWarnings || previousValidation?.warnings || [],
+          decision,
+          previousRealization,
+          rewriteAttempt
+        )
+      : '';
+    const completion = await openaiChat({
+      model: REALIZATION_MODEL,
+      messages: [{ role: 'system', content: retryInstruction ? `${prompt.system}\n\n${retryInstruction}` : prompt.system }],
+      response_format: prompt.responseFormat,
+      ...params
+    });
+    usage = mergeUsage(usage, completion.usage);
+    if (completion.finishReason === 'length' || !completion.content) {
+      throw Object.assign(new Error(`Realization attempt ${attemptNumber} incomplete`), {
+        code: 'MODEL_RESPONSE_TRUNCATED', attempts: attemptNumber
+      });
+    }
+
+    const realization = parseRealizationOrThrow(completion.content, decision, attemptNumber);
+    const validation = validateRealization(realization, {
+      decision,
+      realityBoundary,
+      recentHistory: state?.recentHistory || [],
+      currentUserText: state?.userText || ''
+    });
+    trace.push({
+      attempt: attemptNumber,
+      passed: validation.passed,
+      warnings: validation.warnings,
+      hardWarnings: validation.hardWarnings,
+      rewriteableWarnings: validation.rewriteableWarnings
+    });
+
+    if (validation.passed) {
+      return {
+        realization,
+        validation: {
+          ...validation,
+          attempts: attemptNumber,
+          rewrites: rewriteAttempt,
+          trace
+        },
+        usage,
+        retried: rewriteAttempt > 0,
+        attempts: attemptNumber
+      };
+    }
+
+    if (validation.hardWarnings?.length) {
+      console.error('Rin Realization hard validation failure', {
+        requestId: state?.requestId || null,
+        attempt: attemptNumber,
+        warnings: validation.warnings,
+        hardWarnings: validation.hardWarnings
+      });
+      throw realizationFailure(validation, attemptNumber, 'hard_validation_failure');
+    }
+
+    if (rewriteAttempt >= MAX_REALIZATION_REWRITES) {
+      console.error('Rin Realization rewrite exhausted', {
+        requestId: state?.requestId || null,
+        attempts: attemptNumber,
+        warnings: validation.warnings
+      });
+      throw realizationFailure(validation, attemptNumber, 'rewrite_exhausted');
+    }
+
+    console.warn('Rin Realization rejected; rewriting same TurnDecision', {
+      requestId: state?.requestId || null,
+      attempt: attemptNumber,
+      nextAttempt: attemptNumber + 1,
+      warnings: validation.rewriteableWarnings
+    });
+    previousRealization = realization;
+    previousValidation = validation;
+  }
+
+  throw realizationFailure(previousValidation, MAX_REALIZATION_REWRITES + 1, 'rewrite_exhausted');
 }
 
 export async function buildDeliveryPlan({ requestId, decision, realization, scene = null, stickerState = null } = {}) {
