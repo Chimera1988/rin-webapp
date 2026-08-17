@@ -107,6 +107,9 @@ if (!apiChat.includes("'gpt-4.1'") || /OPENAI_LONG_MODEL|['"]gpt-4o['"]/.test(ap
 if (!apiChat.includes('retrieveCanonicalLore(canonCue)') || /body\.lore/.test(apiChat)) fail('Canonical lore must be server-retrieved and client lore must not be trusted.');
 if (!apiChat.includes('validateTurnDecisionConstraints') || !apiChat.includes('validateRealization')) fail('Deterministic decision/realization validation is missing.');
 if (!apiChat.includes('buildRealizationRetryInstruction')) fail('Realization retry must be constraint-aware.');
+if (!apiChat.includes('RETRYABLE_OPENAI_STATUSES') || !apiChat.includes('UPSTREAM_RATE_LIMITED') || !apiChat.includes('UPSTREAM_UNAVAILABLE') || !apiChat.includes('UPSTREAM_NETWORK_ERROR')) fail('Chat upstream retry/classification contract is missing.');
+const serverHttpSource = await read('lib/server/http.js');
+if (!serverHttpSource.includes('REALIZATION_VALIDATION_FAILED') || !serverHttpSource.includes('UPSTREAM_RATE_LIMITED') || !serverHttpSource.includes('UPSTREAM_REJECTED')) fail('Public server error mapping must preserve actionable runtime codes.');
 const realizationSource = await read('lib/personality/rin-realization.js');
 if (/text:\s*clean\(raw\[index\]\?\.text,\s*plan\.maxChars/.test(realizationSource) || /raw\[index\]\?\.text[\s\S]{0,100}\.slice\(0,\s*plan\.maxChars/.test(realizationSource)) fail('Voice Realization must not mechanically clip model text to maxChars.');
 if (!realizationSource.includes('Пользователь — мужчина') || !realizationSource.includes('buildRealizationRetryInstruction')) fail('Realization gender/completeness contract is missing.');
@@ -117,7 +120,7 @@ if (!validatorSource.includes('recent_assistant_duplicate') || !validatorSource.
 if (!apiChat.includes('recentHistory: state?.recentHistory') || !apiChat.includes('currentUserText: state?.userText')) fail('Chat API must validate Realization against current user text and recent dialogue.');
 const kernelSource = await read('lib/cognition/cognitive-kernel.js');
 if (!kernelSource.includes('самостоятельных conversational moves') || !kernelSource.includes('не дроби одну простую мысль')) fail('Kernel multi-message completeness contract is missing.');
-if (!kernelSource.includes('Встречный интерес — часть живого личного разговора') || !kernelSource.includes('oneSidedQuestionPattern=true') || !kernelSource.includes('не счётчик «каждые N ходов»')) fail('Kernel reciprocal-curiosity contract is missing or has become a scheduled-question rule.');
+if (!kernelSource.includes('Встречный интерес — часть живого личного разговора') || !kernelSource.includes('oneSidedQuestionPattern=true') || !kernelSource.includes('наблюдение о перекосе, а не таймер') || !kernelSource.includes('reciprocalQuestionExpected=true')) fail('Kernel reciprocal-curiosity contract is missing or has become a scheduled-question rule.');
 if (/responsePlan|coreDecision|conversationBrain|compatibilityResponsePlan/.test(apiChat)) fail('Chat API must not emit or reconstruct legacy decision-plan compatibility fields.');
 if (/buildTurnDelivery|\n\s*delivery,/.test(apiChat)) fail('DeliveryPlan must be the only server delivery representation.');
 if (/latestUserTarget|\breplyTarget\s*=\s*latestUserTarget/.test(apiChat)) fail('Chat API must not auto-project the latest user message into a visual reply link.');
@@ -267,7 +270,7 @@ const stickerConfig = JSON.parse(await read('public/data/stickers-v7.json'));
 const stickerAssets = new Set((await readdir(path.join(root, 'public/stickers'))).map(file => `/stickers/${file}`));
 const stickerValidation = stickerContract.validateStickerConfig(stickerConfig, stickerAssets);
 if (!stickerValidation.ok) fail(`Sticker manifest invalid: ${stickerValidation.errors.join('; ')}`);
-if (stickerAssets.size !== 54) fail(`Expected 54 sticker assets, found ${stickerAssets.size}.`);
+if (stickerAssets.size !== 60) fail(`Expected 60 sticker assets, found ${stickerAssets.size}.`);
 if (Number(stickerConfig.defaults?.rollingWindowTurns) !== 10 || Number(stickerConfig.defaults?.minGapAssistantTurns) !== 2) fail('Sticker manifest rolling frequency defaults are not canonical.');
 if (stickerConfig.defaults?.semanticContract !== 'sticker-emotion-v2') fail('Sticker manifest semantic contract must be sticker-emotion-v2.');
 

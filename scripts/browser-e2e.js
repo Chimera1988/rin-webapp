@@ -62,7 +62,7 @@ const server = createServer(async (req, res) => {
       const current = userEvents.at(-1)?.content || [...(body.history || [])].reverse().find(item => item.role === 'user')?.content || '';
       if (current === 'FAIL_ONCE' && failOnce) {
         failOnce = false;
-        return json(res, 502, { error: 'Temporary failure', code: 'UPSTREAM_TIMEOUT', requestId: body.requestId });
+        return json(res, 503, { error: 'Temporary failure', code: 'UPSTREAM_UNAVAILABLE', requestId: body.requestId });
       }
       const remembered = body.memory?.facts?.user?.name;
       const plannedTarget = userEvents.length > 1 ? userEvents[0] : null;
@@ -432,6 +432,14 @@ try {
   assert(await cdp.evaluate("document.documentElement.classList.contains('theme-dark') && document.querySelector('[data-theme-choice=theme-dark]').classList.contains('is-active') && localStorage.getItem('rin-theme') === 'theme-dark'"), 'dark theme must apply and persist');
   await cdp.evaluate("document.querySelector('#closeSettingsBtn').click(); true");
 
+  const stickerCatalogBrowser = await cdp.evaluate(`fetch('/data/stickers-v7.json', { cache:'no-store' }).then(r => r.json()).then(config => ({
+    count: Array.isArray(config?.stickers) ? config.stickers.length : 0,
+    ids: (config?.stickers || []).map(item => item.id)
+  }))`);
+  assert(stickerCatalogBrowser.count === 60, `browser sticker manifest must expose 60 assets, got ${stickerCatalogBrowser.count}`);
+  for (const id of ['blushing','flattered','flirty_1','playful_1','shy_1','smitten']) {
+    assert(stickerCatalogBrowser.ids.includes(id), `browser sticker manifest is missing ${id}`);
+  }
   phase('settings and viewport complete');
   const send = text => cdp.evaluate(`(() => {
     const input = document.querySelector('#input');
@@ -476,6 +484,8 @@ try {
   phase('visual reply complete');
   await send('FAIL_ONCE');
   await waitFor(cdp, "Boolean(document.querySelector('.message-retry'))", 'failed message retry control');
+  const transientFailureText = await cdp.evaluate("[...document.querySelectorAll('#chat .row.her .bubble')].at(-1)?.textContent || ''");
+  assert(transientFailureText.includes('Связь с сервисом временно недоступна'), 'classified upstream failure must surface the specific retryable client message');
   const afterFailedTurnState = await cdp.evaluate(`(() => {
     const diary = JSON.parse(localStorage.getItem('rin-diary-v1') || '{}');
     return {
