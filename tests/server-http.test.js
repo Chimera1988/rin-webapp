@@ -25,6 +25,19 @@ test('server timeout maps to a public error without upstream details', async () 
   }
 });
 
+test('server public errors preserve actionable upstream and validation codes', () => {
+  assert.deepEqual(publicError(Object.assign(new Error('429 raw details'), { code:'UPSTREAM_RATE_LIMITED' }), 'Safe failure'), {
+    status:429, body:{error:'Upstream rate limited',code:'UPSTREAM_RATE_LIMITED'}
+  });
+  assert.deepEqual(publicError(Object.assign(new Error('validation internals'), { code:'REALIZATION_VALIDATION_FAILED' }), 'Safe failure'), {
+    status:502, body:{error:'Response realization failed validation',code:'REALIZATION_VALIDATION_FAILED'}
+  });
+  assert.deepEqual(publicError(Object.assign(new Error('OpenAI 400 details'), { code:'UPSTREAM_REJECTED' }), 'Safe failure'), {
+    status:502, body:{error:'Upstream rejected request',code:'UPSTREAM_REJECTED'}
+  });
+  assert.equal(publicError(new Error('programming bug'), 'Safe failure').body.code,'INTERNAL_ERROR');
+});
+
 
 test('server method guard has one canonical 405 contract', () => {
   const res = { statusCode: 200, headers: {}, body: null, setHeader(k,v){ this.headers[k]=v; }, status(code){ this.statusCode=code; return this; }, json(body){ this.body=body; return this; } };

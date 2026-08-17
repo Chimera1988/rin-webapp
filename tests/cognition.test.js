@@ -68,6 +68,15 @@ test('realization parser preserves full model text so validator can reject overl
   assert.ok(result.warnings.includes('segment_0_too_long'));
 });
 
+test('natural question mode must be realized as one actual question', () => {
+  const d=validDecision({question:{mode:'natural',reason:'искренне спросить о пользователе'}});
+  const missing=validateRealization({segments:[{purpose:'answer',text:'У меня всё спокойно, уже отдыхаю.'}]},{decision:d,realityBoundary:{}});
+  assert.equal(missing.passed,false);
+  assert.ok(missing.warnings.includes('missing_natural_question'));
+  const present=validateRealization({segments:[{purpose:'answer',text:'У меня всё спокойно. А у тебя как прошёл вечер?'}]},{decision:d,realityBoundary:{}});
+  assert.equal(present.passed,true);
+});
+
 test('realization validator rejects feminine second-person agreement for the male user', () => {
   const d=validDecision();
   const wrong=validateRealization({segments:[{purpose:'answer',text:'О, ты решила добавить искру.'}]},{decision:d,realityBoundary:{}});

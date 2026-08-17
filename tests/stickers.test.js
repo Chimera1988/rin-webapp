@@ -13,11 +13,11 @@ const config=JSON.parse(await readFile(new URL('../public/data/stickers-v7.json'
 
 test.beforeEach(()=>storage.clear());
 
-test('manifest has one v7 contract, exactly 54 assets, and every asset is registered exactly once', async () => {
+test('manifest has one v7 contract, exactly 60 assets, and every asset is registered exactly once', async () => {
   const assets=new Set((await readdir(new URL('../public/stickers/',import.meta.url))).map(name=>`/stickers/${name}`));
   const validation=contract.validateStickerConfig(config,assets);
   assert.equal(validation.ok,true,validation.errors.join('\n'));
-  assert.equal(config.stickers.length,54);
+  assert.equal(config.stickers.length,60);
   assert.deepEqual([...new Set(config.stickers.map(item => item.src))].sort(), [...assets].sort());
 });
 
@@ -40,7 +40,7 @@ test('every sticker intent allowed by the strict Kernel schema resolves to a rea
 });
 
 
-test('canonical intent rotation can reach all 54 registered visual assets', async () => {
+test('canonical intent rotation can reach all 60 registered visual assets', async () => {
   const scenes=['greeting','everyday','practical_task','reflective','emotional_support','playful_flirt','romance','farewell','conflict_repair'];
   const selected=new Set();
   for (const intent of STICKER_INTENT_VALUES) {

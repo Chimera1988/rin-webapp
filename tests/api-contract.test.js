@@ -496,35 +496,42 @@ test('recent Rin duplicate is rejected at Realization only and retried without a
   } finally { mock.restore(); }
 });
 
-test('one-sided recent questioning reaches the Kernel as reciprocity evidence but does not force a scheduled question', async () => {
+test('one-sided casual questioning rejects another q=none decision and retries the same Kernel once', async () => {
   const bodies=[];
+  const passiveDecision=baseDecision({
+    act:'answer_only',
+    focus:'ответить пользователю',
+    question:{mode:'none',reason:null},
+    delivery:{segments:[{type:'text',purpose:'answer',stickerIntent:null,maxChars:320}]}
+  });
   const curiousDecision=baseDecision({
     act:'answer_and_show_curiosity',
-    focus:'ответить и проявить конкретный встречный интерес к пользователю',
-    question:{mode:'natural',reason:'пользователь упомянул завершённую сложную задачу; Рин интересно, что это было'},
+    focus:'ответить и вернуть конкретный встречный интерес к пользователю',
+    question:{mode:'natural',reason:'после нескольких вопросов пользователя естественно спросить о нём в ответ'},
     delivery:{segments:[{type:'text',purpose:'answer_and_question',stickerIntent:null,maxChars:320}]}
   });
-  const mock=installStructuredMock({ bodies, decisions:[curiousDecision], realizations:[realization('У меня спокойно. А что за сложную задачу ты сегодня всё-таки добил?')] });
+  const mock=installStructuredMock({ bodies, decisions:[passiveDecision,curiousDecision], realizations:[realization('Я как раз немного отдыхаю. А ты сам чем занят этим вечером?')] });
   try {
     const requestId='reciprocity-kernel';
     const res=createRes();
     await chat.default(userRequest({
       requestId,
-      text:'Я сегодня наконец закончил сложную задачу.',
+      text:'А ты чем сейчас занимаешься?',
       history:[
         {role:'user',kind:'text',status:'complete',id:'u1',content:'Как твой день?',requestId:'old-u1'},
         {role:'assistant',kind:'text',status:'complete',id:'a1',content:'Спокойный, уже выдыхаю.',requestId:'old-a1'},
         {role:'user',kind:'text',status:'complete',id:'u2',content:'А настроение как?',requestId:'old-u2'},
         {role:'assistant',kind:'text',status:'complete',id:'a2',content:'Ровное. Мне сейчас хорошо.',requestId:'old-a2'},
-        {role:'user',kind:'text',status:'sent',requestId,id:`u-${requestId}`,content:'Я сегодня наконец закончил сложную задачу.'}
+        {role:'user',kind:'text',status:'sent',requestId,id:`u-${requestId}`,content:'А ты чем сейчас занимаешься?'}
       ]
     }),res);
     assert.equal(res.statusCode,200);
     assert.equal(res.body.turnDecision.question.mode,'natural');
-    assert.equal(mock.counts().decision,1);
+    assert.equal(mock.counts().decision,2);
     assert.equal(mock.counts().realization,1);
-    assert.match(bodies[0].messages[0].content,/"oneSidedQuestionPattern":true/);
-    assert.match(bodies[0].messages[0].content,/НЕ команда задать вопрос/iu);
-    assert.match(bodies[0].messages[0].content,/Встречный интерес/iu);
+    assert.equal(res.body.cognition.reciprocity.reciprocalQuestionExpected,true);
+    assert.match(bodies[0].messages[0].content,/\"reciprocalQuestionExpected\":true/);
+    assert.match(bodies[1].messages[0].content,/reciprocal_question_expected/);
+    assert.match(res.body.reply,/\?/u);
   } finally { mock.restore(); }
 });

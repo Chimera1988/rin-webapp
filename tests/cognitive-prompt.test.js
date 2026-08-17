@@ -41,9 +41,10 @@ test('kernel prompt is the only action-decision contract and receives state inst
   assert.match(system, /не дроби одну простую мысль/iu);
   assert.match(system, /грамматически и смыслово законченным сообщением/iu);
   assert.match(system, /Встречный интерес — часть живого личного разговора/iu);
-  assert.match(system, /oneSidedQuestionPattern=true.*НЕ команда задать вопрос/iu);
+  assert.match(system, /oneSidedQuestionPattern=true.*наблюдение о перекосе, а не таймер/iu);
+  assert.match(system, /reciprocalQuestionExpected=true.*question\.mode=natural/iu);
   assert.match(system, /конкретную деталь пользователя/iu);
-  assert.match(system, /не счётчик «каждые N ходов»/iu);
+  assert.match(system, /не должна превращаться в пассивного собеседника/iu);
   assert.match(system, /sticker_only/);
   assert.match(system, /explicit_fiction/);
   assert.match(system, /не придумывай невидимое завершение/iu);

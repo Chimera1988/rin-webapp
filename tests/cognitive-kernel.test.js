@@ -203,7 +203,7 @@ test('visual reply is structurally unavailable for ordinary single-message turns
   assert.ok(validation.warnings.includes('visual_reply_target_not_allowed'));
 });
 
-test('kernel state exposes question reciprocity as an observation, not a scheduling rule', () => {
+test('kernel state observes one-sided questioning without forcing curiosity on an unrelated statement', () => {
   const history = [
     { role:'user', kind:'text', status:'complete', id:'u1', content:'Как твой день?' },
     { role:'assistant', kind:'text', status:'complete', id:'a1', content:'Спокойный, уже выдыхаю.' },
@@ -218,8 +218,31 @@ test('kernel state exposes question reciprocity as an observation, not a schedul
   assert.equal(state.reciprocity.userQuestionTurns, 2);
   assert.equal(state.reciprocity.rinQuestionTurns, 0);
   assert.equal(state.reciprocity.oneSidedQuestionPattern, true);
+  assert.equal(state.reciprocity.reciprocalQuestionExpected, false);
   assert.equal(state.reciprocity.userTurns, 3);
   assert.equal(state.reciprocity.rinTurns, 2);
+});
+
+test('one-sided casual questions create one contextual reciprocal-question invariant, not a timer', () => {
+  const history = [
+    { role:'user', kind:'text', status:'complete', id:'u1', content:'Как твой день?' },
+    { role:'assistant', kind:'text', status:'complete', id:'a1', content:'Спокойный, уже выдыхаю.' },
+    { role:'user', kind:'text', status:'complete', id:'u2', content:'А настроение как?' },
+    { role:'assistant', kind:'text', status:'complete', id:'a2', content:'Ровное. Мне сейчас хорошо.' },
+    { role:'user', kind:'text', status:'sent', requestId:'r3', id:'u3', content:'А ты чем сейчас занимаешься?' }
+  ];
+  const brain={ literalIntent:'question', activeScene:{type:'everyday'} };
+  const state=buildKernelState({requestId:'r3',userText:'А ты чем сейчас занимаешься?',history,brain,memory:{conversationState:{revision:2,openLoops:[]}},conversationState:'ongoing'});
+  assert.equal(state.reciprocity.oneSidedQuestionPattern,true);
+  assert.equal(state.reciprocity.currentUserQuestion,true);
+  assert.equal(state.reciprocity.reciprocalQuestionExpected,true);
+  assert.match(state.reciprocity.questionAnchor,/занимаешься/iu);
+
+  const blocked=validateTurnDecisionConstraints(decision(),{conversationState:'ongoing',reciprocity:state.reciprocity});
+  assert.equal(blocked.passed,false);
+  assert.ok(blocked.warnings.includes('reciprocal_question_expected'));
+  const allowed=validateTurnDecisionConstraints(decision({question:{mode:'natural',reason:'встречный интерес'}}),{conversationState:'ongoing',reciprocity:state.reciprocity});
+  assert.equal(allowed.passed,true);
 });
 
 test('reciprocity snapshot stays neutral when Rin has already shown recent curiosity', () => {
