@@ -487,7 +487,10 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
   });
 
 
-  if (committed?.mood) dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${committed.conversationState?.rinIntent?.status || 'none'}:${committed.conversationState?.rinIntent?.goal || '-'}; action=${decision?.act || 'direct_response'}; q=${decision?.question?.mode || 'none'}`);
+  if (committed?.mood) {
+    const questionReason = String(decision?.question?.reason || data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
+    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${committed.conversationState?.rinIntent?.status || 'none'}:${committed.conversationState?.rinIntent?.goal || '-'}; action=${decision?.act || 'direct_response'}; q=${decision?.question?.mode || 'none'}:${questionReason}`);
+  }
   return committed;
 }
 
@@ -1934,7 +1937,7 @@ function userFacingError(code) {
   if (code === 'UPSTREAM_RATE_LIMITED') return 'Сервис временно перегружен. Сообщение можно повторить.';
   if (code === 'UPSTREAM_UNAVAILABLE' || code === 'UPSTREAM_NETWORK_ERROR') return 'Связь с сервисом временно недоступна. Сообщение можно повторить.';
   if (code === 'UPSTREAM_REJECTED') return 'Сервис отклонил запрос. Сообщение не добавлено в контекст; его можно повторить.';
-  if (code === 'REALIZATION_VALIDATION_FAILED' || code === 'INVALID_TURN_DECISION') return 'Не удалось безопасно сформировать ответ. Сообщение можно повторить.';
+  if (code === 'REALIZATION_VALIDATION_FAILED' || code === 'REALIZATION_PARSE_FAILED' || code === 'INVALID_TURN_DECISION') return 'Не удалось безопасно сформировать ответ. Сообщение можно повторить.';
   return 'Не удалось получить ответ. Сообщение не включено в следующий контекст; его можно повторить.';
 }
 
@@ -2007,13 +2010,28 @@ async function processUserBatch(messageIds = []) {
     if (!response.ok) {
       const error = new Error(data?.error || `HTTP ${response.status}`);
       error.code = data?.code || 'CHAT_REQUEST_FAILED';
-      error.warnings = Array.isArray(data?.warnings) ? data.warnings.slice(0, 8) : [];
+      error.warnings = Array.isArray(data?.warnings) ? data.warnings.slice(0, 12) : [];
+      error.hardWarnings = Array.isArray(data?.hardWarnings) ? data.hardWarnings.slice(0, 12) : [];
+      error.rewriteableWarnings = Array.isArray(data?.rewriteableWarnings) ? data.rewriteableWarnings.slice(0, 12) : [];
+      error.validationClass = data?.validationClass || null;
+      error.attempts = Number.isFinite(Number(data?.attempts)) ? Number(data.attempts) : null;
       throw error;
     }
     if (data.requestId && data.requestId !== requestId) {
       const error = new Error('Mismatched response');
       error.code = 'MISMATCHED_RESPONSE';
       throw error;
+    }
+
+    const realizationMeta = data?.validation?.realization || null;
+    if (Number(realizationMeta?.rewrites) > 0) {
+      const priorWarnings = (Array.isArray(realizationMeta?.trace) ? realizationMeta.trace : [])
+        .filter(item => item && item.passed === false)
+        .map(item => (Array.isArray(item.warnings) ? item.warnings.join('|') : 'unknown'))
+        .filter(Boolean)
+        .join(' > ')
+        .slice(0, 420);
+      dbg(`realization recovered: request=${requestId}; attempts=${Number(realizationMeta.attempts) || 0}; rewrites=${Number(realizationMeta.rewrites) || 0}${priorWarnings ? `; warnings=${priorWarnings}` : ''}`);
     }
 
     // The model may already have finished while the user was still typing another
@@ -2098,10 +2116,13 @@ async function processUserBatch(messageIds = []) {
     markBatchFailed(ids, code);
     addBubble(userFacingError(code), 'assistant');
     finishPresence();
-    const warningSuffix = Array.isArray(error?.warnings) && error.warnings.length
-      ? `; warnings=${error.warnings.join('|')}`
-      : '';
-    dbg(`chat request failed: request=${requestId}; code=${code}${warningSuffix}`);
+    const diagnostics = [];
+    if (Number.isFinite(Number(error?.attempts))) diagnostics.push(`attempts=${Number(error.attempts)}`);
+    if (error?.validationClass) diagnostics.push(`class=${String(error.validationClass).slice(0, 80)}`);
+    if (Array.isArray(error?.warnings) && error.warnings.length) diagnostics.push(`warnings=${error.warnings.join('|')}`);
+    if (Array.isArray(error?.hardWarnings) && error.hardWarnings.length) diagnostics.push(`hard=${error.hardWarnings.join('|')}`);
+    if (Array.isArray(error?.rewriteableWarnings) && error.rewriteableWarnings.length) diagnostics.push(`rewriteable=${error.rewriteableWarnings.join('|')}`);
+    dbg(`chat request failed: request=${requestId}; code=${code}${diagnostics.length ? `; ${diagnostics.join('; ')}` : ''}`);
   } finally {
     activeRequests = Math.max(0, activeRequests - 1);
     finishPresence();
