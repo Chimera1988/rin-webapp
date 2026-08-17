@@ -1931,6 +1931,9 @@ function renderFailedState(message) {
 function userFacingError(code) {
   if (code === 'MODEL_RESPONSE_TRUNCATED') return 'Ответ оборвался на стороне модели. Повтори отправку.';
   if (code === 'UPSTREAM_TIMEOUT') return 'Сервис не успел ответить. Повтори отправку.';
+  if (code === 'UPSTREAM_RATE_LIMITED') return 'Сервис временно перегружен. Сообщение можно повторить.';
+  if (code === 'UPSTREAM_UNAVAILABLE' || code === 'UPSTREAM_NETWORK_ERROR') return 'Связь с сервисом временно недоступна. Сообщение можно повторить.';
+  if (code === 'UPSTREAM_REJECTED') return 'Сервис отклонил запрос. Сообщение не добавлено в контекст; его можно повторить.';
   if (code === 'REALIZATION_VALIDATION_FAILED' || code === 'INVALID_TURN_DECISION') return 'Не удалось безопасно сформировать ответ. Сообщение можно повторить.';
   return 'Не удалось получить ответ. Сообщение не включено в следующий контекст; его можно повторить.';
 }
