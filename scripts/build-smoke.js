@@ -120,7 +120,7 @@ if (!validatorSource.includes('recent_assistant_duplicate') || !validatorSource.
 if (!apiChat.includes('recentHistory: state?.recentHistory') || !apiChat.includes('currentUserText: state?.userText')) fail('Chat API must validate Realization against current user text and recent dialogue.');
 const kernelSource = await read('lib/cognition/cognitive-kernel.js');
 if (!kernelSource.includes('самостоятельных conversational moves') || !kernelSource.includes('не дроби одну простую мысль')) fail('Kernel multi-message completeness contract is missing.');
-if (!kernelSource.includes('Встречный интерес — часть живого личного разговора') || !kernelSource.includes('oneSidedQuestionPattern=true') || !kernelSource.includes('наблюдение о перекосе, а не таймер') || !kernelSource.includes('reciprocalQuestionExpected=true')) fail('Kernel reciprocal-curiosity contract is missing or has become a scheduled-question rule.');
+if (!kernelSource.includes('Встречный интерес — часть живого личного разговора') || !kernelSource.includes('oneSidedQuestionPattern=true') || !kernelSource.includes('наблюдение о накопленном перекосе, а не таймер') || !kernelSource.includes('reciprocalQuestionExpected=true')) fail('Kernel reciprocal-curiosity contract is missing or has become a scheduled-question rule.');
 if (/responsePlan|coreDecision|conversationBrain|compatibilityResponsePlan/.test(apiChat)) fail('Chat API must not emit or reconstruct legacy decision-plan compatibility fields.');
 if (/buildTurnDelivery|\n\s*delivery,/.test(apiChat)) fail('DeliveryPlan must be the only server delivery representation.');
 if (/latestUserTarget|\breplyTarget\s*=\s*latestUserTarget/.test(apiChat)) fail('Chat API must not auto-project the latest user message into a visual reply link.');
@@ -139,6 +139,7 @@ if (kernelState.includes('brain?.obligations') || kernelState.includes('brain?.r
 if (!kernelState.includes('user_handed_initiative') || !kernelState.includes('direct_question_present')) fail('Active Perception semantic signals are incomplete.');
 if (!kernelState.includes('visualReplyCandidatesFromEvents') || !kernelState.includes('events.slice(0, -1)')) fail('KernelState must expose only earlier current-batch events as semantic visual-reply candidates.');
 if (!kernelState.includes('reciprocitySnapshot') || !kernelState.includes('oneSidedQuestionPattern')) fail('KernelState must expose observational question reciprocity without a new decision owner.');
+if (!kernelState.includes('conversationTurns(history)') || !kernelState.includes('currentUserPersonalQuestion') || !kernelState.includes('direct_personal_interest')) fail('Reciprocity must count dialogue turns and recognize direct personal-interest opportunities.');
 const perception = await read('lib/conversation-brain.js');
 if (/responseFocus|obligations|shouldClarify|ambiguity\.rule|activeScene[^\n]*goal/.test(perception)) fail('Conversation Perception must describe signals only, never prescribe response behavior.');
 const continuity = await read('lib/conversation-continuity.js');
@@ -149,11 +150,13 @@ if (/scene:\s*\{[\s\S]{0,400}goal:/.test(kernelState) || /ambiguity[^\n]*rule/.t
 const realization = await read('lib/personality/rin-realization.js');
 if (!realization.includes('ТОЛЬКО ФОРМУЛИРОВКА УЖЕ ПРИНЯТОГО РЕШЕНИЯ') || !realization.includes('Не меняй act, intent, delivery')) fail('Realization must be subordinate to frozen TurnDecision.');
 if (!realization.includes('canonicalContext: state?.lore')) fail('Realization must receive the same retrieved canonical context as the Kernel.');
+if (!realization.includes('Предыдущий отклонённый текст') || !realization.includes('Переформулировка') || !realization.includes('Исправляй ТОЛЬКО перечисленные нарушения')) fail('Realization rewrite prompt must be targeted and retain the rejected wording as repair context.');
 const turnDecision = await read('lib/cognition/turn-decision.js');
 if (!turnDecision.includes("TURN_DECISION_SCHEMA = 'rin-turn-decision-v1'") || !turnDecision.includes('applyIntentTransition') || !turnDecision.includes('decisionOpenLoopUpdates')) fail('TurnDecision must own intent/open-loop transitions.');
 if (!turnDecision.includes('Normalization is deliberately non-semantic') || /purpose:\s*'afterthought'/.test(turnDecision)) fail('TurnDecision normalization must not synthesize conversational beats.');
 const validator = await read('lib/cognition/turn-validator.js');
 if (/replacementDecision|fallbackDecision/.test(validator)) fail('Validator must not replan behavior.');
+if (!validator.includes('classifyRealizationWarnings') || !validator.includes('rewriteableWarnings') || !validator.includes('hardWarnings') || !validator.includes('segment_${index}_unfinished')) fail('Realization validator must separate hard/rewriteable failures and detect unfinished segments.');
 const stickerSelector = await read('lib/cognition/sticker-selector.js');
 if (!stickerSelector.includes('if (!sticker) return null')) fail('Sticker selector must return unresolved for unknown semantic intent.');
 if (/\|\|\s*\(config\.stickers[^\n]+warm_smile|fallbackSticker|defaultSticker/.test(stickerSelector)) fail('Sticker selector must not invent a semantic fallback asset.');
@@ -180,6 +183,8 @@ if (chat.includes('lorePayloadForApi') || /\blore:\s*lore/.test(chat)) fail('Cli
 if (!chat.includes('isInternalNonverbalMetaText(text)')) fail('Final text delivery leak barrier is missing.');
 if (!chat.includes('resumePendingAssistantDeliveries') || !chat.includes('reconcilePendingAssistantDeliveryCommitState')) fail('Pending committed delivery must reconcile semantic commit and recover after reload.');
 if (!chat.includes('await memoryJobRunner.drain();')) fail('Next request must wait for pending semantic-memory work.');
+if (!apiChat.includes('MAX_REALIZATION_REWRITES = 2') || !apiChat.includes('Rin Realization rejected; rewriting same TurnDecision') || !apiChat.includes('hard_validation_failure')) fail('Chat API must allow two targeted Realization rewrites without replanning the turn.');
+if (!chat.includes('realization recovered: request=') || !chat.includes('validationClass') || !chat.includes('rewriteableWarnings')) fail('Client debug must expose Realization recovery/failure diagnostics.');
 if (chat.includes('analyzeUserMoodImpact')) fail('Browser must not own persistent mood/relationship semantics.');
 
 const reactiveStart = chat.indexOf('async function processUserBatch');
