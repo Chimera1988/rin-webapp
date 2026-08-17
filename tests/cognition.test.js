@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildKernelState } from '../lib/cognition/kernel-state.js';
 import { normalizeTurnDecision } from '../lib/cognition/turn-decision.js';
-import { validateTurnDecisionConstraints, validateRealization } from '../lib/cognition/turn-validator.js';
+import { classifyRealizationWarnings, validateTurnDecisionConstraints, validateRealization } from '../lib/cognition/turn-validator.js';
 import { buildRealizationPrompt, parseRealization } from '../lib/personality/rin-realization.js';
 
 function validDecision(overrides={}) {
@@ -150,4 +150,25 @@ test('realization validator rejects duplicate text segments inside one multi-mes
   ]},{decision:d,realityBoundary:{}});
   assert.equal(result.passed,false);
   assert.ok(result.warnings.includes('duplicate_text_segments'));
+});
+
+
+test('realization validation separates rewriteable wording defects from hard semantic/protocol failures', () => {
+  const rewriteable=classifyRealizationWarnings(['user_feminine_address','segment_0_too_long','missing_natural_question','segment_0_unfinished']);
+  assert.deepEqual(rewriteable.hardWarnings,[]);
+  assert.deepEqual(rewriteable.rewriteableWarnings,['user_feminine_address','segment_0_too_long','missing_natural_question','segment_0_unfinished']);
+  const hard=classifyRealizationWarnings(['unsupported_rin_autobiographical_claim','segment_count_mismatch']);
+  assert.deepEqual(hard.rewriteableWarnings,[]);
+  assert.deepEqual(hard.hardWarnings,['unsupported_rin_autobiographical_claim','segment_count_mismatch']);
+});
+
+test('realization validator flags conservatively unfinished bubbles as rewriteable', () => {
+  const d=validDecision();
+  const broken=validateRealization({segments:[{purpose:'answer',text:'Я бы сказала тебе об этом, но'}]},{decision:d,realityBoundary:{}});
+  assert.equal(broken.passed,false);
+  assert.equal(broken.retryable,true);
+  assert.ok(broken.warnings.includes('segment_0_unfinished'));
+  assert.deepEqual(broken.hardWarnings,[]);
+  const complete=validateRealization({segments:[{purpose:'answer',text:'Я бы сказала тебе об этом, но пока оставлю интригу.'}]},{decision:d,realityBoundary:{}});
+  assert.equal(complete.passed,true);
 });

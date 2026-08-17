@@ -29,8 +29,19 @@ test('server public errors preserve actionable upstream and validation codes', (
   assert.deepEqual(publicError(Object.assign(new Error('429 raw details'), { code:'UPSTREAM_RATE_LIMITED' }), 'Safe failure'), {
     status:429, body:{error:'Upstream rate limited',code:'UPSTREAM_RATE_LIMITED'}
   });
-  assert.deepEqual(publicError(Object.assign(new Error('validation internals'), { code:'REALIZATION_VALIDATION_FAILED' }), 'Safe failure'), {
-    status:502, body:{error:'Response realization failed validation',code:'REALIZATION_VALIDATION_FAILED'}
+  assert.deepEqual(publicError(Object.assign(new Error('validation internals'), {
+    code:'REALIZATION_VALIDATION_FAILED',
+    warnings:['missing_natural_question'], rewriteableWarnings:['missing_natural_question'], hardWarnings:[],
+    validationClass:'rewrite_exhausted', attempts:3
+  }), 'Safe failure'), {
+    status:502, body:{
+      error:'Response realization failed validation',code:'REALIZATION_VALIDATION_FAILED',
+      warnings:['missing_natural_question'], rewriteableWarnings:['missing_natural_question'],
+      validationClass:'rewrite_exhausted', attempts:3
+    }
+  });
+  assert.deepEqual(publicError(Object.assign(new Error('parse details'), { code:'REALIZATION_PARSE_FAILED', validationClass:'hard_parse_failure', attempts:1 }), 'Safe failure'), {
+    status:502, body:{error:'Response realization returned invalid structured output',code:'REALIZATION_PARSE_FAILED',validationClass:'hard_parse_failure',attempts:1}
   });
   assert.deepEqual(publicError(Object.assign(new Error('OpenAI 400 details'), { code:'UPSTREAM_REJECTED' }), 'Safe failure'), {
     status:502, body:{error:'Upstream rejected request',code:'UPSTREAM_REJECTED'}

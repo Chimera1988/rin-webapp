@@ -245,6 +245,52 @@ test('one-sided casual questions create one contextual reciprocal-question invar
   assert.equal(allowed.passed,true);
 });
 
+
+
+test('first direct personal question is a reciprocal-curiosity opportunity when Rin has not asked recently', () => {
+  const history = [
+    { role:'assistant', kind:'text', status:'complete', requestId:'greet', turnId:'rin-greet', id:'a0', content:'Добрый вечер. Я уже выдыхаю.' },
+    { role:'user', kind:'text', status:'sent', requestId:'r-day', turnId:'user-r-day', id:'u1', content:'Добрый вечер Рин) Как твой день?' }
+  ];
+  const brain={ literalIntent:'question', activeScene:{type:'everyday'} };
+  const state=buildKernelState({requestId:'r-day',userText:'Добрый вечер Рин) Как твой день?',history,brain,memory:{conversationState:{revision:1,openLoops:[]}},conversationState:'ongoing'});
+  assert.equal(state.reciprocity.currentUserPersonalQuestion,true);
+  assert.equal(state.reciprocity.rinAskedRecently,false);
+  assert.equal(state.reciprocity.reciprocalQuestionExpected,true);
+  assert.equal(state.reciprocity.reciprocalQuestionReason,'direct_personal_interest');
+  const blocked=validateTurnDecisionConstraints(decision(),{conversationState:'ongoing',reciprocity:state.reciprocity});
+  assert.ok(blocked.warnings.includes('reciprocal_question_expected'));
+});
+
+test('reciprocity counts multi-message delivery as one assistant turn rather than multiple bubbles', () => {
+  const history = [
+    { role:'user', kind:'text', status:'complete', requestId:'u-old', turnId:'user-u-old', id:'u1', content:'Как настроение?' },
+    { role:'assistant', kind:'text', status:'complete', requestId:'a-old', turnId:'rin-a-old', id:'a1', content:'Спокойное.' },
+    { role:'assistant', kind:'text', status:'complete', requestId:'a-old', turnId:'rin-a-old', id:'a2', content:'Немного устала.' },
+    { role:'assistant', kind:'text', status:'complete', requestId:'a-old', turnId:'rin-a-old', id:'a3', content:'Но уже отдыхаю.' },
+    { role:'user', kind:'text', status:'sent', requestId:'u-now', turnId:'user-u-now', id:'u2', content:'А как твой день?' }
+  ];
+  const brain={ literalIntent:'question', activeScene:{type:'everyday'} };
+  const state=buildKernelState({requestId:'u-now',userText:'А как твой день?',history,brain,memory:{conversationState:{revision:2,openLoops:[]}},conversationState:'ongoing'});
+  assert.equal(state.reciprocity.windowTurns,3);
+  assert.equal(state.reciprocity.userTurns,2);
+  assert.equal(state.reciprocity.rinTurns,1);
+  assert.equal(state.reciprocity.userQuestionTurns,2);
+  assert.equal(state.reciprocity.reciprocalQuestionExpected,true);
+});
+
+test('proactive turns do not inherit a stale personal question as a current reciprocity obligation', () => {
+  const history=[
+    {role:'user',kind:'text',status:'complete',requestId:'old-user',turnId:'user-old',id:'u1',content:'Как твой день?'},
+    {role:'assistant',kind:'text',status:'complete',requestId:'old-rin',turnId:'rin-old',id:'a1',content:'Спокойный, уже отдыхаю.'}
+  ];
+  const brain={ literalIntent:'proactive_trigger', activeScene:{type:'everyday'} };
+  const state=buildKernelState({requestId:'proactive-now',userText:'',history,brain,memory:{conversationState:{revision:2,openLoops:[]}},conversationState:'ongoing'});
+  assert.equal(state.reciprocity.currentUserQuestion,false);
+  assert.equal(state.reciprocity.currentUserPersonalQuestion,false);
+  assert.equal(state.reciprocity.reciprocalQuestionExpected,false);
+});
+
 test('reciprocity snapshot stays neutral when Rin has already shown recent curiosity', () => {
   const history = [
     { role:'user', kind:'text', status:'complete', id:'u1', content:'Как настроение?' },

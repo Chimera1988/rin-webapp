@@ -276,6 +276,55 @@ test('realization validator may retry wording but cannot change TurnDecision', a
 
 
 
+
+test('rewriteable Realization defects get two targeted rewrites without rerunning the Cognitive Kernel', async () => {
+  const decision = baseDecision({ act:'warm_answer', question:{mode:'none',reason:null} });
+  const bodies=[];
+  const mock=installStructuredMock({
+    bodies,
+    decisions:[decision],
+    realizations:[
+      realization('Тебе тоже нравится этот вечер?'),
+      realization('А тебе правда нравится этот вечер?'),
+      realization('Мне нравится, как спокойно сейчас стало.')
+    ]
+  });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId:'realization-two-rewrites',text:'Мне нравится этот вечер.'}),res);
+    assert.equal(res.statusCode,200);
+    assert.equal(mock.counts().decision,1);
+    assert.equal(mock.counts().realization,3);
+    assert.equal(res.body.reply,'Мне нравится, как спокойно сейчас стало.');
+    assert.equal(res.body.validation.realization.attempts,3);
+    assert.equal(res.body.validation.realization.rewrites,2);
+    assert.equal(res.body.validation.realization.trace.length,3);
+    assert.deepEqual(res.body.validation.realization.trace.slice(0,2).map(item=>item.warnings),[['unplanned_question'],['unplanned_question']]);
+    assert.match(bodies[2].messages[0].content,/Тебе тоже нравится этот вечер\?/u);
+    assert.match(bodies[3].messages[0].content,/А тебе правда нравится этот вечер\?/u);
+    assert.doesNotMatch(bodies[2].messages[0].content,/прими решение заново как ТОТ ЖЕ единственный Cognitive Kernel/iu);
+  } finally { mock.restore(); }
+});
+
+test('hard Realization violation fails immediately without wasting rewrite attempts and exposes diagnostics', async () => {
+  const mock=installStructuredMock({
+    decisions:[baseDecision()],
+    realizations:[realization('Однажды я работала с клиентом по имени Аки и долго это вспоминала.')]
+  });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId:'realization-hard-stop',text:'Расскажи что-нибудь из прошлого.'}),res);
+    assert.equal(res.statusCode,502);
+    assert.equal(res.body.code,'REALIZATION_VALIDATION_FAILED');
+    assert.equal(res.body.validationClass,'hard_validation_failure');
+    assert.equal(res.body.attempts,1);
+    assert.ok(res.body.warnings.includes('unsupported_rin_autobiographical_claim'));
+    assert.ok(res.body.hardWarnings.includes('unsupported_rin_autobiographical_claim'));
+    assert.equal(mock.counts().decision,1);
+    assert.equal(mock.counts().realization,1);
+  } finally { mock.restore(); }
+});
+
 test('overlong realization is retried from the full text instead of being clipped at maxChars', async () => {
   const decision = baseDecision({ delivery: { segments: [{ type:'text', purpose:'main_reply', stickerIntent:null, maxChars:80 }] } });
   const tooLong = 'Это специально слишком длинная формулировка, которая должна быть замечена валидатором целиком, а не обрезана на восьмидесятом символе.';
@@ -290,6 +339,8 @@ test('overlong realization is retried from the full text instead of being clippe
     assert.equal(res.body.reply,'Скажу короче: я рядом и внимательно слушаю.');
     assert.match(bodies[2].messages[0].content,/segment_0_too_long/);
     assert.match(bodies[2].messages[0].content,/maxChars=80/);
+    assert.match(bodies[2].messages[0].content,/Предыдущий отклонённый текст/iu);
+    assert.match(bodies[2].messages[0].content,/специально слишком длинная формулировка/iu);
     assert.match(bodies[2].messages[0].content,/запрещено обрывать слово/iu);
   } finally { mock.restore(); }
 });
@@ -353,6 +404,34 @@ test('unresolvable sticker intent is rejected as a resource invariant and only t
     assert.equal(mock.counts().realization, 1);
     assert.equal(res.body.turnDecision.delivery.mode, 'single_text');
     assert.equal(res.body.validation.decision.passed, true);
+  } finally { mock.restore(); }
+});
+
+
+test('a first direct personal question can force one contextual reciprocal question through the same Kernel', async () => {
+  const none=baseDecision({act:'answer_about_day',question:{mode:'none',reason:null}});
+  const reciprocal=baseDecision({
+    act:'answer_about_day_and_return_interest',
+    question:{mode:'natural',reason:'reciprocal_interest:user_day'}
+  });
+  const bodies=[];
+  const mock=installStructuredMock({
+    bodies,
+    decisions:[none,reciprocal],
+    realizations:[realization('День спокойный, немного устала. А ты сегодня успел хоть немного выдохнуть?')]
+  });
+  try {
+    const res=createRes();
+    await chat.default(userRequest({requestId:'first-personal-reciprocity',text:'Добрый вечер Рин) Как твой день?'}),res);
+    assert.equal(res.statusCode,200);
+    assert.equal(mock.counts().decision,2);
+    assert.equal(mock.counts().realization,1);
+    assert.equal(res.body.cognition.reciprocity.currentUserPersonalQuestion,true);
+    assert.equal(res.body.cognition.reciprocity.reciprocalQuestionExpected,true);
+    assert.equal(res.body.turnDecision.question.mode,'natural');
+    assert.equal(res.body.turnDecision.question.reason,'reciprocal_interest:user_day');
+    assert.match(res.body.reply,/А ты сегодня/iu);
+    assert.match(bodies[1].messages[0].content,/reciprocal_question_expected/iu);
   } finally { mock.restore(); }
 });
 
@@ -434,7 +513,10 @@ test('server selector rotates away from the immediately previous asset while pre
 });
 
 test('ordinary single-message response does not emit a visual reply link', async () => {
-  const mock=installStructuredMock({ decisions:[baseDecision()], realizations:[realization('Работаю над переводом.)')] });
+  const mock=installStructuredMock({
+    decisions:[baseDecision({question:{mode:'natural',reason:'reciprocal_interest:user_activity'}})],
+    realizations:[realization('Работаю над переводом. А ты чем сейчас занят?')]
+  });
   try {
     const res=createRes();
     await chat.default(userRequest({requestId:'no-visual-quote',text:'Чем занимаешься?'}),res);
