@@ -19,7 +19,7 @@ export function semanticStickerText(sticker = {}) {
 export function validateStickerConfig(config, availablePaths = null) {
   const errors = [];
   if (!config || config._schema !== STICKER_SCHEMA) errors.push(`schema must be ${STICKER_SCHEMA}`);
-  if (!Array.isArray(config?.stickers) || config.stickers.length !== 54) errors.push('manifest must contain exactly 54 stickers');
+  if (!Array.isArray(config?.stickers) || config.stickers.length !== 60) errors.push('manifest must contain exactly 60 stickers');
   const ids = new Set();
   const srcs = new Set();
   for (const sticker of config?.stickers || []) {
