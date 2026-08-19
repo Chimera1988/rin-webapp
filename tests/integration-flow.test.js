@@ -199,7 +199,7 @@ test('failed turn remains excluded and retry becomes current without corrupting 
   assert.deepEqual(toApiHistory(history,'retry').map(item=>item.id), ['u2','a2','u1']);
 });
 
-test('40-turn sticker flow respects 30% rolling budget, survives history reload and rotates same-intent assets', async () => {
+test('40-turn sticker flow respects 30% rolling budget, survives history reload and preserves exact semantic intent', async () => {
   const storage = new MemoryStorage();
   let history = [];
   const stickerTurns = [];
@@ -214,9 +214,8 @@ test('40-turn sticker flow respects 30% rolling budget, survives history reload 
     const turnId=`sticker-flow-${turn}`;
     history.push(createChatMessage({ role:'assistant',kind:'text',status:'complete',id:`sf-text-${turn}`,requestId:`sf-${turn}`,turnId,content:`ответ ${turn}` }));
     if (state.available) {
-      const selected=await selectStickerForIntent('warmth',{
-        delivery:'after_text',scene:'everyday',intensity:45,
-        recentStickerIds:state.recentAssetIds,rotationSeed:`sf-${turn}`
+      const selected=await selectStickerForIntent('tender_soft_smile',{
+        delivery:'after_text',scene:'everyday',intensity:45
       });
       assert.ok(selected);
       stickerTurns.push(turn);
@@ -237,9 +236,8 @@ test('40-turn sticker flow respects 30% rolling budget, survives history reload 
     const used=stickerTurns.filter(turn=>turn>=start && turn<start+10).length;
     assert.ok(used<=3,`window ${start}-${start+9} has ${used} sticker turns`);
   }
-  for (let index=1; index<selectedIds.length; index+=1) {
-    assert.notEqual(selectedIds[index],selectedIds[index-1],`asset repeated at sticker index ${index}`);
-  }
+  assert.ok(selectedIds.every(id => id === 'tender_soft_smile'));
+
   const reconstructed=await buildStickerState({history:toApiHistory(history),preference:{mode:'smart',probability:30,safeMode:true},scene:'everyday'});
   assert.ok(reconstructed.recentAssetIds.length>0);
   assert.equal(reconstructed.schema,'rin-sticker-state-v1');

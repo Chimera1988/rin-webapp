@@ -11,8 +11,8 @@ test('a structured sticker stays a structured conversation event with semantic m
     kind: 'sticker',
     status: 'complete',
     sticker: {
-      id: 'mild_jealousy',
-      src: '/stickers/mild_jealousy.webp',
+      id: 'jealousy_mild',
+      src: '/stickers/jealousy_mild.webp',
       meaning: 'лёгкая ревность',
       cause: 'упоминание другой девушки'
     }

@@ -109,7 +109,7 @@ test('affective persistence has one snapshot writer path', async () => {
 test('sticker selection resolves assets but never invents semantic fallback', async () => {
   const selector = await read('lib/cognition/sticker-selector.js');
   const client = await read('public/lib/stickers-v7.js');
-  assert.doesNotMatch(selector, /warm_smile[^\n]*fallback|fallback[^\n]*warm_smile/i);
+  assert.doesNotMatch(selector, /fallbackSticker|defaultSticker|aliasRank|rotationSeed|recentStickerIds/i);
   assert.match(selector, /return null/);
   assert.doesNotMatch(client, /decideSticker|decidePlannedSticker|deriveStickerSignals|Math\.random/);
 });

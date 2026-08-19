@@ -36,10 +36,10 @@ test('reply snapshots survive schema v6 storage and API transport', () => {
 });
 
 test('sticker reply snapshot stays visual and does not expose semantic cause', () => {
-  const sticker=createChatMessage({role:'assistant',kind:'sticker',status:'complete',id:'s1',content:'[Невербальный жест Рин: ревность; причина: другая девушка]',sticker:{id:'mild_jealousy',src:'/stickers/mild_jealousy.webp',meaning:'лёгкая ревность',cause:'другая девушка'}});
+  const sticker=createChatMessage({role:'assistant',kind:'sticker',status:'complete',id:'s1',content:'[Невербальный жест Рин: ревность; причина: другая девушка]',sticker:{id:'jealousy_mild',src:'/stickers/jealousy_mild.webp',meaning:'лёгкая ревность',cause:'другая девушка'}});
   const snapshot=createReplySnapshot(sticker);
   assert.equal(snapshot.excerpt,'Стикер');
-  assert.equal(snapshot.stickerId,'mild_jealousy');
+  assert.equal(snapshot.stickerId,'jealousy_mild');
   assert.doesNotMatch(JSON.stringify(snapshot),/ревност|другая девушка/iu);
 });
 

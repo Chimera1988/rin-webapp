@@ -21,7 +21,7 @@ test('smart 30% is a hard rolling budget: a greedy caller can spend only three s
     const state = await buildStickerState({ history, preference: smart30, scene: 'everyday', userText: 'обычная реплика' });
     const sendSticker = state.available;
     if (sendSticker) usedAt.push(turn);
-    history.push(...assistantTurn(turn, { sticker: sendSticker ? (turn % 2 ? 'warm_smile' : 'smile') : null }));
+    history.push(...assistantTurn(turn, { sticker: sendSticker ? (turn % 2 ? 'tender_soft_smile' : 'greeting_soft') : null }));
   }
   assert.deepEqual(usedAt, [1, 4, 7]);
   const state = await buildStickerState({ history, preference: smart30, scene: 'everyday', userText: 'ещё сообщение' });
@@ -35,21 +35,21 @@ test('cooldown is reconstructed from server-visible assistant turn history, not 
     ...assistantTurn(1),
     ...assistantTurn(2),
     ...assistantTurn(3),
-    ...assistantTurn(4, { sticker: 'warm_smile' })
+    ...assistantTurn(4, { sticker: 'tender_soft_smile' })
   ];
   const state = await buildStickerState({ history, preference: smart30, scene: 'everyday', userText: 'обычная реплика' });
   assert.equal(state.turnsSinceSticker, 0);
   assert.equal(state.available, false);
   assert.equal(state.reason, 'cooldown');
-  assert.deepEqual(state.recentAssetIds.slice(0, 1), ['warm_smile']);
+  assert.deepEqual(state.recentAssetIds.slice(0, 1), ['tender_soft_smile']);
 });
 
 test('explicit reciprocal kiss can shorten cooldown only when rolling budget still has room', async () => {
   const history = [
-    ...assistantTurn(1, { sticker: 'warm_smile' }),
+    ...assistantTurn(1, { sticker: 'tender_soft_smile' }),
     ...assistantTurn(2),
     ...assistantTurn(3),
-    ...assistantTurn(4, { sticker: 'smile' })
+    ...assistantTurn(4, { sticker: 'greeting_soft' })
   ];
   const neutral = await buildStickerState({ history, preference: smart30, scene: 'romance', userText: 'спасибо)' });
   assert.equal(neutral.available, false);
@@ -61,13 +61,13 @@ test('explicit reciprocal kiss can shorten cooldown only when rolling budget sti
   assert.equal(reciprocal.reason, 'rolling_budget_exhausted');
 
   const moreRoom = [
-    ...assistantTurn(1, { sticker: 'warm_smile' }),
+    ...assistantTurn(1, { sticker: 'tender_soft_smile' }),
     ...assistantTurn(2),
     ...assistantTurn(3),
     ...assistantTurn(4),
     ...assistantTurn(5),
     ...assistantTurn(6),
-    ...assistantTurn(7, { sticker: 'kiss' })
+    ...assistantTurn(7, { sticker: 'kiss_soft_tender' })
   ];
   const neutralWithRoom = await buildStickerState({ history: moreRoom, preference: smart30, scene: 'romance', userText: 'спасибо)' });
   assert.equal(neutralWithRoom.available, false);
@@ -85,7 +85,7 @@ test('off, zero-frequency, safe serious scene and always mode have distinct dete
   const safe = await buildStickerState({ preference: { mode:'smart', probability:100, safeMode:true }, scene:'practical_task' });
   assert.equal(safe.available, false);
   assert.equal(safe.reason, 'safe_mode_serious_scene');
-  const always = await buildStickerState({ history:[...assistantTurn(1,{sticker:'warm_smile'})], preference:{mode:'always',probability:0,safeMode:false}, scene:'everyday' });
+  const always = await buildStickerState({ history:[...assistantTurn(1,{sticker:'tender_soft_smile'})], preference:{mode:'always',probability:0,safeMode:false}, scene:'everyday' });
   assert.equal(always.available, true);
   assert.equal(always.reason, 'always_available');
   assert.equal(always.limitStickerTurns, null);
@@ -93,11 +93,11 @@ test('off, zero-frequency, safe serious scene and always mode have distinct dete
 
 test('multi-segment assistant response counts as one sticker turn and preserves exact recent asset order', async () => {
   const history = [
-    ...assistantTurn(1, { sticker: 'warm_smile' }),
+    ...assistantTurn(1, { sticker: 'tender_soft_smile' }),
     ...assistantTurn(2),
-    ...assistantTurn(3, { sticker: 'kiss' })
+    ...assistantTurn(3, { sticker: 'kiss_soft_tender' })
   ];
   const state = await buildStickerState({ history, preference:{mode:'always',probability:100,safeMode:false}, scene:'romance' });
   assert.equal(state.usedStickerTurns, 2);
-  assert.deepEqual(state.recentAssetIds.slice(0, 2), ['kiss', 'warm_smile']);
+  assert.deepEqual(state.recentAssetIds.slice(0, 2), ['kiss_soft_tender', 'tender_soft_smile']);
 });

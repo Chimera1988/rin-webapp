@@ -22,9 +22,10 @@ test('strict TurnDecision schema eliminates free-form sticker intents and imposs
   assert.deepEqual(delivery.required, ['segments']);
   assert.equal('mode' in delivery.properties, false);
   const segment = delivery.properties.segments.items.properties;
-  assert.ok(segment.stickerIntent.enum.includes('kiss'));
-  assert.ok(segment.stickerIntent.enum.includes('tender'));
-  assert.equal(segment.stickerIntent.enum.includes('affectionate_kiss'), false);
+  assert.ok(segment.stickerIntent.enum.includes('kiss_goodnight'));
+  assert.ok(segment.stickerIntent.enum.includes('tender_safe_with_you'));
+  assert.equal(segment.stickerIntent.enum.includes('kiss'), false);
+  assert.equal(segment.stickerIntent.enum.includes('tender'), false);
   assert.deepEqual(normal.schema.properties.intentTransition.properties.operation.enum, ['none', 'activate']);
 
   const stickerOff = buildTurnDecisionJsonSchema({ activeIntent: null, conversationState: 'ongoing', allowStickers: false });
@@ -52,7 +53,7 @@ test('kernel state reads conversational open loops only from ConversationState a
   const state = buildKernelState({
     requestId: 'r1', userText: 'А что это за стикер?',
     history: [
-      { id: 's1', role: 'assistant', kind: 'sticker', status: 'complete', content: '[Невербальный жест Рин: поцелуй]', sticker: { id: 'kiss', meaning: 'поцелуй', cause: 'тёплое прощание' } },
+      { id: 's1', role: 'assistant', kind: 'sticker', status: 'complete', content: '[Невербальный жест Рин: поцелуй]', sticker: { id: 'kiss_goodnight', meaning: 'нежный поцелуй на ночь', cause: 'тёплое прощание' } },
       { id: 'u1', role: 'user', kind: 'text', status: 'sent', requestId: 'r1', content: 'А что это за стикер?' }
     ],
     memory: {
@@ -66,11 +67,11 @@ test('kernel state reads conversational open loops only from ConversationState a
   assert.match(state.openLoops[0].subject, /поцелу/iu);
   const sticker = state.recentHistory.find(item => item.kind === 'sticker');
   assert.equal(sticker.content, null);
-  assert.equal(sticker.sticker.meaning, 'поцелуй');
+  assert.equal(sticker.sticker.meaning, 'нежный поцелуй на ночь');
 });
 
 test('decision validator enforces protocol without choosing a replacement behavior', () => {
-  const withSticker = decision({ delivery: { mode: 'sticker_only', segments: [{ type: 'sticker', purpose: 'kiss', stickerIntent: 'kiss', maxChars: 20 }] } });
+  const withSticker = decision({ delivery: { mode: 'sticker_only', segments: [{ type: 'sticker', purpose: 'kiss', stickerIntent: 'kiss_soft_tender', maxChars: 20 }] } });
   const blocked = validateTurnDecisionConstraints(withSticker, { client: { sticker: { mode: 'off' } } });
   assert.equal(blocked.passed, false);
   assert.deepEqual(blocked.warnings, ['sticker_disabled_by_user']);
@@ -163,7 +164,7 @@ test('TurnDecision normalization derives structural delivery mode but never inve
 
 test('DeliveryPlan sticker metadata follows the kernel-authored segment order', async () => {
   const before = decision({ delivery:{ segments:[
-    {type:'sticker',purpose:'gesture',stickerIntent:'kiss',maxChars:20},
+    {type:'sticker',purpose:'gesture',stickerIntent:'kiss_soft_tender',maxChars:20},
     {type:'text',purpose:'reply',stickerIntent:null,maxChars:120}
   ] } });
   const beforePlan = await buildDeliveryPlan({ requestId:'r-before-sticker', decision:before, realization:{ segments:[{text:'Поймала 😏'}] } });
@@ -172,7 +173,7 @@ test('DeliveryPlan sticker metadata follows the kernel-authored segment order', 
 
   const after = decision({ delivery:{ segments:[
     {type:'text',purpose:'reply',stickerIntent:null,maxChars:120},
-    {type:'sticker',purpose:'gesture',stickerIntent:'kiss',maxChars:20}
+    {type:'sticker',purpose:'gesture',stickerIntent:'kiss_soft_tender',maxChars:20}
   ] } });
   const afterPlan = await buildDeliveryPlan({ requestId:'r-after-sticker', decision:after, realization:{ segments:[{text:'Поймала 😏'}] } });
   assert.equal(afterPlan.segments[1].semantic.delivery, 'after_text');

@@ -51,12 +51,12 @@ test('context pruning enforces one documented snapshot boundary', () => {
 test('assistant meta leaks are excluded while structured sticker context is preserved', () => {
   const selected = selectModelHistory([
     { role: 'assistant', kind: 'text', status: 'complete', id: 'leak', content: '[Невербальный жест Рин: лёгкая улыбка; причина: поддержка]' },
-    { role: 'assistant', kind: 'sticker', status: 'complete', id: 'sticker', content: '[Невербальный жест Рин: лёгкая улыбка; причина: поддержка]', sticker: { id: 'smile', src: '/stickers/smile.webp', meaning: 'лёгкая улыбка', cause: 'поддержка' } },
+    { role: 'assistant', kind: 'sticker', status: 'complete', id: 'sticker', content: '[Невербальный жест Рин: лёгкая улыбка; причина: поддержка]', sticker: { id: 'tender_soft_smile', src: '/stickers/tender_soft_smile.webp', meaning: 'лёгкая улыбка', cause: 'поддержка' } },
     { role: 'user', kind: 'text', status: 'complete', id: 'user', content: 'Ты чего?' }
   ]);
   assert.deepEqual(selected.map(item => item.id), ['sticker', 'user']);
   assert.equal(selected[0].kind, 'sticker');
-  assert.equal(selected[0].sticker.id, 'smile');
+  assert.equal(selected[0].sticker.id, 'tender_soft_smile');
 });
 
 
@@ -64,6 +64,6 @@ test('malformed sticker events are rejected instead of persisting an empty bubbl
   for (const src of ['javascript:alert(1)', 'https://evil.example/x.webp', '/other/x.webp', '']) {
     assert.equal(normalizeChatMessage({ role: 'assistant', kind: 'sticker', status: 'complete', content: 'gesture', sticker: { src } }), null, src);
   }
-  const valid = normalizeChatMessage({ role: 'assistant', kind: 'sticker', status: 'complete', sticker: { src: '/stickers/smile.webp' } });
-  assert.equal(valid?.sticker?.src, '/stickers/smile.webp');
+  const valid = normalizeChatMessage({ role: 'assistant', kind: 'sticker', status: 'complete', sticker: { src: '/stickers/tender_soft_smile.webp' } });
+  assert.equal(valid?.sticker?.src, '/stickers/tender_soft_smile.webp');
 })

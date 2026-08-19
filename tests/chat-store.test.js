@@ -19,13 +19,13 @@ test('typed voice and sticker messages survive persistence and reload', () => {
   const storage = new MemoryStorage();
   const history = [
     createChatMessage({ role: 'assistant', kind: 'voice', content: 'голосовой ответ', id: 'voice' }),
-    createChatMessage({ role: 'assistant', kind: 'sticker', content: 'жест', id: 'sticker', sticker: { src: '/stickers/smile.webp', utterance: 'м-м' } })
+    createChatMessage({ role: 'assistant', kind: 'sticker', content: 'жест', id: 'sticker', sticker: { src: '/stickers/tender_soft_smile.webp', utterance: 'м-м' } })
   ];
   assert.equal(saveChatHistory(history, storage), true);
   const loaded = loadChatHistory(storage);
   assert.equal(loaded[0].kind, 'voice');
   assert.equal(loaded[1].kind, 'sticker');
-  assert.equal(loaded[1].sticker.src, '/stickers/smile.webp');
+  assert.equal(loaded[1].sticker.src, '/stickers/tender_soft_smile.webp');
 });
 
 
@@ -142,7 +142,7 @@ test('stored assistant meta leaks are removed during history migration', () => {
   const storage = new MemoryStorage({
     [CHAT_STORAGE_KEY]: JSON.stringify([
       { role: 'assistant', kind: 'text', status: 'complete', id: 'leak', content: '[Невербальный жест Рин: кивок; причина: поддержка]', ts: 1 },
-      { role: 'assistant', kind: 'sticker', status: 'complete', id: 'sticker', content: '[Невербальный жест Рин: кивок; причина: поддержка]', sticker: { id: 'agreement', src: '/stickers/agreement.webp', meaning: 'кивок' }, ts: 2 },
+      { role: 'assistant', kind: 'sticker', status: 'complete', id: 'sticker', content: '[Невербальный жест Рин: кивок; причина: поддержка]', sticker: { id: 'agreement_approval', src: '/stickers/agreement_approval.webp', meaning: 'кивок' }, ts: 2 },
       { role: 'user', kind: 'text', status: 'complete', id: 'user', content: 'Ага', ts: 3 }
     ])
   });
