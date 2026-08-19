@@ -1,1 +1,1 @@
-export const RIN_RELEASE_ID = '2026-08-17-rin-dialogue-resilience-v2';
+export const RIN_RELEASE_ID = '2026-08-19-rin-sticker-semantics-v3';
