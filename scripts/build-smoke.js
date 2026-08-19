@@ -36,7 +36,7 @@ const activeSources = [
   'api/chat.js', 'api/memory.js', 'api/tts.js', 'api/weather.js',
   'lib/server/http.js', 'lib/server/canonical-profile.js', 'lib/server/canon-retrieval.js',
   'lib/cognition/kernel-state.js', 'lib/cognition/cognitive-kernel.js', 'lib/cognition/turn-decision.js',
-  'lib/cognition/turn-validator.js', 'lib/cognition/sticker-catalog.js', 'lib/cognition/sticker-state.js', 'lib/cognition/sticker-intents.js', 'lib/cognition/sticker-selector.js', 'lib/cognition/emotional-state.js',
+  'lib/cognition/turn-validator.js', 'lib/cognition/sticker-catalog.js', 'lib/cognition/sticker-state.js', 'lib/cognition/sticker-selector.js', 'lib/cognition/emotional-state.js',
   'lib/conversation-brain.js', 'lib/conversation-continuity.js', 'lib/cognition/dialogue-state.js',
   'lib/cognition/memory-retrieval.js', 'lib/cognition/reality-boundary.js', 'lib/personality/rin-realization.js',
   'public/chat.js', 'public/js/chat_store.js', 'public/js/delivery_scheduler.js', 'public/js/presence_controller.js',
@@ -159,7 +159,7 @@ if (/replacementDecision|fallbackDecision/.test(validator)) fail('Validator must
 if (!validator.includes('classifyRealizationWarnings') || !validator.includes('rewriteableWarnings') || !validator.includes('hardWarnings') || !validator.includes('segment_${index}_unfinished')) fail('Realization validator must separate hard/rewriteable failures and detect unfinished segments.');
 const stickerSelector = await read('lib/cognition/sticker-selector.js');
 if (!stickerSelector.includes('if (!sticker) return null')) fail('Sticker selector must return unresolved for unknown semantic intent.');
-if (/\|\|\s*\(config\.stickers[^\n]+warm_smile|fallbackSticker|defaultSticker/.test(stickerSelector)) fail('Sticker selector must not invent a semantic fallback asset.');
+if (/fallbackSticker|defaultSticker|aliasRank|rotationSeed|recentStickerIds/.test(stickerSelector)) fail('Sticker selector must not invent aliases, rotation or fallback assets.');
 if (!stickerSelector.includes('Delivery semantics belong to TurnDecision')) fail('Sticker selector ownership contract is not explicit.');
 const canonRetriever = await read('lib/server/canon-retrieval.js');
 if (!canonRetriever.includes('rin_backstory.json') || !canonRetriever.includes('rin_memories.json') || !canonRetriever.includes('rin_prompt_profile.json') || !canonRetriever.includes("source: 'server_canon_store'")) fail('Server Canon Store retrieval is incomplete.');
@@ -233,19 +233,18 @@ if (/loadLoreData/.test(chat)) fail('Chat client must not call removed legacy lo
 if (!chat.includes('module?.getSchedule')) fail('Chat client must validate the schedule-only lore API.');
 if (!chat.includes('replyLinkFromTarget(data?.visualReply)')) fail('Client must render only explicit semantic visualReply metadata from the server.');
 if (/defaultInReplyTo|replyLinkFromTarget\(data\?\.replyTarget\)/.test(chat)) fail('Client must not auto-quote the latest user message.');
-const stickerIntentContract = await read('lib/cognition/sticker-intents.js');
-if (!stickerIntentContract.includes('STICKER_INTENT_VALUES') || !stickerIntentContract.includes('tender_kiss')) fail('Finite semantic sticker vocabulary is missing.');
 const stickerStateSource = await read('lib/cognition/sticker-state.js');
 if (!stickerStateSource.includes('rollingWindowTurns') || !stickerStateSource.includes('rolling_budget_exhausted') || !stickerStateSource.includes('recentAssetIds')) fail('StickerState rolling frequency contract is incomplete.');
 if (/Math\.random|selectStickerForIntent/.test(stickerStateSource)) fail('StickerState may constrain availability but must not select concrete assets or use random vetoes.');
 const stickerCatalogSource = await read('lib/cognition/sticker-catalog.js');
-if (!stickerCatalogSource.includes('stickerCatalogDefaults') || !stickerCatalogSource.includes('stickerCatalogItems')) fail('Neutral sticker catalog owner is missing.');
+if (!stickerCatalogSource.includes('stickerCatalogDefaults') || !stickerCatalogSource.includes('stickerCatalogItems') || !stickerCatalogSource.includes('STICKER_INTENT_VALUES') || !stickerCatalogSource.includes('stickerIntentGuideText')) fail('Sticker manifest must be the one semantic catalog owner.');
+if (await exists('lib/cognition/sticker-intents.js')) fail('Obsolete duplicate sticker-intent vocabulary must be physically absent.');
 const stickerSelectorSource = await read('lib/cognition/sticker-selector.js');
-if (!stickerSelectorSource.includes('semantic_rank_with_recent_rotation') || !stickerSelectorSource.includes('recentStickerIds')) fail('Sticker selector must rotate semantically equivalent assets using recent history.');
-if (/Math\.random/.test(stickerSelectorSource)) fail('Sticker asset rotation must be deterministic, not random.');
-if (!kernel.includes('stickerState?.available === true') || /frequencyPreference=/.test(kernel)) fail('Kernel must consume hard StickerState availability rather than interpret probability as a prompt preference.');
+if (!stickerSelectorSource.includes("strategy: 'exact_semantic_intent'") || !stickerSelectorSource.includes('exact semantic-intent -> asset lookup')) fail('Sticker selector must resolve exact semantic intents without aliases or rotation.');
+if (/Math\.random|aliasRank|rotationSeed|recentStickerIds/.test(stickerSelectorSource)) fail('Exact sticker selector must not rotate or alias semantic intents.');
+if (!kernel.includes('stickerState?.available === true') || !kernel.includes('stickerIntentGuideText') || !kernel.includes('ТОЧНАЯ СЕМАНТИКА СТИКЕРОВ') || /frequencyPreference=/.test(kernel)) fail('Kernel must consume hard StickerState availability and the exact manifest-derived semantic guide.');
 if (!kernelState.includes('stickerState: state.stickerState')) fail('Compact KernelState must expose StickerState for live diagnostics.');
-if (!apiChat.includes('buildStickerState') || !apiChat.includes('recentStickerIds: stickerState?.recentAssetIds')) fail('Chat API must derive StickerState from server history and pass recent assets to selector.');
+if (!apiChat.includes('buildStickerState') || !apiChat.includes('selectStickerForIntent(plan.stickerIntent')) fail('Chat API must derive StickerState availability and materialize the exact Kernel sticker intent.');
 if (!chat.includes("raw === '' ? true : raw === '1'")) fail('Fresh sticker safe-mode must default to enabled.');
 const turnDecisionContract = await read('lib/cognition/turn-decision.js');
 if (!turnDecisionContract.includes('buildTurnDecisionJsonSchema') || !turnDecisionContract.includes('deriveDeliveryMode')) fail('TurnDecision must use state-constrained schema and structural delivery projection.');
@@ -275,9 +274,9 @@ const stickerConfig = JSON.parse(await read('public/data/stickers-v7.json'));
 const stickerAssets = new Set((await readdir(path.join(root, 'public/stickers'))).map(file => `/stickers/${file}`));
 const stickerValidation = stickerContract.validateStickerConfig(stickerConfig, stickerAssets);
 if (!stickerValidation.ok) fail(`Sticker manifest invalid: ${stickerValidation.errors.join('; ')}`);
-if (stickerAssets.size !== 60) fail(`Expected 60 sticker assets, found ${stickerAssets.size}.`);
+if (stickerAssets.size !== 100) fail(`Expected 100 sticker assets, found ${stickerAssets.size}.`);
 if (Number(stickerConfig.defaults?.rollingWindowTurns) !== 10 || Number(stickerConfig.defaults?.minGapAssistantTurns) !== 2) fail('Sticker manifest rolling frequency defaults are not canonical.');
-if (stickerConfig.defaults?.semanticContract !== 'sticker-emotion-v2') fail('Sticker manifest semantic contract must be sticker-emotion-v2.');
+if (stickerConfig.defaults?.semanticContract !== 'sticker-emotion-v3' || stickerConfig.defaults?.selectionMode !== 'exact_semantic_intent') fail('Sticker manifest must use exact sticker-emotion-v3 semantics.');
 
 const scheduleConfig = JSON.parse(await read('public/data/rin_schedule.json'));
 if (scheduleConfig._schema !== 'rin-schedule-v2' || scheduleConfig.probability_semantics !== 'one_draw_per_window_when_eligible') fail('Schedule v2 must define one-draw-per-window probability semantics.');

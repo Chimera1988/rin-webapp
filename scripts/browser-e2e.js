@@ -86,8 +86,8 @@ const server = createServer(async (req, res) => {
       const turnId = `rin-turn-${body.requestId}`;
       const deliveryPlan = stickerOnly ? {
         schema: 'rin-delivery-plan-v1', turnId, mode: 'sticker_only', fallbackText: '😘',
-        segments: [{ id: `${turnId}-seg-1`, segmentIndex: 0, purpose: 'kiss', type: 'sticker', stickerIntent: 'kiss',
-          sticker: { id: 'kiss', src: '/stickers/kiss.webp', emotion: 'kiss', meaning: 'поцелуй', utterance: null },
+        segments: [{ id: `${turnId}-seg-1`, segmentIndex: 0, purpose: 'kiss', type: 'sticker', stickerIntent: 'kiss_soft_tender',
+          sticker: { id: 'kiss_soft_tender', src: '/stickers/kiss_soft_tender.webp', emotion: 'kiss', meaning: 'мягкий нежный поцелуй', utterance: null },
           semantic: { delivery: 'sticker_only', cause: 'ответ на поцелуй пользователя', intensity: 90, canExplain: true, expiresAfterTurns: 2 }
         }]
       } : multiMessage ? {
@@ -128,7 +128,7 @@ const server = createServer(async (req, res) => {
       const turnDecision = {
         schema: 'rin-turn-decision-v1', act, focus: reply, stance: 'e2e', question: { mode: /\?$/.test(reply) ? 'natural' : 'none', reason: null },
         replyLink: { targetEventId: plannedTarget?.id || null, reason: plannedTarget ? 'disambiguate earlier event in current batch' : null },
-        delivery: stickerOnly ? { mode:'sticker_only', segments:[{ type:'sticker', purpose:'kiss', stickerIntent:'kiss', maxChars:20 }] }
+        delivery: stickerOnly ? { mode:'sticker_only', segments:[{ type:'sticker', purpose:'kiss', stickerIntent:'kiss_soft_tender', maxChars:20 }] }
           : multiMessage ? { mode:'multi_message', segments:[
               { type:'text', purpose:'reaction', stickerIntent:null, maxChars:180 },
               { type:'text', purpose:'afterthought', stickerIntent:null, maxChars:180 }
@@ -436,9 +436,12 @@ try {
     count: Array.isArray(config?.stickers) ? config.stickers.length : 0,
     ids: (config?.stickers || []).map(item => item.id)
   }))`);
-  assert(stickerCatalogBrowser.count === 60, `browser sticker manifest must expose 60 assets, got ${stickerCatalogBrowser.count}`);
-  for (const id of ['blushing','flattered','flirty_1','playful_1','shy_1','smitten']) {
+  assert(stickerCatalogBrowser.count === 100, `browser sticker manifest must expose 100 assets, got ${stickerCatalogBrowser.count}`);
+  for (const id of ['tender_blushing','flirt_flattered_touch','flirt_secret_wink','playful_mischief','tender_shy_warmth','smitten','kiss_soft_tender']) {
     assert(stickerCatalogBrowser.ids.includes(id), `browser sticker manifest is missing ${id}`);
+  }
+  for (const legacy of ['kiss','tender','warmth','smile','blushing','flattered']) {
+    assert(!stickerCatalogBrowser.ids.includes(legacy), `browser sticker manifest still exposes legacy semantic id ${legacy}`);
   }
   phase('settings and viewport complete');
   const send = text => cdp.evaluate(`(() => {
