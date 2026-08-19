@@ -1,9 +1,6 @@
 export const STICKER_SCHEMA = 'v7';
 export const STICKER_STORE_KEY = 'rin-stickers-v7-stats';
 export const STICKER_DELIVERIES = Object.freeze(['sticker_only', 'before_text', 'after_text']);
-export const STICKER_MODES = Object.freeze(['smart', 'always', 'off']);
-export const STICKER_TIERS = Object.freeze(['early', 'warm', 'close']);
-export const SERIOUS_SCENES = new Set(['practical_task', 'medical', 'financial', 'legal', 'crisis', 'conflict_repair']);
 
 const clean = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 export const stickerIdFromSrc = src => clean(src).split('/').pop()?.replace(/\.webp$/i, '') || '';
@@ -19,7 +16,9 @@ export function semanticStickerText(sticker = {}) {
 export function validateStickerConfig(config, availablePaths = null) {
   const errors = [];
   if (!config || config._schema !== STICKER_SCHEMA) errors.push(`schema must be ${STICKER_SCHEMA}`);
-  if (!Array.isArray(config?.stickers) || config.stickers.length !== 60) errors.push('manifest must contain exactly 60 stickers');
+  if (config?.defaults?.semanticContract !== 'sticker-emotion-v3') errors.push('semanticContract must be sticker-emotion-v3');
+  if (config?.defaults?.selectionMode !== 'exact_semantic_intent') errors.push('selectionMode must be exact_semantic_intent');
+  if (!Array.isArray(config?.stickers) || config.stickers.length !== 100) errors.push('manifest must contain exactly 100 stickers');
   const ids = new Set();
   const srcs = new Set();
   for (const sticker of config?.stickers || []) {
@@ -28,16 +27,13 @@ export function validateStickerConfig(config, availablePaths = null) {
     ids.add(id);
     if (!isAllowedStickerSrc(sticker.src) || srcs.has(sticker.src)) errors.push(`invalid or duplicate src: ${sticker.src}`);
     srcs.add(sticker.src);
+    if (id && stickerIdFromSrc(sticker.src) !== id) errors.push(`${id}: src basename must equal semantic id`);
     if (availablePaths && !availablePaths.has(sticker.src)) errors.push(`missing asset: ${sticker.src}`);
+    if (!clean(sticker.family, 80)) errors.push(`${id}: family is required`);
     if (!clean(sticker.emotion, 80)) errors.push(`${id}: emotion is required`);
     if (!clean(sticker.meaning, 240)) errors.push(`${id}: meaning is required`);
-    if (!Array.isArray(sticker.intents) || sticker.intents.length === 0) errors.push(`${id}: intents must contain at least one canonical semantic intent`);
-    if (!Array.isArray(sticker.responseModes) || !sticker.responseModes.includes('sticker_only')) errors.push(`${id}: sticker_only mode is required`);
-    for (const mode of sticker.responseModes || []) if (!STICKER_DELIVERIES.includes(mode)) errors.push(`${id}: unknown response mode ${mode}`);
-    if (!sticker.followUp || typeof sticker.followUp.canExplain !== 'boolean') errors.push(`${id}: followUp.canExplain is required`);
-    if (!sticker.reachability?.userText) errors.push(`${id}: reachability scenario is required`);
-    if (sticker.requireAll && !Array.isArray(sticker.requireAll)) errors.push(`${id}: requireAll must be an array`);
-    if (sticker.requireAny && !Array.isArray(sticker.requireAny)) errors.push(`${id}: requireAny must be an array`);
+    if (!clean(sticker.useWhen, 500)) errors.push(`${id}: useWhen is required`);
+    if ('intents' in sticker) errors.push(`${id}: intents is obsolete; id is the canonical semantic intent`);
   }
   return { ok: errors.length === 0, errors };
 }
