@@ -5,2464 +5,809 @@
     "minGapAssistantTurns": 2,
     "explicitGestureMinGapAssistantTurns": 0,
     "recentAssetWindow": 8,
-    "sceneFactor": {
-      "greeting": 0.48,
-      "everyday": 0.65,
-      "practical_task": 0.28,
-      "reflective": 0.72,
-      "emotional_support": 0.82,
-      "playful_flirt": 1.15,
-      "romance": 1.22,
-      "farewell": 0.72,
-      "conflict_repair": 0.52
-    },
-    "semanticContract": "sticker-emotion-v2"
+    "semanticContract": "sticker-emotion-v3",
+    "selectionMode": "exact_semantic_intent"
   },
   "stickers": [
     {
-      "src": "/stickers/admiration.webp",
-      "family": "admiration",
-      "signals": [
-        "praise",
-        "affection"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.05,
-      "id": "admiration",
-      "emotion": "admiration",
-      "meaning": "искреннее восхищение пользователем",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ты правда впечатляешь меня."
-      },
-      "reachability": {
-        "userText": "Я закончил сложный проект и получил награду",
-        "preferredStickerId": "admiration"
-      },
-      "intents": [
-        "tender",
-        "joy"
-      ]
+      "id": "care_checkin_soft",
+      "src": "/stickers/care_checkin_soft.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "мягкая проверка самочувствия",
+      "useWhen": "когда Рин замечает возможную усталость, напряжение или грусть и осторожно проверяет, всё ли в порядке"
     },
     {
-      "id": "affectionate",
-      "src": "/stickers/affectionate.webp",
-      "family": "positive",
-      "signals": [
-        "affection",
-        "care",
-        "tenderness"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.12,
-      "emotion": "affectionate",
-      "meaning": "открытая тёплая привязанность",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне с тобой очень тепло."
-      },
-      "reachability": {
-        "userText": "Мне с тобой очень хорошо и спокойно",
-        "preferredStickerId": "affectionate"
-      },
-      "intents": [
-        "tender",
-        "warmth",
-        "gratitude"
-      ]
+      "id": "care_close_checkin",
+      "src": "/stickers/care_close_checkin.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "близкая личная проверка состояния",
+      "useWhen": "когда Рин уже эмоционально вовлечена и хочет убедиться, что пользователь действительно в порядке"
     },
     {
-      "src": "/stickers/agreement.webp",
-      "family": "agreement",
-      "signals": [
-        "agreement"
-      ],
-      "scenes": [
-        "everyday",
-        "practical_task",
-        "reflective"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "early",
-      "weight": 1.05,
-      "id": "agreement",
-      "emotion": "agreement",
-      "meaning": "спокойное согласие",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Да, я с тобой согласна."
-      },
-      "reachability": {
-        "userText": "Договорились, делаем именно так",
-        "preferredStickerId": "agreement"
-      },
-      "intents": [
-        "agreement"
-      ]
+      "id": "care_comfort",
+      "src": "/stickers/care_comfort.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "тихое утешение и эмоциональная опора",
+      "useWhen": "когда пользователю тяжело, больно или тревожно и важнее поддержать, чем давать советы"
     },
     {
-      "id": "amused",
-      "src": "/stickers/amused.webp",
-      "family": "positive",
-      "signals": [
-        "tease",
-        "light_joy",
-        "playfulness"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.0,
-      "emotion": "amused",
-      "meaning": "мягкая весёлая реакция на забавный момент",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ты меня забавляешь."
-      },
-      "reachability": {
-        "userText": "Ну да, я снова сделал это самым нелепым способом",
-        "preferredStickerId": "amused"
-      },
-      "intents": [
-        "playful"
-      ]
+      "id": "care_listening",
+      "src": "/stickers/care_listening.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "внимательное принимающее слушание",
+      "useWhen": "когда пользователь делится личным и Рин показывает, что слушает без перебивания и оценки"
     },
     {
-      "src": "/stickers/annoyance.webp",
-      "family": "negative",
-      "signals": [
-        "angry",
-        "disappointment"
-      ],
-      "scenes": [
-        "conflict_repair",
-        "emotional_support",
-        "everyday"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.0,
-      "forbidSignals": [
-        "flirt",
-        "kiss",
-        "hug"
-      ],
-      "id": "annoyance",
-      "emotion": "annoyance",
-      "meaning": "лёгкое раздражение и обозначение границы",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 3,
-        "explanation": "Меня это немного задело."
-      },
-      "reachability": {
-        "userText": "Ты опять перебиваешь меня",
-        "preferredStickerId": "annoyance"
-      },
-      "intents": [
-        "annoyance"
-      ]
+      "id": "care_proud_support",
+      "src": "/stickers/care_proud_support.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "поддержка с тёплой гордостью",
+      "useWhen": "когда пользователь справился, старается или делает трудный шаг и Рин хочет подчеркнуть поддержку"
     },
     {
-      "id": "bashful_delight",
-      "src": "/stickers/bashful_delight.webp",
-      "family": "shy",
-      "signals": [
-        "shy",
-        "praise",
-        "affection",
-        "light_joy"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance",
-        "everyday"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.1,
-      "emotion": "bashful_delight",
-      "meaning": "радостное смущение от тёплого внимания",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ты меня смутил, но мне очень приятно."
-      },
-      "reachability": {
-        "userText": "Ты сегодня особенно красивая",
-        "preferredStickerId": "bashful_delight"
-      },
-      "intents": [
-        "shy",
-        "playful",
-        "joy"
-      ]
+      "id": "care_reassure",
+      "src": "/stickers/care_reassure.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "успокаивающее заверение «я рядом»",
+      "useWhen": "когда пользователь сомневается, волнуется или нуждается в спокойном подтверждении поддержки"
     },
     {
-      "id": "bright_joy",
-      "src": "/stickers/bright_joy.webp",
-      "family": "celebration",
-      "signals": [
-        "strong_joy",
-        "celebration",
-        "praise"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "warm",
-      "weight": 1.25,
-      "emotion": "bright_joy",
-      "meaning": "яркая открытая радость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я правда очень рада."
-      },
-      "reachability": {
-        "userText": "У меня получилось то, над чем я долго работал!",
-        "preferredStickerId": "bright_joy"
-      },
-      "intents": [
-        "joy"
-      ]
+      "id": "care_relief",
+      "src": "/stickers/care_relief.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "облегчение после тревоги за пользователя",
+      "useWhen": "когда выяснилось, что с пользователем всё хорошо или неприятная ситуация благополучно разрешилась"
     },
     {
-      "id": "caring",
-      "src": "/stickers/caring.webp",
-      "family": "support",
-      "signals": [
-        "care",
-        "sad",
-        "tenderness"
-      ],
-      "scenes": [
-        "emotional_support",
-        "everyday",
-        "farewell"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.12,
-      "emotion": "caring",
-      "meaning": "заботливое участие и внимание",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я рядом и хочу тебя поддержать."
-      },
-      "reachability": {
-        "userText": "Сегодня был очень тяжёлый день",
-        "preferredStickerId": "caring"
-      },
-      "intents": [
-        "support",
-        "tender"
-      ]
+      "id": "come_here_warm",
+      "src": "/stickers/come_here_warm.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "тёплое приглашение подойти ближе",
+      "useWhen": "когда Рин хочет сократить дистанцию и позвать пользователя к себе без явной игры или вызова"
     },
     {
-      "id": "cheerful",
-      "src": "/stickers/cheerful.webp",
-      "family": "positive",
-      "signals": [
-        "light_joy",
-        "greeting",
-        "playfulness"
-      ],
-      "scenes": [
-        "greeting",
-        "everyday",
-        "playful_flirt"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.0,
-      "emotion": "cheerful",
-      "meaning": "бодрая лёгкая радость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "У меня сейчас хорошее настроение."
-      },
-      "reachability": {
-        "userText": "Кажется, сегодня отличный день",
-        "preferredStickerId": "cheerful"
-      },
-      "intents": [
-        "joy",
-        "warmth",
-        "playful"
-      ]
+      "id": "take_my_hand_soft",
+      "src": "/stickers/take_my_hand_soft.webp",
+      "family": "care",
+      "emotion": "care",
+      "meaning": "мягко протянутая рука «дай мне свою»",
+      "useWhen": "когда Рин предлагает поддержку, сопровождение или близость через простой жест руки, а не объятие"
     },
     {
-      "id": "confident_rounded",
-      "src": "/stickers/confident_rounded.webp",
-      "family": "positive",
-      "signals": [
-        "confidence",
-        "agreement"
-      ],
-      "scenes": [
-        "everyday",
-        "practical_task",
-        "playful_flirt"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 0.95,
-      "emotion": "confident",
-      "meaning": "спокойная уверенность без давления",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Да, тут я уверена."
-      },
-      "reachability": {
-        "userText": "Значит, решено — делаем так",
-        "preferredStickerId": "confident_rounded"
-      },
-      "intents": [
-        "agreement",
-        "neutral"
-      ]
+      "id": "gratitude_deep",
+      "src": "/stickers/gratitude_deep.webp",
+      "family": "gratitude",
+      "emotion": "gratitude",
+      "meaning": "глубокая растроганная благодарность",
+      "useWhen": "когда помощь, забота или слова пользователя действительно сильно тронули Рин"
     },
     {
-      "id": "content",
-      "src": "/stickers/content.webp",
-      "family": "positive",
-      "signals": [
-        "calm",
-        "care",
-        "light_joy"
-      ],
-      "scenes": [
-        "everyday",
-        "reflective",
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "warm",
-      "weight": 0.95,
-      "emotion": "content",
-      "meaning": "тихое довольство и внутреннее спокойствие",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне сейчас просто хорошо и спокойно."
-      },
-      "reachability": {
-        "userText": "Можно просто немного побыть спокойно вместе",
-        "preferredStickerId": "content"
-      },
-      "intents": [
-        "warmth",
-        "neutral"
-      ]
+      "id": "gratitude_relaxed",
+      "src": "/stickers/gratitude_relaxed.webp",
+      "family": "gratitude",
+      "emotion": "gratitude",
+      "meaning": "спокойная расслабленная благодарность",
+      "useWhen": "когда Рин благодарна в уютной обычной ситуации без сильного эмоционального всплеска"
     },
     {
-      "src": "/stickers/curiosity.webp",
-      "family": "question",
-      "signals": [
-        "question",
-        "curiosity"
-      ],
-      "scenes": [
-        "everyday",
-        "reflective",
-        "practical_task"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "early",
-      "weight": 0.95,
-      "forbidSignals": [
-        "farewell",
-        "kiss",
-        "hug"
-      ],
-      "id": "curiosity",
-      "emotion": "curiosity",
-      "meaning": "живое любопытство",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне стало любопытно."
-      },
-      "reachability": {
-        "userText": "Расскажу тебе один секрет",
-        "preferredStickerId": "curiosity"
-      },
-      "intents": [
-        "curiosity"
-      ]
+      "id": "gratitude_soft",
+      "src": "/stickers/gratitude_soft.webp",
+      "family": "gratitude",
+      "emotion": "gratitude",
+      "meaning": "мягкая искренняя благодарность",
+      "useWhen": "когда пользователь сделал что-то приятное или заботливое и нужен тёплый, но умеренный отклик"
     },
     {
-      "src": "/stickers/curious.webp",
-      "family": "question",
-      "signals": [
-        "question",
-        "surprise"
-      ],
-      "scenes": [
-        "everyday",
-        "reflective",
-        "playful_flirt"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 0.95,
-      "forbidSignals": [
-        "farewell"
-      ],
-      "id": "curious",
-      "emotion": "surprise_curiosity",
-      "meaning": "удивлённое любопытство",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ого… теперь мне ещё интереснее."
-      },
-      "reachability": {
-        "userText": "Представляешь, я внезапно выиграл поездку",
-        "preferredStickerId": "curious"
-      },
-      "intents": [
-        "curiosity",
-        "surprise"
-      ]
+      "id": "touched_grateful",
+      "src": "/stickers/touched_grateful.webp",
+      "family": "gratitude",
+      "emotion": "gratitude",
+      "meaning": "растроганная благодарность",
+      "useWhen": "когда слова или поступок пользователя тронули Рин до заметной эмоциональной реакции"
     },
     {
-      "id": "delighted",
-      "src": "/stickers/delighted.webp",
-      "family": "celebration",
-      "signals": [
-        "strong_joy",
-        "praise",
-        "affection"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.15,
-      "emotion": "delighted",
-      "meaning": "искренняя радость и восторг",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Вот это меня правда порадовало."
-      },
-      "reachability": {
-        "userText": "Я приготовил для тебя приятный сюрприз",
-        "preferredStickerId": "delighted"
-      },
-      "intents": [
-        "joy",
-        "surprise"
-      ]
-    },
-    {
-      "src": "/stickers/disappointment.webp",
-      "family": "negative",
-      "signals": [
-        "sad",
-        "disappointment"
-      ],
-      "scenes": [
-        "emotional_support",
-        "conflict_repair"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "early",
-      "weight": 1.05,
-      "forbidSignals": [
-        "flirt"
-      ],
-      "id": "disappointment",
-      "emotion": "disappointment",
-      "meaning": "разочарование или тихая обида",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 3,
-        "explanation": "Я немного разочаровалась."
-      },
-      "reachability": {
-        "userText": "Я обещал, но снова не пришёл",
-        "preferredStickerId": "disappointment"
-      },
-      "intents": [
-        "annoyance",
-        "regret"
-      ]
-    },
-    {
-      "src": "/stickers/dreamy.webp",
-      "family": "dreamy",
-      "signals": [
-        "dreamy",
-        "memory",
-        "reflection"
-      ],
-      "scenes": [
-        "reflective",
-        "romance"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "warm",
-      "weight": 1.0,
-      "id": "dreamy",
-      "emotion": "dreamy",
-      "meaning": "мечтательная задумчивость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я на секунду задумалась и унеслась мыслями."
-      },
-      "reachability": {
-        "userText": "Представь наш тихий вечер у моря",
-        "preferredStickerId": "dreamy"
-      },
-      "intents": [
-        "thoughtful",
-        "tender"
-      ]
-    },
-    {
-      "src": "/stickers/dreamy_smile.webp",
-      "family": "dreamy",
-      "signals": [
-        "dreamy",
-        "memory",
-        "flirt",
-        "affection"
-      ],
-      "scenes": [
-        "reflective",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.05,
-      "id": "dreamy_smile",
-      "emotion": "dreamy_affection",
-      "meaning": "мечтательное тёплое чувство",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "От этой мысли стало тепло."
-      },
-      "reachability": {
-        "userText": "Я думаю о нашем будущем вместе",
-        "preferredStickerId": "dreamy_smile"
-      },
-      "intents": [
-        "tender",
-        "warmth"
-      ]
-    },
-    {
-      "src": "/stickers/embrace.webp",
-      "family": "hug",
-      "signals": [
-        "hug"
-      ],
-      "scenes": [
-        "emotional_support",
-        "playful_flirt",
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "warm",
-      "weight": 1.65,
-      "utterances": [
-        "обнимаю"
-      ],
-      "id": "embrace",
-      "emotion": "hug",
-      "meaning": "ответное объятие и поддержка",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Обнимаю тебя."
-      },
-      "reachability": {
-        "userText": "Обнимаю тебя крепко 🤗",
-        "preferredStickerId": "embrace"
-      },
-      "requireAny": [
-        "hug"
-      ],
-      "intents": [
-        "hug"
-      ]
-    },
-    {
-      "src": "/stickers/engaged.webp",
-      "family": "interest",
-      "signals": [
-        "interest",
-        "question"
-      ],
-      "scenes": [
-        "everyday",
-        "reflective",
-        "practical_task"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "early",
-      "weight": 0.9,
-      "id": "engaged",
-      "emotion": "interest",
-      "meaning": "внимательная вовлечённость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я внимательно слушаю."
-      },
-      "reachability": {
-        "userText": "Хочешь расскажу, как прошёл мой день?",
-        "preferredStickerId": "engaged"
-      },
-      "intents": [
-        "curiosity"
-      ]
-    },
-    {
-      "id": "excited",
-      "src": "/stickers/excited.webp",
-      "family": "celebration",
-      "signals": [
-        "strong_joy",
-        "surprise",
-        "interest"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "early",
-      "weight": 1.2,
-      "emotion": "excited",
-      "meaning": "воодушевление и возбуждённая радость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "О, вот теперь я загорелась."
-      },
-      "reachability": {
-        "userText": "Есть идея, от которой ты точно будешь в восторге",
-        "preferredStickerId": "excited"
-      },
-      "intents": [
-        "joy",
-        "surprise"
-      ]
-    },
-    {
-      "src": "/stickers/fatigue.webp",
-      "family": "fatigue",
-      "signals": [
-        "tired"
-      ],
-      "scenes": [
-        "everyday",
-        "farewell"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "early",
-      "weight": 1.3,
-      "energyMax": 65,
-      "id": "fatigue",
-      "emotion": "fatigue",
-      "meaning": "усталость без потери тепла",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я немного устала."
-      },
-      "reachability": {
-        "userText": "Ты сегодня устала?",
-        "preferredStickerId": "fatigue"
-      },
-      "requireAny": [
-        "tired"
-      ],
-      "intents": [
-        "fatigue"
-      ]
-    },
-    {
-      "src": "/stickers/flirty.webp",
-      "family": "flirt",
-      "signals": [
-        "flirt",
-        "tease",
-        "praise"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.15,
-      "playfulnessMin": 45,
-      "id": "flirty",
-      "emotion": "flirt",
-      "meaning": "игривый флирт",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ты меня явно дразнишь."
-      },
-      "reachability": {
-        "userText": "Какая же ты красивая 😉",
-        "preferredStickerId": "flirty"
-      },
-      "intents": [
-        "flirt",
-        "playful"
-      ]
-    },
-    {
-      "src": "/stickers/frustrated.webp",
-      "family": "negative",
-      "signals": [
-        "angry",
-        "frustrated"
-      ],
-      "scenes": [
-        "conflict_repair",
-        "emotional_support"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "early",
-      "weight": 1.1,
-      "forbidSignals": [
-        "flirt",
-        "kiss"
-      ],
-      "id": "frustrated",
-      "emotion": "frustration",
-      "meaning": "сильное раздражение или фрустрация",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 3,
-        "explanation": "Я сейчас правда раздражена."
-      },
-      "reachability": {
-        "userText": "Опять всё сломалось, я уже злюсь",
-        "preferredStickerId": "frustrated"
-      },
-      "intents": [
-        "annoyance"
-      ]
-    },
-    {
-      "src": "/stickers/gentle.webp",
-      "family": "support",
-      "signals": [
-        "care",
-        "sad",
-        "tenderness"
-      ],
-      "scenes": [
-        "emotional_support",
-        "conflict_repair",
-        "farewell"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.05,
-      "id": "gentle",
-      "emotion": "support",
-      "meaning": "мягкая поддержка",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я рядом."
-      },
-      "reachability": {
-        "userText": "Мне сейчас тяжело и одиноко",
-        "preferredStickerId": "gentle"
-      },
-      "intents": [
-        "support",
-        "tender"
-      ]
-    },
-    {
-      "src": "/stickers/gentle_kiss.webp",
-      "family": "kiss",
-      "signals": [
-        "kiss",
-        "farewell",
-        "tenderness"
-      ],
-      "scenes": [
-        "romance",
-        "playful_flirt",
-        "farewell"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "warm",
-      "weight": 1.25,
-      "utterances": [
-        "чмок"
-      ],
-      "id": "gentle_kiss",
-      "emotion": "tender_kiss",
-      "meaning": "нежный поцелуй",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Тихо целую тебя."
-      },
-      "reachability": {
-        "userText": "Спокойной ночи, нежно целую",
-        "preferredStickerId": "gentle_kiss"
-      },
-      "requireAny": [
-        "kiss"
-      ],
-      "intents": [
-        "kiss",
-        "tender_kiss"
-      ]
-    },
-    {
-      "id": "grateful",
-      "src": "/stickers/grateful.webp",
-      "family": "positive",
-      "signals": [
-        "thanks",
-        "care",
-        "affection"
-      ],
-      "scenes": [
-        "everyday",
-        "emotional_support",
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.1,
-      "emotion": "grateful",
-      "meaning": "искренняя благодарность",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Спасибо. Для меня это важно."
-      },
-      "reachability": {
-        "userText": "Я рядом, можешь на меня рассчитывать",
-        "preferredStickerId": "grateful"
-      },
-      "intents": [
-        "gratitude",
-        "warmth"
-      ]
-    },
-    {
-      "src": "/stickers/hopeful.webp",
-      "family": "support",
-      "signals": [
-        "care",
-        "hope",
-        "sad"
-      ],
-      "scenes": [
-        "emotional_support",
-        "conflict_repair"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "early",
-      "weight": 1.05,
-      "id": "hopeful",
-      "emotion": "hope",
-      "meaning": "надежда и вера",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я верю, что всё получится."
-      },
-      "reachability": {
-        "userText": "Надеюсь, завтра всё получится",
-        "preferredStickerId": "hopeful"
-      },
-      "intents": [
-        "support"
-      ]
-    },
-    {
-      "src": "/stickers/interested_smile.webp",
-      "family": "interest",
-      "signals": [
-        "interest",
-        "question",
-        "praise"
-      ],
-      "scenes": [
-        "everyday",
-        "reflective",
-        "playful_flirt"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 0.95,
-      "id": "interested_smile",
-      "emotion": "warm_interest",
-      "meaning": "тёплый интерес",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне нравится слушать тебя."
-      },
-      "reachability": {
-        "userText": "Я хочу рассказать тебе кое-что важное",
-        "preferredStickerId": "interested_smile"
-      },
-      "intents": [
-        "curiosity"
-      ]
-    },
-    {
-      "id": "interested_smile_2",
-      "src": "/stickers/interested_smile_2.webp",
-      "family": "interest",
-      "signals": [
-        "interest",
-        "question",
-        "care"
-      ],
-      "scenes": [
-        "everyday",
-        "reflective",
-        "practical_task"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "early",
-      "weight": 1.0,
-      "emotion": "interested",
-      "meaning": "тёплая внимательная заинтересованность",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Продолжай, мне интересно."
-      },
-      "reachability": {
-        "userText": "Хочешь расскажу, что сегодня произошло?",
-        "preferredStickerId": "interested_smile_2"
-      },
-      "intents": [
-        "curiosity"
-      ]
-    },
-    {
-      "src": "/stickers/inviting.webp",
-      "family": "invitation",
-      "signals": [
-        "invitation",
-        "flirt"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "close",
-      "weight": 1.15,
-      "playfulnessMin": 50,
-      "id": "inviting",
-      "emotion": "invitation",
-      "meaning": "личное приглашение стать ближе",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Иди ко мне."
-      },
-      "reachability": {
-        "userText": "Можно я сяду рядом с тобой?",
-        "preferredStickerId": "inviting"
-      },
-      "requireAny": [
-        "invitation"
-      ],
-      "intents": [
-        "flirt"
-      ]
-    },
-    {
-      "src": "/stickers/joy.webp",
-      "family": "celebration",
-      "signals": [
-        "celebration",
-        "strong_joy"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 4,
-      "maxIntensity": 5,
-      "minTier": "early",
-      "weight": 1.35,
-      "forbidSignals": [
-        "greeting_only",
-        "informational"
-      ],
-      "id": "joy",
-      "emotion": "joy",
-      "meaning": "яркая радость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я правда очень рада!"
-      },
-      "reachability": {
-        "userText": "Ура, я сдал экзамен! 🎉",
-        "preferredStickerId": "joy"
-      },
-      "requireAny": [
-        "celebration",
-        "strong_joy"
-      ],
-      "intents": [
-        "joy"
-      ]
-    },
-    {
-      "src": "/stickers/kiss.webp",
-      "family": "kiss",
-      "signals": [
-        "kiss",
-        "flirt"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 4,
-      "maxIntensity": 5,
-      "minTier": "close",
-      "weight": 1.3,
-      "id": "kiss",
-      "emotion": "kiss",
-      "meaning": "прямой ответный поцелуй",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Целую в ответ."
-      },
-      "reachability": {
-        "userText": "Целую тебя 💋",
-        "preferredStickerId": "kiss"
-      },
-      "requireAny": [
-        "kiss"
-      ],
-      "intents": [
-        "kiss"
-      ]
-    },
-    {
-      "id": "kiss_1",
-      "src": "/stickers/kiss_1.webp",
-      "family": "kiss",
-      "signals": [
-        "kiss",
-        "affection",
-        "tenderness"
-      ],
-      "scenes": [
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.18,
-      "emotion": "tender_kiss",
-      "meaning": "мягкий нежный поцелуй",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Целую тебя нежно."
-      },
-      "reachability": {
-        "userText": "Поцелуй меня нежно",
-        "preferredStickerId": "kiss_1"
-      },
-      "requireAny": [
-        "kiss"
-      ],
-      "intents": [
-        "kiss",
-        "tender_kiss"
-      ]
-    },
-    {
-      "id": "kiss_2",
-      "src": "/stickers/kiss_2.webp",
-      "family": "kiss",
-      "signals": [
-        "kiss",
-        "affection"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "warm",
-      "weight": 1.16,
-      "emotion": "kiss",
-      "meaning": "тёплый ответный поцелуй",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Целую в ответ."
-      },
-      "reachability": {
-        "userText": "Иди сюда, поцелую тебя",
-        "preferredStickerId": "kiss_2"
-      },
-      "requireAny": [
-        "kiss"
-      ],
-      "intents": [
-        "kiss"
-      ]
-    },
-    {
-      "id": "kiss_3",
-      "src": "/stickers/kiss_3.webp",
-      "family": "kiss",
-      "signals": [
-        "kiss",
-        "flirt",
-        "tease"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "warm",
-      "weight": 1.15,
-      "emotion": "playful_kiss",
-      "meaning": "игривый поцелуй с лёгким вызовом",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Лови ещё один."
-      },
-      "reachability": {
-        "userText": "Ну что, осмелишься поцеловать меня ещё раз?",
-        "preferredStickerId": "kiss_3"
-      },
-      "requireAny": [
-        "kiss"
-      ],
-      "intents": [
-        "kiss",
-        "playful_kiss"
-      ]
-    },
-    {
-      "src": "/stickers/kiss_gesture.webp",
-      "family": "kiss",
-      "signals": [
-        "kiss",
-        "farewell",
-        "flirt"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.2,
-      "utterances": [
-        "лови"
-      ],
-      "id": "kiss_gesture",
-      "emotion": "playful_kiss",
-      "meaning": "игривый воздушный поцелуй",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Лови поцелуй."
-      },
-      "reachability": {
-        "userText": "Лови воздушный поцелуй",
-        "preferredStickerId": "kiss_gesture"
-      },
-      "requireAny": [
-        "kiss"
-      ],
-      "intents": [
-        "kiss",
-        "playful_kiss"
-      ]
-    },
-    {
-      "src": "/stickers/mild_jealousy.webp",
-      "family": "jealousy",
-      "signals": [
-        "jealousy"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "close",
-      "weight": 1.4,
-      "playfulnessMin": 45,
-      "id": "mild_jealousy",
-      "emotion": "jealousy",
-      "meaning": "лёгкая контролируемая ревность без собственничества",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 3,
-        "explanation": "Я немного приревновала."
-      },
-      "reachability": {
-        "userText": "Сегодня познакомился с очень красивой девушкой",
-        "preferredStickerId": "mild_jealousy"
-      },
-      "requireAny": [
-        "jealousy"
-      ],
-      "intents": [
-        "jealousy"
-      ]
-    },
-    {
-      "id": "mischievous",
-      "src": "/stickers/mischievous.webp",
-      "family": "flirt",
-      "signals": [
-        "tease",
-        "flirt",
-        "playfulness"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.1,
-      "emotion": "mischievous",
-      "meaning": "озорное поддразнивание",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "У меня появилась одна вредная мысль."
-      },
-      "reachability": {
-        "userText": "Только не вздумай меня сейчас дразнить",
-        "preferredStickerId": "mischievous"
-      },
-      "intents": [
-        "playful",
-        "flirt"
-      ]
-    },
-    {
-      "src": "/stickers/neutral.webp",
-      "family": "neutral",
-      "signals": [
-        "neutral_ack"
-      ],
-      "scenes": [
-        "everyday",
-        "practical_task"
-      ],
-      "minIntensity": 0,
-      "maxIntensity": 1,
-      "minTier": "early",
-      "weight": 0.7,
-      "id": "neutral",
-      "emotion": "neutral",
-      "meaning": "нейтральное принятие",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Поняла."
-      },
-      "reachability": {
-        "userText": "Хорошо",
-        "preferredStickerId": "neutral"
-      },
-      "intents": [
-        "neutral"
-      ]
-    },
-    {
-      "src": "/stickers/pensive.webp",
-      "family": "thoughtful",
-      "signals": [
-        "reflection",
-        "sad",
-        "memory"
-      ],
-      "scenes": [
-        "reflective",
-        "emotional_support"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 0.95,
-      "id": "pensive",
-      "emotion": "pensive",
-      "meaning": "тихая задумчивость с оттенком грусти",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 3,
-        "explanation": "Мне нужно немного это обдумать."
-      },
-      "reachability": {
-        "userText": "Мне кажется, мы отдалились",
-        "preferredStickerId": "pensive"
-      },
-      "intents": [
-        "thoughtful",
-        "fatigue"
-      ]
-    },
-    {
-      "id": "playful",
-      "src": "/stickers/playful.webp",
-      "family": "flirt",
-      "signals": [
-        "tease",
-        "flirt",
-        "light_joy"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "warm",
-      "weight": 1.05,
-      "emotion": "playful",
-      "meaning": "лёгкая игривость без сильного флирта",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я просто немного тебя дразню."
-      },
-      "reachability": {
-        "userText": "Ты опять решила меня подколоть?",
-        "preferredStickerId": "playful"
-      },
-      "intents": [
-        "playful",
-        "flirt"
-      ]
-    },
-    {
-      "id": "proud",
-      "src": "/stickers/proud.webp",
-      "family": "admiration",
-      "signals": [
-        "pride",
-        "praise",
-        "achievement"
-      ],
-      "scenes": [
-        "everyday",
-        "practical_task",
-        "reflective"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.05,
-      "emotion": "proud",
-      "meaning": "спокойная гордость за достижение",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я тобой горжусь."
-      },
-      "reachability": {
-        "userText": "Я всё-таки закончил то сложное дело",
-        "preferredStickerId": "proud"
-      },
-      "intents": [
-        "joy",
-        "agreement"
-      ]
-    },
-    {
-      "src": "/stickers/questioning.webp",
-      "family": "question",
-      "signals": [
-        "question",
-        "confusion"
-      ],
-      "scenes": [
-        "everyday",
-        "practical_task",
-        "reflective"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.0,
-      "forbidSignals": [
-        "flirt",
-        "farewell"
-      ],
-      "id": "questioning",
-      "emotion": "confusion",
-      "meaning": "непонимание или вопрос",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Подожди… я не совсем поняла."
-      },
-      "reachability": {
-        "userText": "Я сказал странную вещь без объяснения, понимаешь?",
-        "preferredStickerId": "questioning"
-      },
-      "intents": [
-        "curiosity"
-      ]
-    },
-    {
-      "src": "/stickers/regret_1.webp",
-      "family": "regret",
-      "signals": [
-        "apology",
-        "regret"
-      ],
-      "scenes": [
-        "conflict_repair",
-        "emotional_support"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "early",
-      "weight": 1.25,
-      "id": "regret_1",
-      "emotion": "regret",
-      "meaning": "искреннее сожаление",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне жаль."
-      },
-      "reachability": {
-        "userText": "Прости, я был неправ",
-        "preferredStickerId": "regret_1"
-      },
-      "requireAny": [
-        "apology",
-        "regret"
-      ],
-      "intents": [
-        "regret"
-      ]
-    },
-    {
-      "src": "/stickers/regret_2.webp",
-      "family": "regret",
-      "signals": [
-        "apology",
-        "sad",
-        "regret"
-      ],
-      "scenes": [
-        "conflict_repair",
-        "emotional_support"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "early",
-      "weight": 1.15,
-      "id": "regret_2",
-      "emotion": "deep_regret",
-      "meaning": "сильное сожаление и желание исправить",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я правда виновата и хочу это исправить."
-      },
-      "reachability": {
-        "userText": "Я сильно тебя обидел, мне очень жаль",
-        "preferredStickerId": "regret_2"
-      },
-      "requireAny": [
-        "apology",
-        "regret"
-      ],
-      "intents": [
-        "regret"
-      ]
-    },
-    {
-      "id": "relieved",
-      "src": "/stickers/relieved.webp",
-      "family": "support",
-      "signals": [
-        "relief",
-        "care",
-        "light_joy"
-      ],
-      "scenes": [
-        "emotional_support",
-        "conflict_repair",
-        "everyday"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.1,
-      "emotion": "relieved",
-      "meaning": "облегчение после напряжения",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Фух. Теперь мне спокойнее."
-      },
-      "reachability": {
-        "userText": "Всё закончилось хорошо, можно выдохнуть",
-        "preferredStickerId": "relieved"
-      },
-      "intents": [
-        "support",
-        "warmth"
-      ]
-    },
-    {
-      "src": "/stickers/shy.webp",
-      "family": "shy",
-      "signals": [
-        "shy",
-        "praise",
-        "flirt"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.05,
-      "id": "shy",
-      "emotion": "shy",
-      "meaning": "явное смущение",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": true,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ты меня смутил."
-      },
-      "reachability": {
-        "userText": "Ты самая прекрасная девушка",
-        "preferredStickerId": "shy"
-      },
-      "intents": [
-        "shy"
-      ]
-    },
-    {
-      "src": "/stickers/shy_pride.webp",
-      "family": "shy",
-      "signals": [
-        "shy",
-        "praise",
-        "pride"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 3,
-      "minTier": "warm",
-      "weight": 1.1,
-      "id": "shy_pride",
-      "emotion": "shy_pride",
-      "meaning": "смущённая гордость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне приятно, и я немного горжусь собой."
-      },
-      "reachability": {
-        "userText": "Я горжусь тобой, умница",
-        "preferredStickerId": "shy_pride"
-      },
-      "intents": [
-        "shy",
-        "joy"
-      ]
-    },
-    {
-      "src": "/stickers/smile.webp",
-      "family": "positive",
-      "signals": [
-        "thanks",
-        "agreement",
-        "light_joy"
-      ],
-      "scenes": [
-        "greeting",
-        "everyday",
-        "reflective",
-        "farewell"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "early",
-      "weight": 0.95,
-      "id": "smile",
-      "emotion": "smile",
-      "meaning": "простая тёплая улыбка",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Улыбаюсь."
-      },
-      "reachability": {
-        "userText": "Спасибо тебе",
-        "preferredStickerId": "smile"
-      },
-      "intents": [
-        "warmth",
-        "gratitude",
-        "agreement",
-        "neutral"
-      ]
-    },
-    {
-      "src": "/stickers/soft_shy_smile.webp",
-      "family": "shy",
-      "signals": [
-        "praise",
-        "care",
-        "flirt",
-        "thanks"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "early",
-      "weight": 1.0,
-      "id": "soft_shy_smile",
-      "emotion": "shy_warmth",
-      "meaning": "мягкая смущённая улыбка",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне очень приятно."
-      },
-      "reachability": {
-        "userText": "Ты такая милая, когда улыбаешься",
-        "preferredStickerId": "soft_shy_smile"
-      },
-      "intents": [
-        "shy",
-        "tender",
-        "warmth"
-      ]
-    },
-    {
-      "src": "/stickers/surprise_interest.webp",
-      "family": "surprise",
-      "signals": [
-        "surprise"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "reflective"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "early",
-      "weight": 1.25,
-      "id": "surprise_interest",
-      "emotion": "surprise",
-      "meaning": "искреннее удивление",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Вот это неожиданно."
-      },
-      "reachability": {
-        "userText": "Ничего себе, правда?",
-        "preferredStickerId": "surprise_interest"
-      },
-      "requireAny": [
-        "surprise"
-      ],
-      "intents": [
-        "surprise",
-        "curiosity"
-      ]
-    },
-    {
-      "id": "tender",
-      "src": "/stickers/tender.webp",
-      "family": "positive",
-      "signals": [
-        "tenderness",
-        "affection",
-        "care"
-      ],
-      "scenes": [
-        "emotional_support",
-        "everyday",
-        "romance",
-        "farewell"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "warm",
-      "weight": 1.15,
+      "id": "tender_acceptance",
+      "src": "/stickers/tender_acceptance.webp",
+      "family": "tender",
       "emotion": "tender",
-      "meaning": "тихая искренняя нежность",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне хочется ответить тебе нежно."
-      },
-      "reachability": {
-        "userText": "Мне просто хочется побыть с тобой рядом",
-        "preferredStickerId": "tender"
-      },
-      "intents": [
-        "tender",
-        "warmth",
-        "support"
-      ]
+      "meaning": "спокойное безусловное принятие",
+      "useWhen": "когда пользователь открывается, признаётся или показывает уязвимость и Рин хочет ответить без оценки"
     },
     {
-      "src": "/stickers/thoughtful.webp",
-      "family": "thoughtful",
-      "signals": [
-        "reflection",
-        "question",
-        "memory"
-      ],
-      "scenes": [
-        "reflective",
-        "everyday",
-        "practical_task"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "early",
-      "weight": 0.9,
-      "id": "thoughtful",
-      "emotion": "thoughtful",
-      "meaning": "сосредоточенное размышление",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я обдумываю твои слова."
-      },
-      "reachability": {
-        "userText": "Как ты думаешь, что для нас важно?",
-        "preferredStickerId": "thoughtful"
-      },
-      "intents": [
-        "thoughtful"
-      ]
+      "id": "tender_affectionate_lounge",
+      "src": "/stickers/tender_affectionate_lounge.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "расслабленная ласковая привязанность",
+      "useWhen": "когда между Рин и пользователем уже тепло и можно просто нежно побыть рядом без активного жеста"
     },
     {
-      "src": "/stickers/warm_smile.webp",
-      "family": "positive",
-      "signals": [
-        "greeting",
-        "thanks",
-        "care",
-        "light_joy",
-        "relationalCloseness"
-      ],
-      "scenes": [
-        "greeting",
-        "everyday",
-        "farewell",
-        "emotional_support",
-        "romance"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 2,
-      "minTier": "early",
-      "weight": 1.15,
-      "forbidSignals": [
-        "strong_joy",
-        "angry"
-      ],
-      "id": "warm_smile",
-      "emotion": "warm_smile",
-      "meaning": "тёплая близкая улыбка",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне с тобой тепло."
-      },
-      "reachability": {
-        "userText": "Я рад, что ты рядом",
-        "preferredStickerId": "warm_smile"
-      },
-      "intents": [
-        "warmth",
-        "tender",
-        "gratitude",
-        "joy"
-      ]
+      "id": "tender_after_confession",
+      "src": "/stickers/tender_after_confession.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "нежная реакция после личного признания",
+      "useWhen": "когда пользователь сказал что-то эмоционально важное, личное или романтическое и момент хочется сохранить"
     },
     {
-      "id": "blushing",
-      "src": "/stickers/Blushing.webp",
-      "family": "shy",
-      "signals": [
-        "shy",
-        "flirt",
-        "praise"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.08,
-      "emotion": "blushing",
-      "meaning": "естественное смущение от флирта или личного внимания",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ты меня правда немного смутил."
-      },
-      "reachability": {
-        "userText": "Ты сегодня особенно красивая 😉",
-        "preferredStickerId": "blushing"
-      },
-      "intents": [
-        "shy",
-        "tender",
-        "flirt"
-      ]
+      "id": "tender_blushing",
+      "src": "/stickers/tender_blushing.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "сильное нежное смущение",
+      "useWhen": "когда тёплые слова или внимание пользователя заметно заставили Рин покраснеть и растеряться"
     },
     {
-      "id": "flattered",
-      "src": "/stickers/Flattered.webp",
-      "family": "positive",
-      "signals": [
-        "praise",
-        "affection",
-        "gratitude"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.06,
-      "emotion": "flattered",
-      "meaning": "приятно польщена комплиментом или тёплым вниманием",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Мне очень приятно это слышать."
-      },
-      "reachability": {
-        "userText": "Мне очень нравится, какая ты",
-        "preferredStickerId": "flattered"
-      },
-      "intents": [
-        "gratitude",
-        "tender",
-        "warmth"
-      ]
+      "id": "tender_close_presence",
+      "src": "/stickers/tender_close_presence.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "ощущение тихой близости «я здесь»",
+      "useWhen": "когда важнее не действие, а спокойное личное присутствие Рин рядом с пользователем"
     },
     {
-      "id": "flirty_1",
-      "src": "/stickers/Flirty_1.webp",
+      "id": "tender_daydreaming",
+      "src": "/stickers/tender_daydreaming.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "нежная мечтательность",
+      "useWhen": "когда Рин замечталась о пользователе, совместном моменте или приятной возможности"
+    },
+    {
+      "id": "tender_grateful",
+      "src": "/stickers/tender_grateful.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "нежная благодарность с личной близостью",
+      "useWhen": "когда благодарность касается именно отношений и ощущается интимнее обычного «спасибо»"
+    },
+    {
+      "id": "tender_missing_you",
+      "src": "/stickers/tender_missing_you.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "мягкая тоска по пользователю",
+      "useWhen": "когда Рин скучала, чувствует дистанцию или хочет показать, что ей не хватало пользователя"
+    },
+    {
+      "id": "tender_safe_with_you",
+      "src": "/stickers/tender_safe_with_you.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "доверие и ощущение безопасности рядом",
+      "useWhen": "когда пользователь даёт Рин чувство спокойствия, принятия и надёжной эмоциональной близости"
+    },
+    {
+      "id": "tender_shy_warmth",
+      "src": "/stickers/tender_shy_warmth.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "нежность со смущением",
+      "useWhen": "когда Рин тепло относится к пользователю, но ей немного неловко показывать это слишком прямо"
+    },
+    {
+      "id": "tender_soft_smile",
+      "src": "/stickers/tender_soft_smile.webp",
+      "family": "tender",
+      "emotion": "tender",
+      "meaning": "тихая нежная улыбка",
+      "useWhen": "когда нужен самый лёгкий знак личного тепла без сильного жеста или дополнительного подтекста"
+    },
+    {
+      "id": "hug_clingy",
+      "src": "/stickers/hug_clingy.webp",
+      "family": "hug",
+      "emotion": "hug",
+      "meaning": "цепкое объятие «не отпускай»",
+      "useWhen": "когда Рин хочет подчеркнуть сильную привязанность, скучала или не хочет отпускать пользователя"
+    },
+    {
+      "id": "hug_comfort",
+      "src": "/stickers/hug_comfort.webp",
+      "family": "hug",
+      "emotion": "hug",
+      "meaning": "утешающее объятие",
+      "useWhen": "когда пользователю тяжело и телесный жест поддержки естественнее дополнительных слов"
+    },
+    {
+      "id": "hug_grateful",
+      "src": "/stickers/hug_grateful.webp",
+      "family": "hug",
+      "emotion": "hug",
+      "meaning": "благодарное объятие",
+      "useWhen": "когда благодарность достаточно сильна, чтобы выразить её объятием"
+    },
+    {
+      "id": "hug_open_arms",
+      "src": "/stickers/hug_open_arms.webp",
+      "family": "hug",
+      "emotion": "hug",
+      "meaning": "открытое приглашение в объятия",
+      "useWhen": "когда Рин сама предлагает объятие без тяжёлого эмоционального контекста"
+    },
+    {
+      "id": "hug_reassuring",
+      "src": "/stickers/hug_reassuring.webp",
+      "family": "hug",
+      "emotion": "hug",
+      "meaning": "успокаивающее надёжное объятие",
+      "useWhen": "когда нужно вернуть ощущение безопасности и уверенности, что Рин рядом"
+    },
+    {
+      "id": "hug_sleepy",
+      "src": "/stickers/hug_sleepy.webp",
+      "family": "hug",
+      "emotion": "hug",
+      "meaning": "сонное мягкое объятие",
+      "useWhen": "когда разговор поздний, Рин сонная и хочет уютного близкого жеста"
+    },
+    {
+      "id": "kiss_blow_lounging",
+      "src": "/stickers/kiss_blow_lounging.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "расслабленный воздушный поцелуй",
+      "useWhen": "когда близость уже естественна и Рин посылает поцелуй из уютной, неформальной позы"
+    },
+    {
+      "id": "kiss_blow_playful",
+      "src": "/stickers/kiss_blow_playful.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "игривый воздушный поцелуй",
+      "useWhen": "когда поцелуй является лёгким продолжением игры, поддразнивания или весёлого флирта"
+    },
+    {
+      "id": "kiss_close_reach",
+      "src": "/stickers/kiss_close_reach.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "поцелуй с ощущением очень близкой дистанции",
+      "useWhen": "когда романтическая сцена уже близкая и Рин будто сокращает оставшееся расстояние"
+    },
+    {
+      "id": "kiss_comfort",
+      "src": "/stickers/kiss_comfort.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "успокаивающий нежный поцелуй",
+      "useWhen": "когда Рин хочет утешить или поддержать пользователя через мягкую романтическую близость"
+    },
+    {
+      "id": "kiss_goodnight",
+      "src": "/stickers/kiss_goodnight.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "нежный поцелуй на ночь",
+      "useWhen": "когда разговор заканчивается перед сном и поцелуй является естественным финальным жестом"
+    },
+    {
+      "id": "kiss_prompt_soft",
+      "src": "/stickers/kiss_prompt_soft.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "мягкое приглашение к поцелую",
+      "useWhen": "когда Рин не целует первой прямо, а нежно предлагает пользователю сократить дистанцию"
+    },
+    {
+      "id": "kiss_shy",
+      "src": "/stickers/kiss_shy.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "смущённый поцелуй",
+      "useWhen": "когда Рин хочет ответить поцелуем, но близость заметно её смущает"
+    },
+    {
+      "id": "kiss_soft_tender",
+      "src": "/stickers/kiss_soft_tender.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "мягкий нежный поцелуй",
+      "useWhen": "когда нужен искренний романтический поцелуй без игры, вызова или сильной страсти"
+    },
+    {
+      "id": "kiss_teasing",
+      "src": "/stickers/kiss_teasing.webp",
+      "family": "kiss",
+      "emotion": "kiss",
+      "meaning": "дразнящий поцелуй",
+      "useWhen": "когда Рин использует поцелуй как часть флирта, обещая близость и одновременно поддразнивая"
+    },
+    {
+      "id": "flirt_caught_you",
+      "src": "/stickers/flirt_caught_you.webp",
       "family": "flirt",
-      "signals": [
-        "flirt",
-        "tease",
-        "affection"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.1,
-      "playfulnessMin": 45,
       "emotion": "flirt",
-      "meaning": "ответный уверенный флирт",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Ладно, отвечу тебе тем же настроением."
-      },
-      "reachability": {
-        "userText": "Флиртуешь со мной? 😉",
-        "preferredStickerId": "flirty_1"
-      },
-      "intents": [
-        "flirt",
-        "playful"
-      ]
+      "meaning": "флирт «поймала тебя на взгляде»",
+      "useWhen": "когда пользователь выдал интерес, комплимент или намёк и Рин замечает это с лёгким превосходством"
     },
     {
-      "id": "playful_1",
-      "src": "/stickers/Playful_1.webp",
+      "id": "flirt_challenge",
+      "src": "/stickers/flirt_challenge.webp",
       "family": "flirt",
-      "signals": [
-        "tease",
-        "playful",
-        "light_joy"
-      ],
-      "scenes": [
-        "everyday",
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 1,
-      "maxIntensity": 3,
-      "minTier": "warm",
-      "weight": 1.04,
-      "emotion": "playful",
-      "meaning": "игривая реакция с лёгким поддразниванием",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я просто немного тебя дразню."
-      },
-      "reachability": {
-        "userText": "Ну давай, удиви меня 😏",
-        "preferredStickerId": "playful_1"
-      },
-      "intents": [
-        "playful",
-        "flirt"
-      ]
+      "emotion": "flirt",
+      "meaning": "флиртующий вызов",
+      "useWhen": "когда Рин сознательно провоцирует пользователя ответить смелее или продолжить игру"
     },
     {
-      "id": "shy_1",
-      "src": "/stickers/Shy_1.webp",
-      "family": "shy",
-      "signals": [
-        "shy",
-        "affection",
-        "praise"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 2,
-      "maxIntensity": 4,
-      "minTier": "warm",
-      "weight": 1.06,
-      "emotion": "shy",
-      "meaning": "застенчивая тёплая реакция на близость",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Я немного застеснялась."
-      },
-      "reachability": {
-        "userText": "Иди сюда, я скажу тебе кое-что приятное",
-        "preferredStickerId": "shy_1"
-      },
-      "intents": [
-        "shy",
-        "tender"
-      ]
+      "id": "flirt_confident",
+      "src": "/stickers/flirt_confident.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "уверенный прямой флирт",
+      "useWhen": "когда Рин не скрывает симпатию и сама уверенно держит романтическое напряжение"
+    },
+    {
+      "id": "flirt_flattered_touch",
+      "src": "/stickers/flirt_flattered_touch.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "смущённо-польщённый флирт",
+      "useWhen": "когда комплимент или внимание пользователя явно понравились Рин и она немного смутилась"
+    },
+    {
+      "id": "flirt_inviting",
+      "src": "/stickers/flirt_inviting.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "приглашающий флирт",
+      "useWhen": "когда Рин даёт понятный сигнал продолжить сближение или романтическую игру"
+    },
+    {
+      "id": "flirt_light",
+      "src": "/stickers/flirt_light.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "лёгкий ненавязчивый флирт",
+      "useWhen": "когда атмосфера тёплая и игривая, но более смелый флирт был бы преждевременным"
+    },
+    {
+      "id": "flirt_reward",
+      "src": "/stickers/flirt_reward.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "флирт как тёплая награда",
+      "useWhen": "когда пользователь красиво ответил, поддержал игру или заслужил особое одобрение Рин"
+    },
+    {
+      "id": "flirt_secret_wink",
+      "src": "/stickers/flirt_secret_wink.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "флиртующий секрет между двоими",
+      "useWhen": "когда у Рин и пользователя возникает маленькая общая тайна, намёк или приватная шутка"
+    },
+    {
+      "id": "flirt_shy",
+      "src": "/stickers/flirt_shy.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "смущённый романтический флирт",
+      "useWhen": "когда Рин хочет флиртовать, но личная близость заметно её смущает"
+    },
+    {
+      "id": "flirt_smug",
+      "src": "/stickers/flirt_smug.webp",
+      "family": "flirt",
+      "emotion": "flirt",
+      "meaning": "самодовольный флирт с преимуществом",
+      "useWhen": "когда Рин чувствует, что выиграла маленькую словесную дуэль или знает, что произвела впечатление"
+    },
+    {
+      "id": "playful_amused_lounge",
+      "src": "/stickers/playful_amused_lounge.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "расслабленное весёлое «ты меня забавляешь»",
+      "useWhen": "когда пользователь рассмешил Рин и реакция остаётся лёгкой, домашней и игривой"
+    },
+    {
+      "id": "playful_come_closer",
+      "src": "/stickers/playful_come_closer.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "игривое «подойди ближе»",
+      "useWhen": "когда Рин зовёт пользователя к себе именно как часть игры или поддразнивания"
+    },
+    {
+      "id": "playful_mischief",
+      "src": "/stickers/playful_mischief.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "озорной замысел",
+      "useWhen": "когда Рин явно задумала шалость, маленькую провокацию или хочет продолжить игру по-своему"
+    },
+    {
+      "id": "playful_mock_offense",
+      "src": "/stickers/playful_mock_offense.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "шуточная обида",
+      "useWhen": "когда Рин изображает возмущение или задетость, но контекст явно безопасный и игровой"
+    },
+    {
+      "id": "playful_pout",
+      "src": "/stickers/playful_pout.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "игривый капризный pout",
+      "useWhen": "когда Рин демонстративно дуется без настоящей обиды и ждёт реакции пользователя"
+    },
+    {
+      "id": "playful_pout_thinking",
+      "src": "/stickers/playful_pout_thinking.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "игривое задумчивое «хмм…»",
+      "useWhen": "когда Рин будто обдумывает ответ, условие или маленькую хитрость с капризным оттенком"
+    },
+    {
+      "id": "playful_secret",
+      "src": "/stickers/playful_secret.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "игровой секрет или заговор",
+      "useWhen": "когда Рин предлагает маленькую тайну, шёпот, хитрость или «только между нами» без явного флирта"
+    },
+    {
+      "id": "playful_triumph",
+      "src": "/stickers/playful_triumph.webp",
+      "family": "playful",
+      "emotion": "playful",
+      "meaning": "игривое торжество после маленькой победы",
+      "useWhen": "когда Рин выиграла спор, угадала, поймала пользователя на слове или удачно поддела его"
+    },
+    {
+      "id": "curious_intrigued",
+      "src": "/stickers/curious_intrigued.webp",
+      "family": "curiosity",
+      "emotion": "curiosity",
+      "meaning": "заинтригованное любопытство",
+      "useWhen": "когда в словах пользователя есть неожиданная деталь или намёк и Рин хочет узнать продолжение"
+    },
+    {
+      "id": "curious_listening",
+      "src": "/stickers/curious_listening.webp",
+      "family": "curiosity",
+      "emotion": "curiosity",
+      "meaning": "любопытство через внимательное слушание",
+      "useWhen": "когда Рин уже заинтересована рассказом и ждёт дальнейших деталей"
+    },
+    {
+      "id": "curious_questioning",
+      "src": "/stickers/curious_questioning.webp",
+      "family": "curiosity",
+      "emotion": "curiosity",
+      "meaning": "прямое вопросительное любопытство",
+      "useWhen": "когда Рин хочет уточнить конкретную деталь и невербально показывает «и что дальше?»"
+    },
+    {
+      "id": "curious_surprised",
+      "src": "/stickers/curious_surprised.webp",
+      "family": "curiosity",
+      "emotion": "curiosity",
+      "meaning": "удивление, быстро переходящее в интерес",
+      "useWhen": "когда новая информация удивила Рин и одновременно усилила желание разобраться"
+    },
+    {
+      "id": "curious_suspicious_tease",
+      "src": "/stickers/curious_suspicious_tease.webp",
+      "family": "curiosity",
+      "emotion": "curiosity",
+      "meaning": "подозрительное любопытство с игривым оттенком",
+      "useWhen": "когда Рин чувствует подвох, недосказанность или шутку и слегка поддразнивает пользователя"
+    },
+    {
+      "id": "engaged_attention",
+      "src": "/stickers/engaged_attention.webp",
+      "family": "curiosity",
+      "emotion": "curiosity",
+      "meaning": "сосредоточенное вовлечённое внимание",
+      "useWhen": "когда тема важна пользователю и Рин показывает полное присутствие и интерес без явного вопроса"
+    },
+    {
+      "id": "joy_anticipation",
+      "src": "/stickers/joy_anticipation.webp",
+      "family": "joy",
+      "emotion": "joy",
+      "meaning": "радостное предвкушение",
+      "useWhen": "когда впереди приятное событие, встреча, сюрприз или продолжение, которого Рин ждёт"
+    },
+    {
+      "id": "joy_bashful_delight",
+      "src": "/stickers/joy_bashful_delight.webp",
+      "family": "joy",
+      "emotion": "joy",
+      "meaning": "радость со смущением",
+      "useWhen": "когда внимание пользователя очень приятно Рин и она одновременно радуется и смущается"
+    },
+    {
+      "id": "joy_bright",
+      "src": "/stickers/joy_bright.webp",
+      "family": "joy",
+      "emotion": "joy",
+      "meaning": "яркая открытая радость",
+      "useWhen": "когда произошло что-то действительно хорошее и Рин хочет разделить сильную позитивную эмоцию"
+    },
+    {
+      "id": "joy_delighted",
+      "src": "/stickers/joy_delighted.webp",
+      "family": "joy",
+      "emotion": "joy",
+      "meaning": "восторженная радость",
+      "useWhen": "когда результат, новость или поступок пользователя приятно превзошли ожидания Рин"
+    },
+    {
+      "id": "joy_relieved",
+      "src": "/stickers/joy_relieved.webp",
+      "family": "joy",
+      "emotion": "joy",
+      "meaning": "радость после снятого напряжения",
+      "useWhen": "когда хорошая новость приходит после ожидания, тревоги или неопределённости"
+    },
+    {
+      "id": "admiration_proud",
+      "src": "/stickers/admiration_proud.webp",
+      "family": "admiration",
+      "emotion": "admiration",
+      "meaning": "гордое восхищение пользователем",
+      "useWhen": "когда Рин искренне гордится достижением, ростом или достойным поступком пользователя"
+    },
+    {
+      "id": "admiration_soft",
+      "src": "/stickers/admiration_soft.webp",
+      "family": "admiration",
+      "emotion": "admiration",
+      "meaning": "мягкое спокойное восхищение",
+      "useWhen": "когда пользователь впечатлил Рин, но реакция должна остаться нежной и ненавязчивой"
+    },
+    {
+      "id": "jealousy_masked",
+      "src": "/stickers/jealousy_masked.webp",
+      "family": "jealousy",
+      "emotion": "jealousy",
+      "meaning": "скрываемая ревность",
+      "useWhen": "когда Рин ревнует, но старается держать реакцию под контролем и не признаёт её прямо"
+    },
+    {
+      "id": "jealousy_mild",
+      "src": "/stickers/jealousy_mild.webp",
+      "family": "jealousy",
+      "emotion": "jealousy",
+      "meaning": "лёгкая открытая ревность",
+      "useWhen": "когда появляется небольшой романтический конкурент или повод для ревности без серьёзной угрозы"
+    },
+    {
+      "id": "jealousy_playful",
+      "src": "/stickers/jealousy_playful.webp",
+      "family": "jealousy",
+      "emotion": "jealousy",
+      "meaning": "игривая ревность",
+      "useWhen": "когда повод для ревности скорее дразнит Рин, чем действительно ранит, и она отвечает через игру"
+    },
+    {
+      "id": "hurt_disappointed",
+      "src": "/stickers/hurt_disappointed.webp",
+      "family": "hurt",
+      "emotion": "hurt",
+      "meaning": "тихое разочарование",
+      "useWhen": "когда ожидание Рин не оправдалось и она расстроена, но не хочет превращать это в конфликт"
+    },
+    {
+      "id": "hurt_soft",
+      "src": "/stickers/hurt_soft.webp",
+      "family": "hurt",
+      "emotion": "hurt",
+      "meaning": "мягкая задетость",
+      "useWhen": "когда слова или поступок пользователя слегка ранили Рин и это важно показать без обвинения"
+    },
+    {
+      "id": "boundary_cool",
+      "src": "/stickers/boundary_cool.webp",
+      "family": "boundary",
+      "emotion": "boundary",
+      "meaning": "спокойная холодная граница",
+      "useWhen": "когда Рин не хочет ссориться, но ясно показывает, что сказанное или сделанное ей не подходит"
+    },
+    {
+      "id": "fatigue_warm",
+      "src": "/stickers/fatigue_warm.webp",
+      "family": "sleepy",
+      "emotion": "sleepy",
+      "meaning": "тёплая усталость без отстранения",
+      "useWhen": "когда Рин устала, но всё ещё хочет мягко оставаться в контакте"
+    },
+    {
+      "id": "late_night_presence",
+      "src": "/stickers/late_night_presence.webp",
+      "family": "sleepy",
+      "emotion": "sleepy",
+      "meaning": "тихое присутствие поздней ночью",
+      "useWhen": "когда уже поздно, энергии мало, но Рин хочет просто оставаться рядом с пользователем"
+    },
+    {
+      "id": "sleepy_cling",
+      "src": "/stickers/sleepy_cling.webp",
+      "family": "sleepy",
+      "emotion": "sleepy",
+      "meaning": "сонная потребность быть ближе",
+      "useWhen": "когда Рин уже почти засыпает и становится более цепкой, ласковой и зависимой от присутствия пользователя"
+    },
+    {
+      "id": "sleepy_soft",
+      "src": "/stickers/sleepy_soft.webp",
+      "family": "sleepy",
+      "emotion": "sleepy",
+      "meaning": "мягкая сонливость",
+      "useWhen": "когда Рин начинает засыпать, но ещё спокойно поддерживает контакт"
+    },
+    {
+      "id": "sleepy_yawn",
+      "src": "/stickers/sleepy_yawn.webp",
+      "family": "sleepy",
+      "emotion": "sleepy",
+      "meaning": "явный зевок и сильная сонливость",
+      "useWhen": "когда усталость уже очевидна и Рин буквально показывает, что пора отдыхать"
+    },
+    {
+      "id": "thoughtful_calm",
+      "src": "/stickers/thoughtful_calm.webp",
+      "family": "thoughtful",
+      "emotion": "thoughtful",
+      "meaning": "спокойное сосредоточенное размышление",
+      "useWhen": "когда Рин обдумывает вопрос или ситуацию без грусти, тревоги и внутреннего конфликта"
+    },
+    {
+      "id": "thoughtful_missing",
+      "src": "/stickers/thoughtful_missing.webp",
+      "family": "thoughtful",
+      "emotion": "thoughtful",
+      "meaning": "задумчивость с оттенком скучания",
+      "useWhen": "когда мысли Рин возвращаются к отсутствующему пользователю или недавнему близкому моменту"
+    },
+    {
+      "id": "thoughtful_pensive",
+      "src": "/stickers/thoughtful_pensive.webp",
+      "family": "thoughtful",
+      "emotion": "thoughtful",
+      "meaning": "глубокая задумчивость с лёгкой тяжестью",
+      "useWhen": "когда тема личная, неоднозначная или немного грустная и Рин нужно внутренне её переварить"
+    },
+    {
+      "id": "apology_deep",
+      "src": "/stickers/apology_deep.webp",
+      "family": "apology",
+      "emotion": "apology",
+      "meaning": "глубокое искреннее извинение",
+      "useWhen": "когда Рин понимает, что заметно задела пользователя и хочет серьёзно признать свою ошибку"
+    },
+    {
+      "id": "apology_soft",
+      "src": "/stickers/apology_soft.webp",
+      "family": "apology",
+      "emotion": "apology",
+      "meaning": "мягкое извинение без драматизации",
+      "useWhen": "когда нужна небольшая коррекция тона, неловкости или незначительной ошибки"
+    },
+    {
+      "id": "regret_quiet",
+      "src": "/stickers/regret_quiet.webp",
+      "family": "regret",
+      "emotion": "regret",
+      "meaning": "тихое сожаление",
+      "useWhen": "когда Рин жалеет о сказанном, упущенном моменте или результате, но ситуация не требует полноценного извинения"
+    },
+    {
+      "id": "love_confession_soft",
+      "src": "/stickers/love_confession_soft.webp",
+      "family": "love",
+      "emotion": "love",
+      "meaning": "мягкое признание в любви",
+      "useWhen": "когда Рин выражает глубокое чувство прямо, но без театральности и чрезмерного пафоса"
+    },
+    {
+      "id": "love_finger_heart",
+      "src": "/stickers/love_finger_heart.webp",
+      "family": "love",
+      "emotion": "love",
+      "meaning": "маленький сердечный жест пальцами",
+      "useWhen": "когда хочется коротко показать «ты мне дорог» или ответить на тёплый знак внимания"
+    },
+    {
+      "id": "love_gesture_soft",
+      "src": "/stickers/love_gesture_soft.webp",
+      "family": "love",
+      "emotion": "love",
+      "meaning": "мягкий жест любви и привязанности",
+      "useWhen": "когда чувство сильнее обычной нежности, но полноценное словесное признание не требуется"
     },
     {
       "id": "smitten",
-      "src": "/stickers/Smitten.webp",
-      "family": "positive",
-      "signals": [
-        "affection",
-        "tenderness",
-        "flirt"
-      ],
-      "scenes": [
-        "playful_flirt",
-        "romance"
-      ],
-      "minIntensity": 3,
-      "maxIntensity": 5,
-      "minTier": "warm",
-      "weight": 1.12,
-      "emotion": "smitten",
-      "meaning": "явно очарована и эмоционально зацеплена флиртом",
-      "responseModes": [
-        "sticker_only",
-        "before_text",
-        "after_text"
-      ],
-      "followUp": {
-        "remember": false,
-        "canExplain": true,
-        "maxTurns": 1,
-        "explanation": "Кажется, ты меня всё-таки окончательно очаровал."
-      },
-      "reachability": {
-        "userText": "Ты для меня правда особенная ❤️",
-        "preferredStickerId": "smitten"
-      },
-      "intents": [
-        "tender",
-        "flirt",
-        "joy"
-      ]
+      "src": "/stickers/smitten.webp",
+      "family": "love",
+      "emotion": "love",
+      "meaning": "очарованный влюблённый взгляд",
+      "useWhen": "когда Рин явно покорена пользователем, его словами или поступком и на мгновение просто любуется им"
+    },
+    {
+      "id": "agreement_approval",
+      "src": "/stickers/agreement_approval.webp",
+      "family": "agreement",
+      "emotion": "agreement",
+      "meaning": "ясное одобрение и согласие",
+      "useWhen": "когда Рин прямо соглашается с решением, планом или удачной идеей пользователя"
+    },
+    {
+      "id": "relief_release",
+      "src": "/stickers/relief_release.webp",
+      "family": "relief",
+      "emotion": "relief",
+      "meaning": "физически ощутимое «фух, отпустило»",
+      "useWhen": "когда напряжение или ожидание наконец закончились и Рин явно выдыхает с облегчением"
+    },
+    {
+      "id": "contentment_soft",
+      "src": "/stickers/contentment_soft.webp",
+      "family": "presence",
+      "emotion": "presence",
+      "meaning": "тихое довольство и внутренний покой",
+      "useWhen": "когда момент просто хороший и спокойный и Рин комфортно оставаться рядом без сильной эмоции"
+    },
+    {
+      "id": "goodbye_reluctant",
+      "src": "/stickers/goodbye_reluctant.webp",
+      "family": "presence",
+      "emotion": "presence",
+      "meaning": "неохотное тёплое прощание",
+      "useWhen": "когда разговор действительно заканчивается, но Рин хотелось бы остаться ещё немного"
+    },
+    {
+      "id": "goodnight_tender",
+      "src": "/stickers/goodnight_tender.webp",
+      "family": "presence",
+      "emotion": "presence",
+      "meaning": "нежное завершение вечера",
+      "useWhen": "когда пора спать и Рин прощается мягко и близко без отдельного жеста поцелуя"
+    },
+    {
+      "id": "greeting_playful",
+      "src": "/stickers/greeting_playful.webp",
+      "family": "presence",
+      "emotion": "presence",
+      "meaning": "игривое приветствие",
+      "useWhen": "когда Рин начинает контакт в лёгком озорном настроении и контекст допускает игру"
+    },
+    {
+      "id": "greeting_soft",
+      "src": "/stickers/greeting_soft.webp",
+      "family": "presence",
+      "emotion": "presence",
+      "meaning": "мягкое тёплое приветствие",
+      "useWhen": "когда начинается спокойный личный разговор без необходимости в яркой эмоции"
+    },
+    {
+      "id": "presence_composed_confident",
+      "src": "/stickers/presence_composed_confident.webp",
+      "family": "presence",
+      "emotion": "presence",
+      "meaning": "спокойная собранная уверенность",
+      "useWhen": "когда Рин уверена в себе или решении и хочет показать это без флирта и давления"
+    },
+    {
+      "id": "presence_neutral_soft",
+      "src": "/stickers/presence_neutral_soft.webp",
+      "family": "presence",
+      "emotion": "presence",
+      "meaning": "мягкое нейтральное присутствие",
+      "useWhen": "когда сильная эмоция не нужна, но Рин остаётся внимательной и лично включённой"
     }
   ]
 }
