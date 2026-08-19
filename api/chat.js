@@ -353,8 +353,6 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
       scene: scene?.type || '',
       cause: decision.focus,
       intensity: decision.delivery.mode === 'sticker_only' ? 62 : 48,
-      recentStickerIds: stickerState?.recentAssetIds || [],
-      rotationSeed: `${requestId}:${plan.stickerIntent}:${index}`
     });
     if (!selected) throw Object.assign(new Error(`Sticker intent unresolved: ${plan.stickerIntent || '(empty)'}`), { code: 'STICKER_INTENT_UNRESOLVED' });
     segments.push({ ...base, stickerIntent: plan.stickerIntent, sticker: selected.sticker, semantic: selected });
