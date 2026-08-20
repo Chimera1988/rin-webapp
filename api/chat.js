@@ -7,7 +7,7 @@ import { validateRealization, validateTurnDecisionConstraints } from '../lib/cog
 import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
-import { buildRealizationPrompt, buildRealizationRetryInstruction, parseRealization } from '../lib/personality/rin-realization.js';
+import { buildRealizationPrompt, buildRealizationRetryPrompt, parseRealization } from '../lib/personality/rin-realization.js';
 import {
   cleanInlineText,
   currentUserTurn,
@@ -22,11 +22,11 @@ import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const KERNEL_MODEL = process.env.OPENAI_DECISION_MODEL || 'gpt-4o-mini';
+const KERNEL_MODEL = process.env.OPENAI_DECISION_MODEL || 'gpt-4.1';
 const REALIZATION_MODEL = process.env.OPENAI_REALIZATION_MODEL || 'gpt-4o-mini';
 const KERNEL_PARAMS = { temperature: 0.28, max_tokens: 1100 };
-const REALIZATION_PARAMS = { temperature: 0.72, max_tokens: 760 };
-const LONG_REALIZATION_PARAMS = { temperature: 0.72, max_tokens: 1800 };
+const REALIZATION_PARAMS = { temperature: 0.68, max_tokens: 700 };
+const LONG_REALIZATION_PARAMS = { temperature: 0.68, max_tokens: 1500 };
 
 const normalize = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -197,7 +197,7 @@ function mergeUsage(...usages) {
   return out;
 }
 
-const MAX_REALIZATION_REWRITES = 2;
+const MAX_REALIZATION_REWRITES = 1;
 
 function realizationFailure(validation = null, attempts = 1, phase = 'validation_failed') {
   const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
@@ -243,26 +243,29 @@ async function realizeDecision({ profile, state, decision, realityBoundary, isLo
   const params = isLong ? LONG_REALIZATION_PARAMS : REALIZATION_PARAMS;
   const trace = [];
   let usage = null;
+  let realizedModel = REALIZATION_MODEL;
   let previousRealization = null;
   let previousValidation = null;
 
   for (let rewriteAttempt = 0; rewriteAttempt <= MAX_REALIZATION_REWRITES; rewriteAttempt += 1) {
     const attemptNumber = rewriteAttempt + 1;
-    const retryInstruction = rewriteAttempt > 0
-      ? buildRealizationRetryInstruction(
-          previousValidation?.rewriteableWarnings || previousValidation?.warnings || [],
+    const retryPrompt = rewriteAttempt > 0
+      ? buildRealizationRetryPrompt({
+          profile,
           decision,
           previousRealization,
-          rewriteAttempt
-        )
-      : '';
+          previousValidation,
+          attempt: rewriteAttempt
+        })
+      : prompt;
     const completion = await openaiChat({
       model: REALIZATION_MODEL,
-      messages: [{ role: 'system', content: retryInstruction ? `${prompt.system}\n\n${retryInstruction}` : prompt.system }],
-      response_format: prompt.responseFormat,
+      messages: [{ role: 'system', content: retryPrompt.system }],
+      response_format: retryPrompt.responseFormat,
       ...params
     });
     usage = mergeUsage(usage, completion.usage);
+    realizedModel = completion.model || realizedModel;
     if (completion.finishReason === 'length' || !completion.content) {
       throw Object.assign(new Error(`Realization attempt ${attemptNumber} incomplete`), {
         code: 'MODEL_RESPONSE_TRUNCATED', attempts: attemptNumber
@@ -294,6 +297,7 @@ async function realizeDecision({ profile, state, decision, realityBoundary, isLo
           trace
         },
         usage,
+        model: realizedModel,
         retried: rewriteAttempt > 0,
         attempts: attemptNumber
       };
@@ -368,6 +372,32 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
 
 
 
+function buildFastPathDecision({ literalIntent = 'statement' } = {}) {
+  const isGratitude = literalIntent === 'gratitude';
+  return parseKernelDecision(JSON.stringify({
+    act: isGratitude ? 'acknowledge_gratitude' : 'greeting',
+    focus: isGratitude ? 'принять благодарность пользователя и сохранить контакт' : 'естественно поприветствовать пользователя',
+    stance: 'тёплая, личная и ненавязчивая',
+    question: { mode: 'none', reason: null },
+    replyLink: { targetEventId: null, reason: null },
+    delivery: { segments: [{ type: 'text', purpose: isGratitude ? 'acknowledgment' : 'greeting', stickerIntent: null, maxChars: 280 }] },
+    intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
+    openLoops: { open: [], resolveIds: [] },
+    realityMode: 'grounded'
+  }));
+}
+
+function canUseFastPath({ trigger = null, conversationState = 'ongoing', userText = '', brain = null, activeIntent = null, explicitReply = null, isLong = false, stickerState = null } = {}) {
+  if (trigger || isLong || explicitReply || conversationState === 'ending') return false;
+  if (activeIntent?.status && ['active', 'suspended'].includes(activeIntent.status)) return false;
+  if (stickerState?.available === true) return false;
+  if (String(userText || '').trim().length > 80) return false;
+  const text = String(userText || '').trim();
+  const simpleGreeting = /^(?:привет|здравствуй|здравствуйте|хай|hello|доброе утро|добрый день|добрый вечер)[!.,)\s🙂😊😉]*$/iu.test(text);
+  const simpleGratitude = /^(?:спасибо|благодарю|спасибки)[!.,)\s🙂😊😉]*$/iu.test(text);
+  return simpleGreeting || simpleGratitude;
+}
+
 async function validateDecisionResources(decision = null) {
   const warnings = [];
   for (const segment of Array.isArray(decision?.delivery?.segments) ? decision.delivery.segments : []) {
@@ -425,27 +455,54 @@ export default async function handler(req, res) {
       client: { ...(body.client || {}), longRequested: isLong },
       trigger
     });
-    const kernelCompletion = await openaiChat({
-      model: KERNEL_MODEL,
-      messages: [{ role: 'system', content: kernelPrompt.system }],
-      response_format: kernelPrompt.responseFormat,
-      ...KERNEL_PARAMS
+    const fastPath = canUseFastPath({
+      trigger,
+      conversationState,
+      userText: userTurn,
+      brain,
+      activeIntent: kernelState.activeIntent,
+      explicitReply,
+      isLong,
+      stickerState: kernelState.stickerState
     });
-    if (kernelCompletion.finishReason === 'length' || !kernelCompletion.content) {
-      return res.status(502).json({ error: 'Decision model response was truncated', code: 'MODEL_RESPONSE_TRUNCATED', requestId });
-    }
-    let decision;
-    try { decision = parseKernelDecision(kernelCompletion.content); }
-    catch { return res.status(502).json({ error: 'Decision model returned invalid structured output', code: 'INVALID_TURN_DECISION', requestId }); }
 
-    // Deterministic validation may reject an invalid decision, but it never substitutes
-    // a different behavior. The same Cognitive Kernel gets one chance to decide again.
-    let decisionUsage = kernelCompletion.usage;
-    let decisionValidation = mergeDecisionValidation(
-      validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
-      await validateDecisionResources(decision)
-    );
-    if (!decisionValidation.passed) {
+    let kernelCompletion = null;
+    let decision;
+    let decisionUsage = null;
+    let decisionValidation;
+    let decisionCalls = 0;
+
+    if (fastPath) {
+      decision = buildFastPathDecision({ literalIntent: brain?.literalIntent });
+      decisionValidation = mergeDecisionValidation(
+        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
+        await validateDecisionResources(decision)
+      );
+      if (!decisionValidation.passed) {
+        return res.status(502).json({ error: 'Fast-path decision violated protocol/state invariants', code: 'INVALID_TURN_DECISION', requestId, warnings: decisionValidation.warnings });
+      }
+    } else {
+      kernelCompletion = await openaiChat({
+        model: KERNEL_MODEL,
+        messages: [{ role: 'system', content: kernelPrompt.system }],
+        response_format: kernelPrompt.responseFormat,
+        ...KERNEL_PARAMS
+      });
+      decisionCalls = 1;
+      if (kernelCompletion.finishReason === 'length' || !kernelCompletion.content) {
+        return res.status(502).json({ error: 'Decision model response was truncated', code: 'MODEL_RESPONSE_TRUNCATED', requestId });
+      }
+      try { decision = parseKernelDecision(kernelCompletion.content); }
+      catch { return res.status(502).json({ error: 'Decision model returned invalid structured output', code: 'INVALID_TURN_DECISION', requestId }); }
+
+      // Deterministic validation may reject an invalid decision, but it never substitutes
+      // a different behavior. The same Cognitive Kernel gets one chance to decide again.
+      decisionUsage = kernelCompletion.usage;
+      decisionValidation = mergeDecisionValidation(
+        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
+        await validateDecisionResources(decision)
+      );
+      if (!decisionValidation.passed) {
       console.warn('Rin TurnDecision rejected; retrying same kernel', { requestId, warnings: decisionValidation.warnings });
       const retryCompletion = await openaiChat({
         model: KERNEL_MODEL,
@@ -470,6 +527,8 @@ export default async function handler(req, res) {
         console.error('Rin TurnDecision rejected after retry', { requestId, warnings: decisionValidation.warnings });
         return res.status(502).json({ error: 'Decision model violated protocol/state invariants', code: 'INVALID_TURN_DECISION', requestId, warnings: decisionValidation.warnings });
       }
+      decisionCalls = 2;
+      }
     }
 
     const realizationResult = await realizeDecision({ profile, state: kernelState, decision, realityBoundary, isLong });
@@ -484,13 +543,14 @@ export default async function handler(req, res) {
       turnId: deliveryPlan.turnId,
       reply,
       finishReason: 'stop',
-      model: { kernel: kernelCompletion.model || KERNEL_MODEL, realization: REALIZATION_MODEL },
+      model: { kernel: fastPath ? 'deterministic-fast-path' : (kernelCompletion?.model || KERNEL_MODEL), realization: realizationResult.model || REALIZATION_MODEL },
       long: isLong,
       promptMetrics: {
         promptVersion: 'rin-cognitive-kernel-v1',
         inputTokens: usage.prompt_tokens,
         outputTokens: usage.completion_tokens,
         totalTokens: usage.total_tokens,
+        calls: { kernel: decisionCalls, realization: realizationResult.attempts },
         historyItems: history.length
       },
       perception: brain,
@@ -499,6 +559,7 @@ export default async function handler(req, res) {
       visualReply,
       affectiveTurn,
       validation: { decision: decisionValidation, realization: realizationResult.validation },
+      fastPath,
       deliveryPlan,
       stateTransition,
       trigger
