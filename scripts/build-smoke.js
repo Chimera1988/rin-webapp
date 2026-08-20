@@ -100,13 +100,13 @@ for (const file of removedDecisionOwners) if (await exists(file)) fail(`Competin
 for (const legacyOwner of removedDecisionOwners.map(file => path.basename(file))) {
   if (apiChat.includes(legacyOwner)) fail(`Chat API still imports competing decision owner ${legacyOwner}.`);
 }
-if (!/gpt-4o-mini/.test(apiChat)) fail('User-facing chat cognition must use gpt-4o-mini.');
+if (!/REALIZATION_MODEL.*gpt-4o-mini/s.test(apiChat)) fail('User-facing realization should default to gpt-4o-mini while the decision model remains independently configurable.');
 if (/normalize\(input\.(?:hint|pool)|trigger\?\.(?:hint|pool)/.test(apiChat)) fail('Proactive trigger must carry event metadata only; content hints/pools are forbidden.');
 if (!apiChat.includes('OPENAI_DECISION_MODEL') || !apiChat.includes('OPENAI_REALIZATION_MODEL')) fail('Chat must route models by cognitive role.');
-if (!apiChat.includes("'gpt-4o-mini'") || /OPENAI_LONG_MODEL|['"]gpt-4o['"]/.test(apiChat)) fail('Chat model defaults must use gpt-4o-mini without deprecated compatibility aliases.');
+if (!apiChat.includes("'gpt-4.1'") || /OPENAI_LONG_MODEL|['"]gpt-4o['"]/.test(apiChat)) fail('Chat model defaults must use the current explicit role fallback without deprecated compatibility aliases.');
 if (!apiChat.includes('retrieveCanonicalLore(canonCue)') || /body\.lore/.test(apiChat)) fail('Canonical lore must be server-retrieved and client lore must not be trusted.');
 if (!apiChat.includes('validateTurnDecisionConstraints') || !apiChat.includes('validateRealization')) fail('Deterministic decision/realization validation is missing.');
-if (!apiChat.includes('buildRealizationRetryInstruction')) fail('Realization retry must be constraint-aware.');
+if (!apiChat.includes('buildRealizationRetryPrompt')) fail('Realization retry must use the compact constraint-aware repair prompt.');
 if (!apiChat.includes('RETRYABLE_OPENAI_STATUSES') || !apiChat.includes('UPSTREAM_RATE_LIMITED') || !apiChat.includes('UPSTREAM_UNAVAILABLE') || !apiChat.includes('UPSTREAM_NETWORK_ERROR')) fail('Chat upstream retry/classification contract is missing.');
 const serverHttpSource = await read('lib/server/http.js');
 if (!serverHttpSource.includes('REALIZATION_VALIDATION_FAILED') || !serverHttpSource.includes('UPSTREAM_RATE_LIMITED') || !serverHttpSource.includes('UPSTREAM_REJECTED')) fail('Public server error mapping must preserve actionable runtime codes.');
@@ -149,8 +149,8 @@ if (/sceneGoal|dialogueStateInstruction/.test(dialogueState)) fail('DialogueStat
 if (/scene:\s*\{[\s\S]{0,400}goal:/.test(kernelState) || /ambiguity[^\n]*rule/.test(kernelState)) fail('KernelState must not receive prescriptive scene/ambiguity rules.');
 const realization = await read('lib/personality/rin-realization.js');
 if (!realization.includes('ТОЛЬКО ФОРМУЛИРОВКА УЖЕ ПРИНЯТОГО РЕШЕНИЯ') || !realization.includes('Не меняй act, intent, delivery')) fail('Realization must be subordinate to frozen TurnDecision.');
-if (!realization.includes('canonicalContext: state?.lore')) fail('Realization must receive the same retrieved canonical context as the Kernel.');
-if (!realization.includes('Предыдущий отклонённый текст') || !realization.includes('Переформулировка') || !realization.includes('Исправляй ТОЛЬКО перечисленные нарушения')) fail('Realization rewrite prompt must be targeted and retain the rejected wording as repair context.');
+if (!realization.includes('lore: state?.lore')) fail('Realization must receive retrieved canonical context in its compact state.');
+if (!realization.includes('Предыдущий отклонённый результат') || !realization.includes('RIN REALIZATION REPAIR v1') || !realization.includes('исправь только уже сформированный текст')) fail('Realization repair prompt must be compact, targeted and retain rejected wording as repair context.');
 const turnDecision = await read('lib/cognition/turn-decision.js');
 if (!turnDecision.includes("TURN_DECISION_SCHEMA = 'rin-turn-decision-v1'") || !turnDecision.includes('applyIntentTransition') || !turnDecision.includes('decisionOpenLoopUpdates')) fail('TurnDecision must own intent/open-loop transitions.');
 if (!turnDecision.includes('Normalization is deliberately non-semantic') || /purpose:\s*'afterthought'/.test(turnDecision)) fail('TurnDecision normalization must not synthesize conversational beats.');
@@ -183,7 +183,7 @@ if (chat.includes('lorePayloadForApi') || /\blore:\s*lore/.test(chat)) fail('Cli
 if (!chat.includes('isInternalNonverbalMetaText(text)')) fail('Final text delivery leak barrier is missing.');
 if (!chat.includes('resumePendingAssistantDeliveries') || !chat.includes('reconcilePendingAssistantDeliveryCommitState')) fail('Pending committed delivery must reconcile semantic commit and recover after reload.');
 if (!chat.includes('await memoryJobRunner.drain();')) fail('Next request must wait for pending semantic-memory work.');
-if (!apiChat.includes('MAX_REALIZATION_REWRITES = 2') || !apiChat.includes('Rin Realization rejected; rewriting same TurnDecision') || !apiChat.includes('hard_validation_failure')) fail('Chat API must allow two targeted Realization rewrites without replanning the turn.');
+if (!apiChat.includes('MAX_REALIZATION_REWRITES = 1') || !apiChat.includes('Rin Realization rejected; rewriting same TurnDecision') || !apiChat.includes('buildRealizationRetryPrompt') || !apiChat.includes('hard_validation_failure')) fail('Chat API must allow one compact targeted Realization rewrite without replanning the turn.');
 if (!chat.includes('realization recovered: request=') || !chat.includes('validationClass') || !chat.includes('rewriteableWarnings')) fail('Client debug must expose Realization recovery/failure diagnostics.');
 if (chat.includes('analyzeUserMoodImpact')) fail('Browser must not own persistent mood/relationship semantics.');
 
