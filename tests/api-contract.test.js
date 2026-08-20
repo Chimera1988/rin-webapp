@@ -24,7 +24,7 @@ const baseDecision = (overrides = {}) => ({
 
 const realization = (...texts) => ({ segments: texts.map((text, index) => ({ purpose: index === 0 ? 'main_reply' : `message_${index + 1}`, text })) });
 
-function openAiResponse(content, { finishReason = 'stop', model = 'gpt-4o-mini' } = {}) {
+function openAiResponse(content, { finishReason = 'stop', model = 'gpt-4.1' } = {}) {
   return new Response(JSON.stringify({ choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) }, finish_reason: finishReason }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, model }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
@@ -100,6 +100,23 @@ test('kernel prompt contains reference character, current state, environment and
   assert.match(system, /Говори чуть короче/);
   assert.match(system, /2026-08-03 22:00/);
   assert.match(system, /"temp":21/);
+});
+
+test('simple greeting uses deterministic fast path and skips the Cognitive Kernel', async () => {
+  const mock = installStructuredMock({ decisions: [], realizations: [realization('Привет. Рада тебя видеть 😊')] });
+  try {
+    const res = createRes();
+    await chat.default(userRequest({ requestId: 'greeting-fast-path', text: 'Привет', client: { sticker: { mode: 'off', probability: 0, safeMode: true } } }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(mock.counts().decision, 0);
+    assert.equal(mock.counts().realization, 1);
+    assert.equal(res.body.fastPath, true);
+    assert.equal(res.body.model.kernel, 'deterministic-fast-path');
+    assert.equal(res.body.promptMetrics.calls.kernel, 0);
+    assert.equal(res.body.promptMetrics.calls.realization, 1);
+    assert.equal(res.body.turnDecision.act, 'greeting');
+    assert.equal(res.body.validation.decision.passed, true);
+  } finally { mock.restore(); }
 });
 
 test('kernel truncation is retryable and no realization call occurs', async () => {
@@ -277,7 +294,7 @@ test('realization validator may retry wording but cannot change TurnDecision', a
 
 
 
-test('rewriteable Realization defects get two targeted rewrites without rerunning the Cognitive Kernel', async () => {
+test('rewriteable Realization defects get one compact targeted rewrite without rerunning the Cognitive Kernel', async () => {
   const decision = baseDecision({ act:'warm_answer', question:{mode:'none',reason:null} });
   const bodies=[];
   const mock=installStructuredMock({
@@ -285,7 +302,6 @@ test('rewriteable Realization defects get two targeted rewrites without rerunnin
     decisions:[decision],
     realizations:[
       realization('Тебе тоже нравится этот вечер?'),
-      realization('А тебе правда нравится этот вечер?'),
       realization('Мне нравится, как спокойно сейчас стало.')
     ]
   });
@@ -294,14 +310,14 @@ test('rewriteable Realization defects get two targeted rewrites without rerunnin
     await chat.default(userRequest({requestId:'realization-two-rewrites',text:'Мне нравится этот вечер.'}),res);
     assert.equal(res.statusCode,200);
     assert.equal(mock.counts().decision,1);
-    assert.equal(mock.counts().realization,3);
+    assert.equal(mock.counts().realization,2);
     assert.equal(res.body.reply,'Мне нравится, как спокойно сейчас стало.');
-    assert.equal(res.body.validation.realization.attempts,3);
-    assert.equal(res.body.validation.realization.rewrites,2);
-    assert.equal(res.body.validation.realization.trace.length,3);
-    assert.deepEqual(res.body.validation.realization.trace.slice(0,2).map(item=>item.warnings),[['unplanned_question'],['unplanned_question']]);
-    assert.match(bodies[2].messages[0].content,/Тебе тоже нравится этот вечер\?/u);
-    assert.match(bodies[3].messages[0].content,/А тебе правда нравится этот вечер\?/u);
+    assert.equal(res.body.validation.realization.attempts,2);
+    assert.equal(res.body.validation.realization.rewrites,1);
+    assert.equal(res.body.validation.realization.trace.length,2);
+    assert.deepEqual(res.body.validation.realization.trace[0].warnings,['unplanned_question']);
+    assert.match(bodies[2].messages[0].content,/unplanned_question/u);
+    assert.match(bodies[2].messages[0].content,/TurnDecision.*question.*none/iu);
     assert.doesNotMatch(bodies[2].messages[0].content,/прими решение заново как ТОТ ЖЕ единственный Cognitive Kernel/iu);
   } finally { mock.restore(); }
 });
@@ -339,9 +355,9 @@ test('overlong realization is retried from the full text instead of being clippe
     assert.equal(res.body.reply,'Скажу короче: я рядом и внимательно слушаю.');
     assert.match(bodies[2].messages[0].content,/segment_0_too_long/);
     assert.match(bodies[2].messages[0].content,/maxChars=80/);
-    assert.match(bodies[2].messages[0].content,/Предыдущий отклонённый текст/iu);
+    assert.match(bodies[2].messages[0].content,/Предыдущий отклонённый результат/iu);
     assert.match(bodies[2].messages[0].content,/специально слишком длинная формулировка/iu);
-    assert.match(bodies[2].messages[0].content,/запрещено обрывать слово/iu);
+    assert.match(bodies[2].messages[0].content,/Сократи нарушивший сегмент/iu);
   } finally { mock.restore(); }
 });
 
@@ -575,7 +591,7 @@ test('recent Rin duplicate is rejected at Realization only and retried without a
     assert.match(bodies[1].messages[0].content,/Недавние реплики Рин/iu);
     assert.match(bodies[1].messages[0].content,/Ты меня немного смутил сейчас/iu);
     assert.match(bodies[2].messages[0].content,/recent_assistant_duplicate/);
-    assert.match(bodies[2].messages[0].content,/ТО ЖЕ TurnDecision/iu);
+    assert.match(bodies[2].messages[0].content,/TurnDecision уже принят/iu);
   } finally { mock.restore(); }
 });
 

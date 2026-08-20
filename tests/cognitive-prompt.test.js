@@ -82,6 +82,7 @@ test('realization prompt cannot change the already frozen TurnDecision', () => {
   assert.match(prompt.system, /самостоятельным законченным пузырём/iu);
   assert.match(prompt.system, /Не обрывай слово, предложение/iu);
   assert.match(prompt.system, /Недавние реплики Рин/iu);
+  assert.match(prompt.system, /Компактный контекст для тона и конкретики/iu);
   assert.match(prompt.system, /Ты меня немного смутил сейчас/iu);
   assert.match(prompt.system, /не воспроизводи уже сказанную Рин реплику/iu);
   assert.doesNotMatch(prompt.system, /выбери.*intent/iu);
