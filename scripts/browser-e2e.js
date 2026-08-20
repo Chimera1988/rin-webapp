@@ -139,7 +139,7 @@ const server = createServer(async (req, res) => {
       };
       return json(res, 200, {
         requestId: body.requestId, turnId, reply: stickerOnly ? '' : reply, finishReason: 'stop', long: false,
-        model: { kernel:'gpt-4.1', realization:'gpt-4.1' }, turnDecision, deliveryPlan,
+        model: { kernel:'gpt-4o-mini', realization:'gpt-4o-mini' }, turnDecision, deliveryPlan,
         validation:{decision:{passed:true,warnings:[]},realization:{passed:true,warnings:[],reply:stickerOnly?'':reply}},
         stateTransition: {
           schema: 'rin-state-transition-v4',

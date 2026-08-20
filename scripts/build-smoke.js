@@ -100,10 +100,10 @@ for (const file of removedDecisionOwners) if (await exists(file)) fail(`Competin
 for (const legacyOwner of removedDecisionOwners.map(file => path.basename(file))) {
   if (apiChat.includes(legacyOwner)) fail(`Chat API still imports competing decision owner ${legacyOwner}.`);
 }
-if (/gpt-4o-mini/.test(apiChat)) fail('User-facing chat cognition must not route by short-model gpt-4o-mini.');
+if (!/gpt-4o-mini/.test(apiChat)) fail('User-facing chat cognition must use gpt-4o-mini.');
 if (/normalize\(input\.(?:hint|pool)|trigger\?\.(?:hint|pool)/.test(apiChat)) fail('Proactive trigger must carry event metadata only; content hints/pools are forbidden.');
 if (!apiChat.includes('OPENAI_DECISION_MODEL') || !apiChat.includes('OPENAI_REALIZATION_MODEL')) fail('Chat must route models by cognitive role.');
-if (!apiChat.includes("'gpt-4.1'") || /OPENAI_LONG_MODEL|['"]gpt-4o['"]/.test(apiChat)) fail('Chat model defaults must use the current explicit role fallback without deprecated compatibility aliases.');
+if (!apiChat.includes("'gpt-4o-mini'") || /OPENAI_LONG_MODEL|['"]gpt-4o['"]/.test(apiChat)) fail('Chat model defaults must use gpt-4o-mini without deprecated compatibility aliases.');
 if (!apiChat.includes('retrieveCanonicalLore(canonCue)') || /body\.lore/.test(apiChat)) fail('Canonical lore must be server-retrieved and client lore must not be trusted.');
 if (!apiChat.includes('validateTurnDecisionConstraints') || !apiChat.includes('validateRealization')) fail('Deterministic decision/realization validation is missing.');
 if (!apiChat.includes('buildRealizationRetryInstruction')) fail('Realization retry must be constraint-aware.');
