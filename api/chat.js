@@ -22,8 +22,8 @@ import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const KERNEL_MODEL = process.env.OPENAI_DECISION_MODEL || 'gpt-4.1';
-const REALIZATION_MODEL = process.env.OPENAI_REALIZATION_MODEL || 'gpt-4.1';
+const KERNEL_MODEL = process.env.OPENAI_DECISION_MODEL || 'gpt-4o-mini';
+const REALIZATION_MODEL = process.env.OPENAI_REALIZATION_MODEL || 'gpt-4o-mini';
 const KERNEL_PARAMS = { temperature: 0.28, max_tokens: 1100 };
 const REALIZATION_PARAMS = { temperature: 0.72, max_tokens: 760 };
 const LONG_REALIZATION_PARAMS = { temperature: 0.72, max_tokens: 1800 };
