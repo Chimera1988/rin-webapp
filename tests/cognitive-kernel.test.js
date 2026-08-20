@@ -105,7 +105,7 @@ test('active chat runtime imports one Cognitive Kernel and does not import legac
   for (const legacy of ['behavior-policy.js', 'response-planner.js', 'response-verifier.js', 'core-personality.js', 'character-intent-engine.js', 'relationship-engine.js', 'anti-gpt.js']) {
     assert.doesNotMatch(source, new RegExp(legacy.replace('.', '\\.')));
   }
-  assert.doesNotMatch(source, /gpt-4o-mini/);
+  assert.match(source, /gpt-4o-mini/);
   assert.match(source, /OPENAI_DECISION_MODEL/);
   assert.match(source, /OPENAI_REALIZATION_MODEL/);
 });
