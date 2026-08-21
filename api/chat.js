@@ -1,15 +1,21 @@
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState, compactKernelState } from '../lib/cognition/kernel-state.js';
-import { buildKernelPrompt, parseKernelDecision } from '../lib/cognition/cognitive-kernel.js';
-import { buildDecisionStateTransition } from '../lib/cognition/turn-decision.js';
+import { buildDecisionStateTransition, normalizeTurnDecision } from '../lib/cognition/turn-decision.js';
 import { validateRealization, validateTurnDecisionConstraints } from '../lib/cognition/turn-validator.js';
 import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
-import { buildRealizationPrompt, buildRealizationRetryPrompt, parseRealization } from '../lib/personality/rin-realization.js';
+import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
+import { buildBehaviorState } from '../lib/cognition/behavior-state.js';
+import { buildDriveState } from '../lib/cognition/drive-state.js';
+import { stabilizeTurn } from '../lib/cognition/turn-stabilizer.js';
 import {
-  cleanInlineText,
+  buildDeterministicConversationFallback,
+  buildRinMindPrompt,
+  parseRinMind
+} from '../lib/cognition/rin-mind.js';
+import {
   currentUserTurn,
   isExplicitFarewell,
   normalizeReplySnapshot,
@@ -22,11 +28,9 @@ import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const KERNEL_MODEL = process.env.OPENAI_DECISION_MODEL || 'gpt-4.1';
-const REALIZATION_MODEL = process.env.OPENAI_REALIZATION_MODEL || 'gpt-4o-mini';
-const KERNEL_PARAMS = { temperature: 0.28, max_tokens: 1100 };
-const REALIZATION_PARAMS = { temperature: 0.68, max_tokens: 700 };
-const LONG_REALIZATION_PARAMS = { temperature: 0.68, max_tokens: 1500 };
+const MIND_MODEL = process.env.OPENAI_MIND_MODEL || process.env.OPENAI_DECISION_MODEL || 'gpt-4.1';
+const MIND_PARAMS = { temperature: 0.58, max_tokens: 1200 };
+const LONG_MIND_PARAMS = { temperature: 0.58, max_tokens: 2200 };
 
 const normalize = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -121,7 +125,6 @@ function visualReplyFromDecision(decision = null, group = []) {
   };
 }
 
-
 const RETRYABLE_OPENAI_STATUSES = new Set([429, 500, 502, 503, 504]);
 const OPENAI_RETRY_DELAY_MS = 180;
 
@@ -137,6 +140,8 @@ function upstreamError(message, code, status = null) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// Transport retry is intentionally the only automatic model retry left in the pipeline.
+// Semantic/style validation never launches another paid model call.
 export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null }) {
   const body = { model, temperature, max_tokens, messages };
   if (response_format) body.response_format = response_format;
@@ -180,162 +185,111 @@ export async function openaiChat({ model, messages, temperature, max_tokens, res
       content: choice?.message?.content?.trim() || '',
       finishReason: choice?.finish_reason || null,
       usage: data?.usage || null,
-      model: data?.model || model
+      model: data?.model || model,
+      requestAttempts: attempt + 1
     };
   }
   throw upstreamError('OpenAI request failed', 'UPSTREAM_UNAVAILABLE');
 }
 
-function mergeUsage(...usages) {
-  const out = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-  for (const usage of usages) {
-    if (!usage) continue;
-    out.prompt_tokens += Number(usage.prompt_tokens) || 0;
-    out.completion_tokens += Number(usage.completion_tokens) || 0;
-    out.total_tokens += Number(usage.total_tokens) || 0;
-  }
-  return out;
+function usageOrZero(usage = null) {
+  return {
+    prompt_tokens: Number(usage?.prompt_tokens) || 0,
+    completion_tokens: Number(usage?.completion_tokens) || 0,
+    total_tokens: Number(usage?.total_tokens) || 0
+  };
 }
 
-const MAX_REALIZATION_REWRITES = 1;
+function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
+  const text = buildDeterministicConversationFallback({ behaviorState, userText });
+  const decision = normalizeTurnDecision({
+    act: behaviorState?.question?.strongNoQuestion ? 'respect_user_boundary' : 'minimal_acknowledgment',
+    focus: behaviorState?.question?.strongNoQuestion
+      ? 'уважить просьбу пользователя не задавать вопросы'
+      : 'сохранить устойчивый контакт без технической ошибки',
+    stance: 'короткая, спокойная, личная',
+    question: { mode: 'none', reason: null },
+    replyLink: { targetEventId: null, reason: null },
+    delivery: { segments: [{ type: 'text', purpose: 'fallback', stickerIntent: null, maxChars: 320 }] },
+    intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
+    openLoops: { open: [], resolveIds: [] },
+    realityMode: 'grounded'
+  }, { source: 'deterministic_fallback' });
+  return {
+    mind: {
+      felt: 'сохраняет контакт после технически неиспользуемого model output',
+      wants: 'ответить без повторного платного inference',
+      restraint: 'не выдавать внутреннюю ошибку пользователю',
+      socialIntent: 'stable_fallback',
+      confidence: 100
+    },
+    decision,
+    realization: { segments: [{ type: 'text', purpose: 'fallback', text }] },
+    fallback: true
+  };
+}
 
-function realizationFailure(validation = null, attempts = 1, phase = 'validation_failed') {
-  const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
-  return Object.assign(new Error(`Realization validation failed: ${warnings.join(',')}`), {
-    code: 'REALIZATION_VALIDATION_FAILED',
+async function decisionResourceWarnings(decision = null) {
+  const warnings = [];
+  for (const segment of Array.isArray(decision?.delivery?.segments) ? decision.delivery.segments : []) {
+    if (segment?.type !== 'sticker') continue;
+    if (!segment?.stickerIntent || !await isStickerIntentResolvable(segment.stickerIntent)) {
+      warnings.push(`unresolved_sticker_intent:${normalize(segment?.stickerIntent, 80) || 'empty'}`);
+    }
+  }
+  return warnings;
+}
+
+function advisoryDecisionValidation(decision = null, context = {}, resourceWarnings = []) {
+  const base = validateTurnDecisionConstraints(decision, context);
+  const warnings = [...new Set([...(base?.warnings || []), ...(resourceWarnings || [])])];
+  const hardPrefixes = [
+    'unresolved_sticker_intent:',
+    'visual_reply_target_not_allowed',
+    'sticker_segment_requires_intent',
+    'sticker_disabled_by_user',
+    'sticker_unavailable_by_state'
+  ];
+  const hardWarnings = warnings.filter(warning => hardPrefixes.some(prefix => warning === prefix || warning.startsWith(prefix)));
+  const softWarnings = warnings.filter(warning => !hardWarnings.includes(warning));
+  return {
+    version: 'rin-turn-decision-validator-v3-advisory',
+    passed: hardWarnings.length === 0,
+    accepted: true,
     warnings,
-    hardWarnings: Array.isArray(validation?.hardWarnings) ? validation.hardWarnings : [],
-    rewriteableWarnings: Array.isArray(validation?.rewriteableWarnings) ? validation.rewriteableWarnings : [],
-    validationClass: phase,
-    attempts
-  });
+    hardWarnings,
+    softWarnings
+  };
 }
 
-function parseRealizationOrThrow(content = '', decision = null, attempts = 1) {
-  try { return parseRealization(content, decision); }
-  catch (error) {
-    throw Object.assign(new Error('Realization returned invalid structured output'), {
-      code: 'REALIZATION_PARSE_FAILED',
-      validationClass: 'hard_parse_failure',
-      attempts,
-      cause: error
-    });
-  }
+function fallbackOnHardDecision({ mindTurn, validation, userText, behaviorState }) {
+  if (!validation?.hardWarnings?.length) return mindTurn;
+  // Hard delivery/resource mismatch is recovered locally instead of making another LLM call.
+  return makeFallbackMindTurn({ userText, behaviorState });
 }
 
-async function realizeDecision({ profile, state, decision, realityBoundary, isLong = false }) {
-  const textSegments = decision.delivery.segments.filter(item => item.type === 'text');
-  if (!textSegments.length) {
-    return {
-      realization: { segments: [] },
-      validation: {
-        version: 'rin-turn-validator-v2', passed: true, retryable: false,
-        warnings: [], hardWarnings: [], rewriteableWarnings: [], reply: '',
-        attempts: 0, rewrites: 0, trace: []
-      },
-      usage: null,
-      retried: false,
-      attempts: 0
-    };
-  }
-
-  const prompt = buildRealizationPrompt({ profile, state, decision, realityBoundary });
-  const params = isLong ? LONG_REALIZATION_PARAMS : REALIZATION_PARAMS;
-  const trace = [];
-  let usage = null;
-  let realizedModel = REALIZATION_MODEL;
-  let previousRealization = null;
-  let previousValidation = null;
-
-  for (let rewriteAttempt = 0; rewriteAttempt <= MAX_REALIZATION_REWRITES; rewriteAttempt += 1) {
-    const attemptNumber = rewriteAttempt + 1;
-    const retryPrompt = rewriteAttempt > 0
-      ? buildRealizationRetryPrompt({
-          profile,
-          decision,
-          previousRealization,
-          previousValidation,
-          attempt: rewriteAttempt
-        })
-      : prompt;
-    const completion = await openaiChat({
-      model: REALIZATION_MODEL,
-      messages: [{ role: 'system', content: retryPrompt.system }],
-      response_format: retryPrompt.responseFormat,
-      ...params
-    });
-    usage = mergeUsage(usage, completion.usage);
-    realizedModel = completion.model || realizedModel;
-    if (completion.finishReason === 'length' || !completion.content) {
-      throw Object.assign(new Error(`Realization attempt ${attemptNumber} incomplete`), {
-        code: 'MODEL_RESPONSE_TRUNCATED', attempts: attemptNumber
-      });
-    }
-
-    const realization = parseRealizationOrThrow(completion.content, decision, attemptNumber);
-    const validation = validateRealization(realization, {
-      decision,
-      realityBoundary,
-      recentHistory: state?.recentHistory || [],
-      currentUserText: state?.userText || ''
-    });
-    trace.push({
-      attempt: attemptNumber,
-      passed: validation.passed,
-      warnings: validation.warnings,
-      hardWarnings: validation.hardWarnings,
-      rewriteableWarnings: validation.rewriteableWarnings
-    });
-
-    if (validation.passed) {
-      return {
-        realization,
-        validation: {
-          ...validation,
-          attempts: attemptNumber,
-          rewrites: rewriteAttempt,
-          trace
-        },
-        usage,
-        model: realizedModel,
-        retried: rewriteAttempt > 0,
-        attempts: attemptNumber
-      };
-    }
-
-    if (validation.hardWarnings?.length) {
-      console.error('Rin Realization hard validation failure', {
-        requestId: state?.requestId || null,
-        attempt: attemptNumber,
-        warnings: validation.warnings,
-        hardWarnings: validation.hardWarnings
-      });
-      throw realizationFailure(validation, attemptNumber, 'hard_validation_failure');
-    }
-
-    if (rewriteAttempt >= MAX_REALIZATION_REWRITES) {
-      console.error('Rin Realization rewrite exhausted', {
-        requestId: state?.requestId || null,
-        attempts: attemptNumber,
-        warnings: validation.warnings
-      });
-      throw realizationFailure(validation, attemptNumber, 'rewrite_exhausted');
-    }
-
-    console.warn('Rin Realization rejected; rewriting same TurnDecision', {
-      requestId: state?.requestId || null,
-      attempt: attemptNumber,
-      nextAttempt: attemptNumber + 1,
-      warnings: validation.rewriteableWarnings
-    });
-    previousRealization = realization;
-    previousValidation = validation;
-  }
-
-  throw realizationFailure(previousValidation, MAX_REALIZATION_REWRITES + 1, 'rewrite_exhausted');
+function advisoryRealizationValidation(realization = null, context = {}) {
+  const base = validateRealization(realization, context);
+  return {
+    ...base,
+    version: 'rin-turn-validator-v3-advisory',
+    // Soft conversational/style warnings never fail the turn.
+    passed: !(base?.hardWarnings?.length),
+    accepted: !(base?.hardWarnings?.length),
+    softWarnings: Array.isArray(base?.rewriteableWarnings) ? base.rewriteableWarnings : [],
+    attempts: 1,
+    rewrites: 0,
+    trace: [{
+      attempt: 1,
+      passed: base?.warnings?.length === 0,
+      warnings: base?.warnings || [],
+      hardWarnings: base?.hardWarnings || [],
+      rewriteableWarnings: base?.rewriteableWarnings || []
+    }]
+  };
 }
 
-export async function buildDeliveryPlan({ requestId, decision, realization, scene = null, stickerState = null } = {}) {
+export async function buildDeliveryPlan({ requestId, decision, realization, scene = null, stickerState = null, mind = null } = {}) {
   const turnId = `rin-turn-${normalize(requestId, 80) || Date.now()}`;
   const realizedTexts = Array.isArray(realization?.segments) ? realization.segments : [];
   let textIndex = 0;
@@ -355,61 +309,19 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
     const selected = await selectStickerForIntent(plan.stickerIntent, {
       delivery: stickerDelivery,
       scene: scene?.type || '',
-      cause: decision.focus,
-      intensity: decision.delivery.mode === 'sticker_only' ? 62 : 48,
+      cause: mind?.wants || decision.focus,
+      intensity: decision.delivery.mode === 'sticker_only' ? 62 : 48
     });
-    if (!selected) throw Object.assign(new Error(`Sticker intent unresolved: ${plan.stickerIntent || '(empty)'}`), { code: 'STICKER_INTENT_UNRESOLVED' });
+    if (!selected) continue;
     segments.push({ ...base, stickerIntent: plan.stickerIntent, sticker: selected.sticker, semantic: selected });
   }
   return {
-    schema: 'rin-delivery-plan-v1',
+    schema: 'rin-delivery-plan-v2',
     turnId,
     mode: decision.delivery.mode,
     segments,
-    fallbackText: segments.find(item => item.type === 'text')?.text || segments.find(item => item.type === 'sticker')?.sticker?.utterance || 'Мм.'
+    fallbackText: segments.find(item => item.type === 'text')?.text || 'Мм.'
   };
-}
-
-
-
-function buildFastPathDecision({ literalIntent = 'statement' } = {}) {
-  const isGratitude = literalIntent === 'gratitude';
-  return parseKernelDecision(JSON.stringify({
-    act: isGratitude ? 'acknowledge_gratitude' : 'greeting',
-    focus: isGratitude ? 'принять благодарность пользователя и сохранить контакт' : 'естественно поприветствовать пользователя',
-    stance: 'тёплая, личная и ненавязчивая',
-    question: { mode: 'none', reason: null },
-    replyLink: { targetEventId: null, reason: null },
-    delivery: { segments: [{ type: 'text', purpose: isGratitude ? 'acknowledgment' : 'greeting', stickerIntent: null, maxChars: 280 }] },
-    intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
-    openLoops: { open: [], resolveIds: [] },
-    realityMode: 'grounded'
-  }));
-}
-
-function canUseFastPath({ trigger = null, conversationState = 'ongoing', userText = '', brain = null, activeIntent = null, explicitReply = null, isLong = false, stickerState = null } = {}) {
-  if (trigger || isLong || explicitReply || conversationState === 'ending') return false;
-  if (activeIntent?.status && ['active', 'suspended'].includes(activeIntent.status)) return false;
-  if (stickerState?.available === true) return false;
-  if (String(userText || '').trim().length > 80) return false;
-  const text = String(userText || '').trim();
-  const simpleGreeting = /^(?:привет|здравствуй|здравствуйте|хай|hello|доброе утро|добрый день|добрый вечер)[!.,)\s🙂😊😉]*$/iu.test(text);
-  const simpleGratitude = /^(?:спасибо|благодарю|спасибки)[!.,)\s🙂😊😉]*$/iu.test(text);
-  return simpleGreeting || simpleGratitude;
-}
-
-async function validateDecisionResources(decision = null) {
-  const warnings = [];
-  for (const segment of Array.isArray(decision?.delivery?.segments) ? decision.delivery.segments : []) {
-    if (segment?.type !== 'sticker' || !segment?.stickerIntent) continue;
-    if (!await isStickerIntentResolvable(segment.stickerIntent)) warnings.push(`unresolved_sticker_intent:${normalize(segment.stickerIntent, 80)}`);
-  }
-  return warnings;
-}
-
-function mergeDecisionValidation(base = null, resourceWarnings = []) {
-  const warnings = [...new Set([...(base?.warnings || []), ...(resourceWarnings || [])])];
-  return { ...(base || {}), passed: warnings.length === 0, warnings };
 }
 
 export default async function handler(req, res) {
@@ -421,9 +333,11 @@ export default async function handler(req, res) {
 
     const requestId = normalize(body.requestId, 100);
     if (!requestId) return res.status(400).json({ error: 'A request id is required', code: 'INVALID_REQUEST_ID' });
+
     const trigger = normalizeProactiveTrigger(body.trigger);
     const fullHistory = selectModelHistory(body.history || [], trigger ? {} : { includeRequestId: requestId });
-    const history = pruneModelHistory(fullHistory, 48, 16_000);
+    // Deterministic cognition may inspect fullHistory, but the model receives a much smaller compact state.
+    const history = pruneModelHistory(fullHistory, 28, 10_000);
     const group = trigger ? [] : currentUserGroup(fullHistory, requestId);
     const fallbackCurrent = trigger ? null : currentUserTurn(fullHistory, requestId);
     if (!trigger && !group.length && fallbackCurrent) group.push(fallbackCurrent);
@@ -446,120 +360,196 @@ export default async function handler(req, res) {
       scene: brain?.activeScene?.type || 'everyday',
       userText: userTurn
     });
-    const kernelState = buildKernelState({ requestId, userText: userTurn, history: fullHistory, memory, brain, affectiveTurn, explicitReply, env, lore, conversationState, stickerState });
+    const behaviorState = buildBehaviorState({ userText: userTurn, history: fullHistory, brain });
+    const kernelState = buildKernelState({
+      requestId,
+      userText: userTurn,
+      history: fullHistory,
+      memory,
+      brain,
+      affectiveTurn,
+      explicitReply,
+      env,
+      lore,
+      conversationState,
+      stickerState
+    });
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
-
-    const kernelPrompt = buildKernelPrompt({
+    const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
+    const stickerCandidates = (stickerState.hardAvailable ?? stickerState.available) === true
+      ? buildStickerCandidates({ userText: userTurn, state: kernelState, brain, affectiveTurn, limit: 12 })
+      : [];
+    const mindState = { ...kernelState, behaviorState, driveState, realityBoundary, stickerCandidates };
+    const prompt = buildRinMindPrompt({
       profile,
-      state: kernelState,
+      state: mindState,
       client: { ...(body.client || {}), longRequested: isLong },
       trigger
     });
-    const fastPath = canUseFastPath({
-      trigger,
-      conversationState,
-      userText: userTurn,
-      brain,
-      activeIntent: kernelState.activeIntent,
-      explicitReply,
-      isLong,
-      stickerState: kernelState.stickerState
+
+    const completion = await openaiChat({
+      model: MIND_MODEL,
+      messages: [{ role: 'system', content: prompt.system }],
+      response_format: prompt.responseFormat,
+      ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
     });
 
-    let kernelCompletion = null;
-    let decision;
-    let decisionUsage = null;
-    let decisionValidation;
-    let decisionCalls = 0;
-
-    if (fastPath) {
-      decision = buildFastPathDecision({ literalIntent: brain?.literalIntent });
-      decisionValidation = mergeDecisionValidation(
-        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
-        await validateDecisionResources(decision)
-      );
-      if (!decisionValidation.passed) {
-        return res.status(502).json({ error: 'Fast-path decision violated protocol/state invariants', code: 'INVALID_TURN_DECISION', requestId, warnings: decisionValidation.warnings });
-      }
+    let mindTurn;
+    let modelFallback = false;
+    if (completion.finishReason === 'length' || !completion.content) {
+      mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+      modelFallback = true;
     } else {
-      kernelCompletion = await openaiChat({
-        model: KERNEL_MODEL,
-        messages: [{ role: 'system', content: kernelPrompt.system }],
-        response_format: kernelPrompt.responseFormat,
-        ...KERNEL_PARAMS
-      });
-      decisionCalls = 1;
-      if (kernelCompletion.finishReason === 'length' || !kernelCompletion.content) {
-        return res.status(502).json({ error: 'Decision model response was truncated', code: 'MODEL_RESPONSE_TRUNCATED', requestId });
-      }
-      try { decision = parseKernelDecision(kernelCompletion.content); }
-      catch { return res.status(502).json({ error: 'Decision model returned invalid structured output', code: 'INVALID_TURN_DECISION', requestId }); }
-
-      // Deterministic validation may reject an invalid decision, but it never substitutes
-      // a different behavior. The same Cognitive Kernel gets one chance to decide again.
-      decisionUsage = kernelCompletion.usage;
-      decisionValidation = mergeDecisionValidation(
-        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
-        await validateDecisionResources(decision)
-      );
-      if (!decisionValidation.passed) {
-      console.warn('Rin TurnDecision rejected; retrying same kernel', { requestId, warnings: decisionValidation.warnings });
-      const retryCompletion = await openaiChat({
-        model: KERNEL_MODEL,
-        messages: [{
-          role: 'system',
-          content: `${kernelPrompt.system}\n\nПредыдущее TurnDecision нарушило protocol/state invariants: ${decisionValidation.warnings.join(', ')}. Прими решение заново как ТОТ ЖЕ единственный Cognitive Kernel; validator не предлагает альтернативное действие.`
-        }],
-        response_format: kernelPrompt.responseFormat,
-        ...KERNEL_PARAMS
-      });
-      if (retryCompletion.finishReason === 'length' || !retryCompletion.content) {
-        return res.status(502).json({ error: 'Decision model retry was truncated', code: 'MODEL_RESPONSE_TRUNCATED', requestId });
-      }
-      try { decision = parseKernelDecision(retryCompletion.content); }
-      catch { return res.status(502).json({ error: 'Decision model retry returned invalid structured output', code: 'INVALID_TURN_DECISION', requestId }); }
-      decisionUsage = mergeUsage(kernelCompletion.usage, retryCompletion.usage);
-      decisionValidation = mergeDecisionValidation(
-        validateTurnDecisionConstraints(decision, { conversationState, client: body.client || {}, activeIntent: kernelState.activeIntent, stickerState: kernelState.stickerState, visualReplyCandidates: kernelState.visualReplyCandidates, reciprocity: kernelState.reciprocity }),
-        await validateDecisionResources(decision)
-      );
-      if (!decisionValidation.passed) {
-        console.error('Rin TurnDecision rejected after retry', { requestId, warnings: decisionValidation.warnings });
-        return res.status(502).json({ error: 'Decision model violated protocol/state invariants', code: 'INVALID_TURN_DECISION', requestId, warnings: decisionValidation.warnings });
-      }
-      decisionCalls = 2;
+      try {
+        mindTurn = parseRinMind(completion.content, { behaviorState });
+      } catch (error) {
+        console.warn('Rin Mind structured output unusable; deterministic fallback used', {
+          requestId,
+          error: error?.message || String(error)
+        });
+        mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+        modelFallback = true;
       }
     }
 
-    const realizationResult = await realizeDecision({ profile, state: kernelState, decision, realityBoundary, isLong });
-    const deliveryPlan = await buildDeliveryPlan({ requestId, decision, realization: realizationResult.realization, scene: kernelState.scene, stickerState: kernelState.stickerState });
-    const stateTransition = buildDecisionStateTransition({ kernelState, affectiveTurn, decision });
-    const visualReply = visualReplyFromDecision(decision, group);
+    const stabilized = stabilizeTurn({
+      decision: mindTurn.decision,
+      realization: mindTurn.realization,
+      activeIntent: kernelState.activeIntent,
+      conversationState,
+      stickerState: kernelState.stickerState,
+      visualReplyCandidates: kernelState.visualReplyCandidates,
+      behaviorState,
+      fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn })
+    });
+    mindTurn.decision = stabilized.decision;
+    mindTurn.realization = stabilized.realization;
+
+    let resourceWarnings = await decisionResourceWarnings(mindTurn.decision);
+    let decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
+      conversationState,
+      client: body.client || {},
+      activeIntent: kernelState.activeIntent,
+      stickerState: { ...kernelState.stickerState, available: kernelState.stickerState?.hardAvailable ?? kernelState.stickerState?.available },
+      visualReplyCandidates: kernelState.visualReplyCandidates,
+      reciprocity: kernelState.reciprocity
+    }, resourceWarnings);
+
+    mindTurn = fallbackOnHardDecision({
+      mindTurn,
+      validation: decisionValidation,
+      userText: userTurn,
+      behaviorState
+    });
+    if (decisionValidation.hardWarnings.length) {
+      modelFallback = true;
+      resourceWarnings = [];
+      decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
+        conversationState,
+        client: body.client || {},
+        activeIntent: kernelState.activeIntent,
+        stickerState: { ...kernelState.stickerState, available: kernelState.stickerState?.hardAvailable ?? kernelState.stickerState?.available },
+        visualReplyCandidates: kernelState.visualReplyCandidates,
+        reciprocity: kernelState.reciprocity
+      }, []);
+    }
+
+    let realizationValidation = advisoryRealizationValidation(mindTurn.realization, {
+      decision: mindTurn.decision,
+      realityBoundary,
+      recentHistory: kernelState?.recentHistory || [],
+      currentUserText: kernelState?.userText || ''
+    });
+
+    // Truly hard realization violations (metadata leak, unsupported reality claim, etc.)
+    // are replaced locally. No second model call, no user-visible validation error.
+    if (realizationValidation.hardWarnings?.length) {
+      mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+      modelFallback = true;
+      decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
+        conversationState,
+        client: body.client || {},
+        activeIntent: kernelState.activeIntent,
+        stickerState: { ...kernelState.stickerState, available: kernelState.stickerState?.hardAvailable ?? kernelState.stickerState?.available },
+        visualReplyCandidates: kernelState.visualReplyCandidates,
+        reciprocity: kernelState.reciprocity
+      }, []);
+      realizationValidation = advisoryRealizationValidation(mindTurn.realization, {
+        decision: mindTurn.decision,
+        realityBoundary,
+        recentHistory: kernelState?.recentHistory || [],
+        currentUserText: kernelState?.userText || ''
+      });
+    }
+
+    const deliveryPlan = await buildDeliveryPlan({
+      requestId,
+      decision: mindTurn.decision,
+      realization: mindTurn.realization,
+      scene: kernelState.scene,
+      stickerState: kernelState.stickerState,
+      mind: mindTurn.mind
+    });
+
+    // A sticker-only render may theoretically disappear if a catalog asset changed between
+    // schema construction and delivery. Recover as text rather than returning a 502.
+    if (!deliveryPlan.segments.length && mindTurn.decision.delivery.mode !== 'silence') {
+      mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+      modelFallback = true;
+      deliveryPlan.segments = [{
+        id: `rin-turn-${normalize(requestId, 80)}-fallback`,
+        segmentIndex: 0,
+        purpose: 'fallback',
+        type: 'text',
+        text: mindTurn.realization.segments[0].text
+      }];
+      deliveryPlan.mode = 'single_text';
+      deliveryPlan.fallbackText = mindTurn.realization.segments[0].text;
+    }
+
+    const stateTransition = buildDecisionStateTransition({
+      kernelState,
+      affectiveTurn,
+      decision: mindTurn.decision
+    });
+    const visualReply = visualReplyFromDecision(mindTurn.decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
-    const usage = mergeUsage(decisionUsage, realizationResult.usage);
+    const usage = usageOrZero(completion.usage);
 
     return res.status(200).json({
       requestId,
       turnId: deliveryPlan.turnId,
       reply,
       finishReason: 'stop',
-      model: { kernel: fastPath ? 'deterministic-fast-path' : (kernelCompletion?.model || KERNEL_MODEL), realization: realizationResult.model || REALIZATION_MODEL },
+      model: {
+        mind: completion.model || MIND_MODEL,
+        kernel: 'integrated-in-rin-mind-v2',
+        realization: 'integrated-in-rin-mind-v2'
+      },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-cognitive-kernel-v1',
+        promptVersion: 'rin-mind-v2',
         inputTokens: usage.prompt_tokens,
         outputTokens: usage.completion_tokens,
         totalTokens: usage.total_tokens,
-        calls: { kernel: decisionCalls, realization: realizationResult.attempts },
-        historyItems: history.length
+        calls: { mind: 1, kernel: 0, realization: 0, transportAttempts: completion.requestAttempts || 1 },
+        historyItems: history.length,
+        modelFallback,
+        semanticRetries: 0
       },
       perception: brain,
-      cognition: compactKernelState(kernelState),
-      turnDecision: decision,
+      cognition: { ...compactKernelState(kernelState), behaviorState, driveState },
+      mind: mindTurn.mind,
+      turnDecision: mindTurn.decision,
       visualReply,
       affectiveTurn,
-      validation: { decision: decisionValidation, realization: realizationResult.validation },
-      fastPath,
+      validation: {
+        decision: decisionValidation,
+        realization: realizationValidation,
+        stabilization: stabilized.warnings,
+        policy: 'hard-block-only; soft warnings are advisory; no semantic LLM retries'
+      },
+      fastPath: false,
       deliveryPlan,
       stateTransition,
       trigger
