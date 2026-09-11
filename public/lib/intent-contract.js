@@ -67,7 +67,7 @@ export function normalizeRinIntent(input = null) {
     turnCount,
     minTurns,
     maxTurns,
-    source: clean(input.source, 100) || 'cognitive_kernel',
+    source: clean(input.source, 100) || 'rin_mind_v2',
     reason: clean(input.reason, 420) || null,
     completionReason: clean(input.completionReason, 420) || null,
     replacementOf: clean(input.replacementOf, 120) || null
