@@ -43,6 +43,8 @@ await requireFiles([
   'public/chat.js',
   'public/js/release.js',
   'public/js/app_bootstrap.js',
+  'public/js/chat_viewport.js',
+  'public/js/local_settings.js',
   'public/js/theme_bootstrap.js',
   'public/js/login.js',
   'api/chat.js',
@@ -51,6 +53,7 @@ await requireFiles([
   'lib/server/canon-retrieval.js',
   'lib/cognition/behavior-state.js',
   'lib/cognition/drive-state.js',
+  'lib/cognition/intent-policy.js',
   'lib/cognition/rin-mind.js',
   'lib/cognition/turn-stabilizer.js',
   'lib/cognition/sticker-state.js',
@@ -162,7 +165,9 @@ requireText(mindSource, [
   [/question\.mode=none/u, 'No-question behavioral contract is missing.'],
   [/Стикер — невербальный жест Рин/u, 'Sticker volition contract is missing.'],
   [/removeQuestionSentences\s*\(/, 'Deterministic question-boundary recovery is missing.'],
-  [/buildDeterministicConversationFallback/, 'Local model-output fallback is missing.']
+  [/buildDeterministicConversationFallback/, 'Local model-output fallback is missing.'],
+  [/behavioral code/iu, 'Stable behavioral act code contract is missing.'],
+  [/Persistent intent/iu, 'Persistent intent guidance is missing.']
 ], 'lib/cognition/rin-mind.js');
 
 const behaviorSource = await read('lib/cognition/behavior-state.js');
@@ -182,20 +187,40 @@ requireText(stickerStateSource, [
   [/hardAvailable/, 'Hard sticker availability is missing.'],
   [/desireModifier/, 'Sticker desire modifier is missing.'],
   [/cooldownPressure/, 'Sticker cooldown must be represented as pressure.'],
-  [/frequencyPressure/, 'Sticker frequency must be represented as pressure.']
+  [/frequencyPressure/, 'Sticker frequency must be represented as pressure.'],
+  [/explicit_gesture_override/, 'Smart sticker gesture override is missing.']
 ], 'lib/cognition/sticker-state.js');
 
 const stabilizerSource = await read('lib/cognition/turn-stabilizer.js');
 requireText(stabilizerSource, [
   [/repairMaleUserAddress/, 'Local gender repair is missing.'],
   [/delivery_recovered_with_local_fallback/, 'Local delivery recovery is missing.'],
-  [/sticker_removed_hard_unavailable/, 'Hard sticker safety recovery is missing.']
+  [/sticker_removed_hard_unavailable/, 'Hard sticker safety recovery is missing.'],
+  [/sticker_removed_immediate_repeat/, 'Immediate sticker repetition protection is missing.']
 ], 'lib/cognition/turn-stabilizer.js');
 
 // Error rendering is allowed to be implemented in the authenticated bootstrap bridge
 // or directly in chat.js, but repeated failures must not create fake Rin bubbles forever.
 const bootstrapSource = await read('public/js/app_bootstrap.js');
 const publicChat = await read('public/chat.js');
+const localSettingsSource = await read('public/js/local_settings.js');
+requireText(publicChat, [
+  [/createLocalSettings\(localStorage\)/, 'Chat settings must bind storage helpers to localStorage explicitly.'],
+  [/stickerMode=\$\{state\?\.mode/, 'Sticker diagnostics must expose the effective backend mode.']
+], 'public/chat.js');
+requireText(localSettingsSource, [
+  [/storageGet\(storage, key, fallback\)/, 'Bound settings reader is missing.'],
+  [/storageSetVerified\(storage, key, value\)/, 'Verified settings writer is missing.']
+], 'public/js/local_settings.js');
+
+const intentPolicySource = await read('lib/cognition/intent-policy.js');
+requireText(intentPolicySource, [
+  [/local_intent_persistence/, 'Persistent intent continuation policy is missing.'],
+  [/MULTI_TURN_ACTS/, 'Multi-turn volition policies are missing.']
+], 'lib/cognition/intent-policy.js');
+
+const viewportSource = await read('public/js/chat_viewport.js');
+if (!/--rin-viewport-offset-top/.test(viewportSource)) fail('public/js/chat_viewport.js must retain visual viewport offset handling.');
 const hasBootstrapErrorBridge = /message-error-note/.test(bootstrapSource) && /MutationObserver/.test(bootstrapSource);
 const hasDirectErrorNotice = /message-error-note/.test(publicChat) && !/addBubble\(userFacingError\(code\),\s*'assistant'\)/.test(publicChat);
 if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat failures must update one user-message error notice instead of appending fake Rin bubbles.');

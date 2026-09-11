@@ -6,14 +6,18 @@ const syntaxFiles = [
   'api/chat.js',
   'lib/cognition/behavior-state.js',
   'lib/cognition/drive-state.js',
+  'lib/cognition/intent-policy.js',
   'lib/cognition/turn-stabilizer.js',
   'lib/cognition/rin-mind.js',
   'lib/cognition/sticker-state.js',
   'lib/cognition/sticker-candidates.js',
   'public/js/app_bootstrap.js',
+  'public/js/local_settings.js',
   'scripts/build-smoke.js',
   'tests/rin-mind-v2.test.js',
-  'tests/rin-mind-v2-api.test.js'
+  'tests/rin-mind-v2-api.test.js',
+  'tests/local-settings.test.js',
+  'tests/intent-policy.test.js'
 ];
 
 function run(args, label) {
@@ -26,5 +30,5 @@ function run(args, label) {
 }
 
 for (const file of syntaxFiles) run(['--check', file], `syntax ${file}`);
-run(['--test', '--test-concurrency=1', 'tests/rin-mind-v2.test.js', 'tests/rin-mind-v2-api.test.js'], 'Rin Mind v2 tests');
+run(['--test', '--test-concurrency=1', 'tests/rin-mind-v2.test.js', 'tests/rin-mind-v2-api.test.js', 'tests/local-settings.test.js', 'tests/intent-policy.test.js'], 'Rin Mind v2 tests');
 console.log('Rin Mind v2: targeted checks passed.');

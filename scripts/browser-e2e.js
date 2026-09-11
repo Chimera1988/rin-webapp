@@ -329,10 +329,24 @@ try {
   assert(initialAssistantCount === 1, `expected one greeting, got ${initialAssistantCount}`);
   assert(chatBodies[0]?.trigger?.type === 'greeting', 'initial greeting must go through /api/chat as a proactive trigger');
   assert(chatBodies[0]?.history?.length === 0, 'proactive greeting must not fabricate a user message');
+  assert(chatBodies[0]?.client?.sticker?.mode === 'always', `persisted sticker mode must reach backend; got ${chatBodies[0]?.client?.sticker?.mode}`);
+  assert(chatBodies[0]?.client?.sticker?.probability === 30, 'sticker probability must be read from the bound local settings store');
   const initialPeerStatus = await cdp.evaluate("document.querySelector('#peerStatus')?.textContent");
   assert(initialPeerStatus === 'онлайн', `presence should settle online after the proactive greeting, got ${initialPeerStatus}`);
 
   phase('greeting complete');
+  const stickerPersistence = await cdp.evaluate(`(() => {
+    document.querySelector('[data-sticker-mode="smart"]')?.click();
+    const smart = localStorage.getItem('rin-sticker-mode');
+    document.querySelector('[data-sticker-mode="always"]')?.click();
+    const always = localStorage.getItem('rin-sticker-mode');
+    return { smart, always, selected: document.querySelector('#stickerMode')?.value, probabilityDisabled: document.querySelector('#stickerProb')?.disabled };
+  })()`);
+  assert(stickerPersistence.smart === 'smart', `smart sticker mode must persist; got ${stickerPersistence.smart}`);
+  assert(stickerPersistence.always === 'always', `always sticker mode must persist; got ${stickerPersistence.always}`);
+  assert(stickerPersistence.selected === 'always', `sticker UI must reflect persisted always mode; got ${stickerPersistence.selected}`);
+  assert(stickerPersistence.probabilityDisabled === true, 'frequency slider must be inactive outside smart mode');
+
   const freshDefaults = await cdp.evaluate(`(() => ({
     dark: document.documentElement.classList.contains('theme-dark'),
     light: document.documentElement.classList.contains('theme-light'),
