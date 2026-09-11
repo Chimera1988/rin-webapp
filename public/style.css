@@ -1421,3 +1421,11 @@ body.settings-open {
 }
 
 .sticker-loading{opacity:.55}.sticker-loading .sticker{filter:blur(2px)}
+
+/* A control can be contextually inactive without disabling the whole settings card. */
+.settings-range-block.is-disabled-control {
+  opacity: .48;
+}
+.settings-range-block.is-disabled-control input {
+  cursor: default;
+}

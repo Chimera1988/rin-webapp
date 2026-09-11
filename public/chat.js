@@ -18,7 +18,7 @@ import { RIN_RELEASE_ID } from './js/release.js';
 import { createMemoryJobRunner, enqueueMemoryJob } from './js/memory_job_queue.js';
 import { activeInitiationWindow, canAutoInitiate, canGreet, initiationWindowKey, resolveInitiationPolicy } from './js/conversation_policy.js';
 import { createInitiationStateStore } from './js/initiation_state.js';
-import { storageGet as safeLocalGet, storageSet as safeLocalSet } from './js/storage.js';
+import { createLocalSettings } from './js/local_settings.js';
 import { shouldRefreshEnvironment } from './js/environment_intent.js';
 import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
 import { createPresenceController } from './js/presence_controller.js';
@@ -43,6 +43,9 @@ const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
 const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'
 const DEFAULT_DEBUG_ENABLED = true;
+const localSettings = createLocalSettings(localStorage);
+const safeLocalGet = localSettings.get;
+const safeLocalSet = localSettings.set;
 
 
 /* DOM */
@@ -488,8 +491,10 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
 
 
   if (committed?.mood) {
-    const questionReason = String(decision?.question?.reason || data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
-    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${committed.conversationState?.rinIntent?.status || 'none'}:${committed.conversationState?.rinIntent?.goal || '-'}; action=${decision?.act || 'direct_response'}; q=${decision?.question?.mode || 'none'}:${questionReason}`);
+    const questionReason = String(decision?.question?.reason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const questionPressure = String(data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const intent = committed.conversationState?.rinIntent || null;
+    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${intent?.status || 'none'}:${intent?.goal || '-'}; intentProgress=${intent?.progress ?? '-'}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
   }
   return committed;
 }
@@ -669,9 +674,15 @@ function applyStickerOpacity(){
 
 function updateStickerModeUI(mode=lsStickerMode()){
   const enabled = mode !== 'off';
+  const smart = mode === 'smart';
   if (stickerMode) stickerMode.value = mode;
   if (stickerEnabled) stickerEnabled.checked = enabled;
   if (stickerSettingsCard) stickerSettingsCard.classList.toggle('is-disabled', !enabled);
+  if (stickerProb) {
+    stickerProb.disabled = !smart;
+    stickerProb.setAttribute('aria-disabled', smart ? 'false' : 'true');
+    stickerProb.closest('.settings-range-block')?.classList.toggle('is-disabled-control', !smart);
+  }
   stickerModeBtns.forEach(button => {
     const active = button.dataset.stickerMode === mode;
     button.classList.toggle('is-active', active);
@@ -681,9 +692,14 @@ function updateStickerModeUI(mode=lsStickerMode()){
 
 function setStickerMode(mode){
   const next = ['smart','always','off'].includes(mode) ? mode : 'smart';
-  if (next !== 'off') safeLocalSet(LS_STICKER_LAST_MODE, next);
-  safeLocalSet(LS_STICKER_MODE, next);
-  updateStickerModeUI(next);
+  if (next !== 'off' && !safeLocalSet(LS_STICKER_LAST_MODE, next)) {
+    dbg(`sticker last mode persistence failed: ${next}`);
+  }
+  const saved = safeLocalSet(LS_STICKER_MODE, next);
+  const effective = saved ? next : lsStickerMode();
+  updateStickerModeUI(effective);
+  if (!saved) dbg(`sticker mode persistence failed: ${next}; effective=${effective}`);
+  return effective;
 }
 
 if (stickerProb){
@@ -1639,11 +1655,15 @@ function stickerClientPreferences() {
 function stickerDebugSummary(data = null) {
   const state = data?.cognition?.stickerState || null;
   const stickerSegment = data?.deliveryPlan?.segments?.find(item => item?.type === 'sticker') || null;
-  if (!state && !stickerSegment) return '';
+  const metrics = data?.promptMetrics || null;
+  if (!state && !stickerSegment && !metrics) return '';
   const budget = state?.mode === 'always'
     ? 'always'
     : `${Number(state?.usedStickerTurns || 0)}/${state?.limitStickerTurns ?? '-'}`;
-  return `; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerBudget=${budget}; stickerGap=${state?.turnsSinceSticker ?? '-'}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}`;
+  const tokenSummary = metrics
+    ? `; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}`
+    : '';
+  return `; stickerMode=${state?.mode || '-'}; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerHard=${state?.hardAvailable === true ? 'yes' : 'no'}:${state?.hardReason || '-'}; stickerBudget=${budget}; stickerGap=${state?.turnsSinceSticker ?? '-'}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}${tokenSummary}`;
 }
 
 function updatePresenceForDelivery(presenceTurn, mode, typingRowRef) {
