@@ -16,7 +16,7 @@ function activeIntent(overrides = {}) {
   return normalizeRinIntent({
     status:'active', goal:'отдохнуть после работы', motive:'усталость', target:'evening_rest', scene:'everyday',
     priority:70, commitment:78, progress:.2, nextMove:'заварить чай', startedAtTurn:1, updatedAtTurn:1,
-    turnCount:1, minTurns:1, maxTurns:12, source:'cognitive_kernel', ...overrides
+    turnCount:1, minTurns:1, maxTurns:12, source:'rin_mind_v2', ...overrides
   });
 }
 
@@ -24,13 +24,19 @@ test('only TurnDecision activates a persistent intent', () => {
   const next = applyIntentTransition(null, decision({ operation:'activate', goal:'отдохнуть после работы', motive:'усталость', target:'evening_rest', nextMove:'заварить чай', progress:.05, commitment:75, reason:'приняла заботу' }), { revision:0, scene:'everyday' });
   assert.equal(next.status, 'active');
   assert.equal(next.goal, 'отдохнуть после работы');
-  assert.equal(next.source, 'cognitive_kernel');
+  assert.equal(next.source, 'rin_mind_v2');
 });
 
 test('preserve keeps the exact active intent while an unrelated question is answered', () => {
   const current = activeIntent();
   const next = applyIntentTransition(current, decision({ operation:'preserve', goal:null, motive:null, target:null, nextMove:null, progress:null, commitment:null, reason:'прямой вопрос временно имеет приоритет' }), { revision:3, scene:'everyday' });
-  assert.deepEqual(next, current);
+  assert.equal(next.id, current.id);
+  assert.equal(next.goal, current.goal);
+  assert.equal(next.target, current.target);
+  assert.equal(next.status, 'active');
+  assert.equal(next.turnCount, current.turnCount + 1);
+  assert.equal(next.progressState, 'preserved');
+  assert.equal(next.reason, 'прямой вопрос временно имеет приоритет');
 });
 
 test('advance updates progress without changing ownership or semantic target', () => {

@@ -99,16 +99,18 @@ test('decision validator enforces protocol without choosing a replacement behavi
   assert.equal('replacementDecision' in farewellActivation, false);
 });
 
-test('active chat runtime imports one Cognitive Kernel and does not import legacy decision owners', async () => {
+test('active chat runtime uses Rin Mind as the single semantic decision owner', async () => {
   const source = await readFile(new URL('../api/chat.js', import.meta.url), 'utf8');
-  assert.match(source, /cognitive-kernel\.js/);
+  assert.match(source, /rin-mind\.js/);
+  assert.match(source, /buildRinMindPrompt/);
+  assert.match(source, /parseRinMind/);
+  assert.match(source, /const MIND_MODEL = .*gpt-4\.1/);
+  assert.match(source, /OPENAI_MIND_MODEL/);
+  assert.doesNotMatch(source, /OPENAI_REALIZATION_MODEL/);
+  assert.doesNotMatch(source, /buildKernelPrompt|parseKernelDecision|realizeDecision/);
   for (const legacy of ['behavior-policy.js', 'response-planner.js', 'response-verifier.js', 'core-personality.js', 'character-intent-engine.js', 'relationship-engine.js', 'anti-gpt.js']) {
     assert.doesNotMatch(source, new RegExp(legacy.replace('.', '\\.')));
   }
-  assert.match(source, /const KERNEL_MODEL = .*gpt-4\.1/);
-  assert.match(source, /const REALIZATION_MODEL = .*gpt-4o-mini/);
-  assert.match(source, /OPENAI_DECISION_MODEL/);
-  assert.match(source, /OPENAI_REALIZATION_MODEL/);
 });
 
 test('state transition carries only kernel-authored open-loop and intent operations', () => {
@@ -122,7 +124,7 @@ test('state transition carries only kernel-authored open-loop and intent operati
   }) });
   assert.equal(transition.rinIntent.status, 'active');
   assert.equal(transition.openLoopUpdates.length, 1);
-  assert.equal(transition.openLoopUpdates[0].source, 'cognitive_kernel');
+  assert.equal(transition.openLoopUpdates[0].source, 'rin_mind_v2');
 });
 
 test('active Kernel perception consumes semantic signals, not legacy behavior directives', () => {

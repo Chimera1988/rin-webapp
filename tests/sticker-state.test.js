@@ -44,7 +44,7 @@ test('cooldown is reconstructed from server-visible assistant turn history, not 
   assert.deepEqual(state.recentAssetIds.slice(0, 1), ['tender_soft_smile']);
 });
 
-test('explicit reciprocal kiss can shorten cooldown only when rolling budget still has room', async () => {
+test('explicit reciprocal kiss can override smart rolling budget and cooldown when the gesture is semantically anchored', async () => {
   const history = [
     ...assistantTurn(1, { sticker: 'tender_soft_smile' }),
     ...assistantTurn(2),
@@ -57,8 +57,8 @@ test('explicit reciprocal kiss can shorten cooldown only when rolling budget sti
   const reciprocal = await buildStickerState({ history, preference: smart30, scene: 'romance', userText: 'целую тебя 😘' });
   assert.equal(reciprocal.explicitGesture, true);
   assert.equal(reciprocal.remainingStickerTurns, 0);
-  assert.equal(reciprocal.available, false);
-  assert.equal(reciprocal.reason, 'rolling_budget_exhausted');
+  assert.equal(reciprocal.available, true);
+  assert.equal(reciprocal.reason, 'explicit_gesture_override');
 
   const moreRoom = [
     ...assistantTurn(1, { sticker: 'tender_soft_smile' }),

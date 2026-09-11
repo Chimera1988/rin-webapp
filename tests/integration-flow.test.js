@@ -36,8 +36,24 @@ function structuredFetch({ decide, realize, memory } = {}) {
   return async (_url, options = {}) => {
     const payload = JSON.parse(options.body || '{}');
     const schema = payload?.response_format?.json_schema?.name;
-    if (schema === 'rin_turn_decision') return oa(typeof decide === 'function' ? decide(payload) : decide || decision());
-    if (schema === 'rin_realization') return oa(typeof realize === 'function' ? realize(payload) : realize || realization('Угу.'));
+    if (schema === 'rin_mind_turn_v2') {
+      const selectedDecision = typeof decide === 'function' ? decide(payload) : decide || decision();
+      const selectedRealization = typeof realize === 'function' ? realize(payload) : realize || realization('Угу.');
+      const texts = Array.isArray(selectedRealization?.segments) ? selectedRealization.segments : [];
+      let textIndex = 0;
+      const segments = (selectedDecision?.delivery?.segments || []).map(segment => ({
+        ...segment,
+        text: segment?.type === 'text' ? String(texts[textIndex++]?.text || 'Угу.') : null
+      }));
+      return oa({
+        ...selectedDecision,
+        delivery: { segments },
+        mind: {
+          felt: 'спокойная вовлечённость', wants: 'ответить естественно', restraint: null,
+          socialIntent: 'respond', confidence: 88
+        }
+      });
+    }
     if (payload?.response_format?.type === 'json_object') return oa(memory || { facts: [], events: [], sharedMoments: [] });
     throw new Error(`unexpected integration fetch: ${schema || payload?.response_format?.type || 'unknown'}`);
   };
@@ -61,7 +77,7 @@ test('aggregated rapid messages share one request and stay ordered at the end of
   assert.deepEqual(completed, ['u1,u2','u3']);
 });
 
-test('login → kernel chat → durable memory extraction → next kernel request carries remembered fact', async () => {
+test('login → Rin Mind chat → durable memory extraction → next Rin Mind request carries remembered fact', async () => {
   const original = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY, fetch: globalThis.fetch, storage: globalThis.localStorage };
   process.env.ACCESS_PIN = '9999'; process.env.OPENAI_API_KEY = 'integration-key';
   const login = (await import('../api/login.js?kernel-integration')).default;
@@ -240,5 +256,5 @@ test('40-turn sticker flow respects 30% rolling budget, survives history reload 
 
   const reconstructed=await buildStickerState({history:toApiHistory(history),preference:{mode:'smart',probability:30,safeMode:true},scene:'everyday'});
   assert.ok(reconstructed.recentAssetIds.length>0);
-  assert.equal(reconstructed.schema,'rin-sticker-state-v1');
+  assert.equal(reconstructed.schema,'rin-sticker-state-v2');
 });

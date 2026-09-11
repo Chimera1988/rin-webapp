@@ -64,17 +64,15 @@ test('Perception describes evidence and never prescribes Rin action', async () =
   assert.match(state, /user_handed_initiative/);
 });
 
-test('Cognitive Kernel is sole semantic decision owner in the chat API', async () => {
+test('Rin Mind is the sole semantic decision owner in the chat API', async () => {
   const api = await read('api/chat.js');
-  assert.match(api, /cognitive-kernel\.js/);
+  assert.match(api, /rin-mind\.js/);
   assert.match(api, /buildKernelState/);
-  assert.match(api, /buildKernelPrompt/);
-  assert.match(api, /parseKernelDecision/);
-  assert.match(api, /rin-realization\.js/);
-  assert.match(api, /realizeDecision/);
+  assert.match(api, /buildRinMindPrompt/);
+  assert.match(api, /parseRinMind/);
+  assert.match(api, /stabilizeTurn/);
+  assert.doesNotMatch(api, /buildKernelPrompt|parseKernelDecision|realizeDecision|OPENAI_REALIZATION_MODEL/);
   assert.doesNotMatch(api, /responsePlan|coreDecision|conversationBrain|compatibilityResponsePlan/);
-  assert.doesNotMatch(api, /buildTurnDelivery|\n\s*delivery,/);
-  assert.match(api, /validateDecisionResources/);
   assert.match(api, /isStickerIntentResolvable/);
   assert.doesNotMatch(api, /normalize\(input\.(?:hint|pool)|trigger\?\.(?:hint|pool)/);
   for (const file of REMOVED_DECISION_OWNERS) {
@@ -84,18 +82,22 @@ test('Cognitive Kernel is sole semantic decision owner in the chat API', async (
 
 test('PersistentIntent and OpenLoops have one transition owner', async () => {
   const decision = await read('lib/cognition/turn-decision.js');
+  const intentPolicy = await read('lib/cognition/intent-policy.js');
   const memory = await read('public/js/rin_memory.js');
   const intent = await read('public/lib/intent-contract.js');
   assert.match(decision, /applyIntentTransition/);
   assert.match(decision, /decisionOpenLoopUpdates/);
+  assert.match(intentPolicy, /stabilizePersistentIntent/);
+  assert.match(intentPolicy, /local_intent_persistence/);
   assert.doesNotMatch(memory, /export\s+async\s+function\s+(?:addOpenLoop|resolveOpenLoop)/);
-  assert.match(intent, /cognitive_kernel/);
+  assert.match(intent, /rin_mind_v2/);
   assert.match(intent, /status === 'completed' \|\| status === 'cancelled'/);
 });
 
 test('affective persistence has one snapshot writer path', async () => {
   const transition = await read('lib/cognition/cognitive-contract.js');
   const decision = await read('lib/cognition/turn-decision.js');
+  const intentPolicy = await read('lib/cognition/intent-policy.js');
   const chat = await read('public/chat.js');
   const memory = await read('public/js/rin_memory.js');
   assert.doesNotMatch(transition, /moodDelta|relationshipDelta|emotionalTrace/);

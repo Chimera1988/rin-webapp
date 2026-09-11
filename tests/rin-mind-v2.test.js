@@ -8,6 +8,7 @@ import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { STICKER_INTENT_VALUES } from '../lib/cognition/sticker-catalog.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
 import { fitMessengerText, repairMaleUserAddress, stabilizeTurn } from '../lib/cognition/turn-stabilizer.js';
+import { normalizeTurnDecision } from '../lib/cognition/turn-decision.js';
 function assistantMessage({ id, turnId, content = '', sticker = null }) {
   return {
     id,
@@ -89,7 +90,7 @@ test('Rin Mind parser deterministically removes information questions under a st
   assert.match(result.realization.segments[0].text, /Ладно, отступаю/);
 });
 
-test('smart sticker cooldown is soft pressure, not a hard block', async () => {
+test('smart sticker cooldown is a behavioral gate while hard availability remains enabled', async () => {
   const stickerId = STICKER_INTENT_VALUES[0];
   assert.ok(stickerId);
   const history = [
@@ -105,8 +106,8 @@ test('smart sticker cooldown is soft pressure, not a hard block', async () => {
     userText: 'ага)'
   });
   assert.equal(state.hardAvailable, true);
-  assert.equal(state.available, false); // legacy scheduler signal
-  assert.equal(state.hardAvailable, true); // Rin Mind may still choose an emotionally justified gesture
+  assert.equal(state.available, false); // Rin Mind schema must not offer sticker segments on this ordinary cooldown turn
+  assert.equal(state.hardAvailable, true); // feature itself remains technically enabled
   assert.ok(state.cooldownPressure >= 0);
   assert.ok(state.desireModifier > 0);
 });
@@ -165,4 +166,48 @@ test('hard sticker unavailability is repaired locally to a text fallback', () =>
   assert.equal(stabilized.decision.delivery.mode, 'single_text');
   assert.equal(stabilized.realization.segments[0].text, 'Я тебя услышала.');
   assert.ok(stabilized.warnings.includes('sticker_removed_hard_unavailable'));
+});
+
+
+test('immediate identical sticker repeat is locally suppressed outside an explicit gesture', () => {
+  const stickerId = STICKER_INTENT_VALUES[0];
+  const stabilized = stabilizeTurn({
+    decision: {
+      act: 'express_affection', focus: 'ответить тёплым жестом', stance: 'нежно', question: { mode: 'none', reason: null },
+      replyLink: { targetEventId: null, reason: null },
+      delivery: { segments: [{ type: 'sticker', purpose: 'gesture', stickerIntent: stickerId, maxChars: 20 }] },
+      intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
+      openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded'
+    },
+    realization: { segments: [] },
+    stickerState: { hardAvailable: true, available: true, explicitGesture: false, recentAssetIds: [stickerId] },
+    fallbackText: 'Я рядом.'
+  });
+  assert.equal(stabilized.decision.delivery.mode, 'single_text');
+  assert.equal(stabilized.realization.segments[0].text, 'Я рядом.');
+  assert.ok(stabilized.warnings.includes('sticker_removed_immediate_repeat'));
+});
+
+test('explicit reciprocal gesture may intentionally reuse the same sticker asset', () => {
+  const stickerId = STICKER_INTENT_VALUES[0];
+  const stabilized = stabilizeTurn({
+    decision: {
+      act: 'express_affection', focus: 'ответить на явный жест', stance: 'нежно', question: { mode: 'none', reason: null },
+      replyLink: { targetEventId: null, reason: null },
+      delivery: { segments: [{ type: 'sticker', purpose: 'reciprocal_gesture', stickerIntent: stickerId, maxChars: 20 }] },
+      intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
+      openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded'
+    },
+    realization: { segments: [] },
+    stickerState: { hardAvailable: true, available: true, explicitGesture: true, recentAssetIds: [stickerId] }
+  });
+  assert.equal(stabilized.decision.delivery.mode, 'sticker_only');
+  assert.equal(stabilized.decision.delivery.segments[0].stickerIntent, stickerId);
+  assert.equal(stabilized.warnings.includes('sticker_removed_immediate_repeat'), false);
+});
+
+test('turn decision normalizes free-form act prose into a stable behavioral code', () => {
+  const normalized = normalizeTurnDecision({ act: 'мягко признаться, что скучала и немного приблизиться' });
+  assert.equal(normalized.act, 'respond_personally');
+  assert.match(normalized.act, /^[a-z][a-z0-9_]{0,63}$/u);
 });
