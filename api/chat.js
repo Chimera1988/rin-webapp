@@ -376,7 +376,7 @@ export default async function handler(req, res) {
     });
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
     const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
-    const stickerCandidates = (stickerState.hardAvailable ?? stickerState.available) === true
+    const stickerCandidates = stickerState.available === true
       ? buildStickerCandidates({ userText: userTurn, state: kernelState, brain, affectiveTurn, limit: 12 })
       : [];
     const mindState = { ...kernelState, behaviorState, driveState, realityBoundary, stickerCandidates };
@@ -420,6 +420,8 @@ export default async function handler(req, res) {
       stickerState: kernelState.stickerState,
       visualReplyCandidates: kernelState.visualReplyCandidates,
       behaviorState,
+      driveState,
+      scene: kernelState.scene,
       fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn })
     });
     mindTurn.decision = stabilized.decision;
@@ -430,7 +432,7 @@ export default async function handler(req, res) {
       conversationState,
       client: body.client || {},
       activeIntent: kernelState.activeIntent,
-      stickerState: { ...kernelState.stickerState, available: kernelState.stickerState?.hardAvailable ?? kernelState.stickerState?.available },
+      stickerState: kernelState.stickerState,
       visualReplyCandidates: kernelState.visualReplyCandidates,
       reciprocity: kernelState.reciprocity
     }, resourceWarnings);
@@ -448,7 +450,7 @@ export default async function handler(req, res) {
         conversationState,
         client: body.client || {},
         activeIntent: kernelState.activeIntent,
-        stickerState: { ...kernelState.stickerState, available: kernelState.stickerState?.hardAvailable ?? kernelState.stickerState?.available },
+        stickerState: kernelState.stickerState,
         visualReplyCandidates: kernelState.visualReplyCandidates,
         reciprocity: kernelState.reciprocity
       }, []);
@@ -470,7 +472,7 @@ export default async function handler(req, res) {
         conversationState,
         client: body.client || {},
         activeIntent: kernelState.activeIntent,
-        stickerState: { ...kernelState.stickerState, available: kernelState.stickerState?.hardAvailable ?? kernelState.stickerState?.available },
+        stickerState: kernelState.stickerState,
         visualReplyCandidates: kernelState.visualReplyCandidates,
         reciprocity: kernelState.reciprocity
       }, []);
