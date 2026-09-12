@@ -10,6 +10,7 @@ import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
 import { buildBehaviorState } from '../lib/cognition/behavior-state.js';
 import { buildDriveState } from '../lib/cognition/drive-state.js';
 import { stabilizeTurn } from '../lib/cognition/turn-stabilizer.js';
+import { inspectIntentLifecycle } from '../lib/cognition/intent-policy.js';
 import {
   buildDeterministicConversationFallback,
   buildRinMindPrompt,
@@ -360,7 +361,8 @@ export default async function handler(req, res) {
       scene: brain?.activeScene?.type || 'everyday',
       userText: userTurn
     });
-    const behaviorState = buildBehaviorState({ userText: userTurn, history: fullHistory, brain });
+    const priorRecentActs = memory?.conversationState?.dialogueState?.recentActs || [];
+    const behaviorState = buildBehaviorState({ userText: userTurn, history: fullHistory, brain, recentActs: priorRecentActs });
     const kernelState = buildKernelState({
       requestId,
       userText: userTurn,
@@ -416,6 +418,9 @@ export default async function handler(req, res) {
       decision: mindTurn.decision,
       realization: mindTurn.realization,
       activeIntent: kernelState.activeIntent,
+      recentIntents: kernelState.recentIntents,
+      revision: kernelState.revision,
+      recentActs: kernelState.dialogueState?.recentActs || [],
       conversationState,
       stickerState: kernelState.stickerState,
       visualReplyCandidates: kernelState.visualReplyCandidates,
@@ -517,6 +522,13 @@ export default async function handler(req, res) {
     const visualReply = visualReplyFromDecision(mindTurn.decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
     const usage = usageOrZero(completion.usage);
+    const intentTelemetry = inspectIntentLifecycle({
+      activeIntent: kernelState.activeIntent,
+      recentIntents: kernelState.recentIntents,
+      decision: mindTurn.decision,
+      revision: kernelState.revision,
+      recentActs: kernelState.dialogueState?.recentActs || []
+    });
 
     return res.status(200).json({
       requestId,
@@ -530,7 +542,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2',
+        promptVersion: 'rin-mind-v2.2',
         inputTokens: usage.prompt_tokens,
         outputTokens: usage.completion_tokens,
         totalTokens: usage.total_tokens,
@@ -540,7 +552,7 @@ export default async function handler(req, res) {
         semanticRetries: 0
       },
       perception: brain,
-      cognition: { ...compactKernelState(kernelState), behaviorState, driveState },
+      cognition: { ...compactKernelState(kernelState), behaviorState, driveState, intentTelemetry },
       mind: mindTurn.mind,
       turnDecision: mindTurn.decision,
       visualReply,
