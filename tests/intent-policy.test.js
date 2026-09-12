@@ -36,14 +36,15 @@ test('weak one-off behavior does not manufacture an intention', () => {
   assert.equal(result.operation, 'none');
 });
 
-test('live intention is preserved when the model emits no lifecycle operation', () => {
+test('aligned live intention gains gradual progress when the model emits no lifecycle operation', () => {
   const result = stabilizePersistentIntent({
     transition: none(), decision: { act: 'playful_tease' }, activeIntent: active(),
     driveState: { playfulness: 80 }, behaviorState: { space: { strong: false } },
     scene: { type: 'playful_flirt' }
   });
-  assert.equal(result.operation, 'preserve');
-  assert.equal(result.reason, 'local_intent_persistence');
+  assert.equal(result.operation, 'advance');
+  assert.equal(result.reason, 'local_intent_progress');
+  assert.ok(result.progress > 0.2 && result.progress < 1);
 });
 
 test('request for space suspends a live intention instead of fighting the user', () => {

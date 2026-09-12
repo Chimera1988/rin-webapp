@@ -449,7 +449,7 @@ test('multi-turn acts can acquire a persistent intent locally when the model omi
   } finally { mock.restore(); }
 });
 
-test('live persistent intent is preserved locally when model emits none', async () => {
+test('live persistent intent advances locally when the current act serves the same goal', async () => {
   const activeIntent={
     schema:'rin-persistent-intent-v4',id:'intent-1',rootId:'intent-1',status:'active',goal:'сохранять взаимную игровую близость',
     motive:'ей нравится игра',target:'playful_closeness',scene:'playful_flirt',priority:60,commitment:75,progress:0.2,
@@ -463,9 +463,10 @@ test('live persistent intent is preserved locally when model emits none', async 
       memory:{conversationState:{revision:3,rinIntent:activeIntent,openLoops:[]},relationship:{playfulness:80,closeness:75,comfort:75,respect:75},mood:{energy:75,affection:70}}
     }),res);
     assert.equal(res.statusCode,200);
-    assert.equal(res.body.turnDecision.intentTransition.operation,'preserve');
+    assert.equal(res.body.turnDecision.intentTransition.operation,'advance');
     assert.equal(res.body.stateTransition.rinIntent.id,'intent-1');
     assert.equal(res.body.stateTransition.rinIntent.turnCount,2);
+    assert.ok(res.body.stateTransition.rinIntent.progress > 0.2);
   } finally { mock.restore(); }
 });
 

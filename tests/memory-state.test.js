@@ -272,7 +272,7 @@ test('persistent Rin intent survives transactional commit and reload exactly', a
   };
   await memory.commitTurnState({ requestId: 'intent-persist-r1', now: 12_000_000, stateTransition: { rinIntent } });
   const first = await memory.loadDiary();
-  assert.equal(first.conversationState.schema, 'rin-conversation-state-v4');
+  assert.equal(first.conversationState.schema, 'rin-conversation-state-v5');
   assert.equal(first.conversationState.rinIntent.id, 'intent-persist');
   assert.equal(first.conversationState.rinIntent.status, 'active');
   assert.equal(first.conversationState.rinIntent.progress, 0.42);

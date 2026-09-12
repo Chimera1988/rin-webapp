@@ -171,8 +171,10 @@ test('40-turn synthetic long-flow preserves one persistent intent owner, open lo
       if (index > 0 && index < 39) assert.equal(memory.conversationState.rinIntent?.goal, 'отдохнуть после работы');
       if (activeLoopId && index < 39) assert.equal(memory.conversationState.openLoops.some(loop => loop.id === activeLoopId), true);
     }
-    assert.equal(memory.conversationState.rinIntent.status, 'completed');
-    assert.equal(memory.conversationState.rinIntent.terminalAtTurn > 0, true);
+    assert.equal(memory.conversationState.rinIntent, null);
+    const completedIntent = memory.conversationState.recentIntents.at(-1);
+    assert.equal(completedIntent.status, 'completed');
+    assert.equal(completedIntent.terminalAtTurn > 0, true);
     assert.equal(memory.conversationState.revision, 40);
   } finally { globalThis.localStorage = previous; }
 });
