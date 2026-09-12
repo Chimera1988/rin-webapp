@@ -117,13 +117,14 @@ function defaultInnerLife() {
 
 function defaultConversationState() {
   return {
-    schema: 'rin-conversation-state-v4',
+    schema: 'rin-conversation-state-v5',
     revision: 0,
     dialogueState: null,
     beliefs: [],
     openLoops: [],
     emotionalState: normalizeEmotionalState({}),
     rinIntent: null,
+    recentIntents: [],
     lastCommittedRequestId: null,
     updatedAt: 0
   };
@@ -141,15 +142,28 @@ function normalizeConversationState(value = {}, legacyTrace = null, context = {}
   const emotionalState = source.emotionalState && typeof source.emotionalState === 'object'
     ? normalizeEmotionalState(source.emotionalState, context)
     : emotionalStateFromLegacyTrace(source.emotionalTrace || legacyTrace, context);
+  const rawIntent = normalizeRinIntent(source.rinIntent);
+  const history = [];
+  for (const candidate of [
+    ...(Array.isArray(source.recentIntents) ? source.recentIntents : []),
+    ...((rawIntent && ['completed', 'cancelled'].includes(rawIntent.status)) ? [rawIntent] : [])
+  ]) {
+    const intent = normalizeRinIntent(candidate);
+    if (!intent || !['completed', 'cancelled'].includes(intent.status)) continue;
+    const existing = history.findIndex(item => item.id === intent.id);
+    if (existing >= 0) history.splice(existing, 1);
+    history.push(intent);
+  }
   return {
     ...defaultConversationState(),
-    schema: 'rin-conversation-state-v4',
+    schema: 'rin-conversation-state-v5',
     revision: Math.max(0, Math.round(finiteNumber(source.revision, 0))),
     dialogueState: source.dialogueState && typeof source.dialogueState === 'object' ? source.dialogueState : null,
     beliefs,
     openLoops: loops,
     emotionalState,
-    rinIntent: normalizeRinIntent(source.rinIntent),
+    rinIntent: rawIntent && ['active', 'suspended'].includes(rawIntent.status) ? rawIntent : null,
+    recentIntents: history.slice(-8),
     lastCommittedRequestId: cleanText(source.lastCommittedRequestId, 120) || null,
     updatedAt: finiteNumber(source.updatedAt, 0)
   };
@@ -512,6 +526,20 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
     ? normalizeEmotionalState(transition.emotionalState, context)
     : current.emotionalState;
 
+  let rinIntent = current.rinIntent;
+  let recentIntents = Array.isArray(current.recentIntents) ? [...current.recentIntents] : [];
+  if (transition.rinIntent !== undefined) {
+    const incomingIntent = normalizeRinIntent(transition.rinIntent);
+    if (incomingIntent && ['completed', 'cancelled'].includes(incomingIntent.status)) {
+      recentIntents = recentIntents.filter(item => item?.id !== incomingIntent.id);
+      recentIntents.push(incomingIntent);
+      recentIntents = recentIntents.slice(-8);
+      rinIntent = null;
+    } else {
+      rinIntent = incomingIntent;
+    }
+  }
+
   return normalizeConversationState({
     ...current,
     revision: current.revision + 1,
@@ -521,7 +549,8 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
     beliefs: beliefs.slice(-48),
     openLoops: [...loops.values()].filter(item => !['resolved', 'cancelled', 'stale'].includes(item?.status)).slice(-24),
     emotionalState,
-    rinIntent: transition.rinIntent === undefined ? current.rinIntent : normalizeRinIntent(transition.rinIntent),
+    rinIntent,
+    recentIntents,
     lastCommittedRequestId: requestId || null,
     updatedAt: now
   }, null, context);
