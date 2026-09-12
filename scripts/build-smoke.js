@@ -75,7 +75,8 @@ await requireFiles([
   'scripts/check-syntax.js',
   'scripts/check-rin-mind-v2.mjs',
   'tests/rin-mind-v2.test.js',
-  'tests/rin-mind-v2-api.test.js'
+  'tests/rin-mind-v2-api.test.js',
+  'tests/rin-mind-v22.test.js'
 ]);
 
 // Keep the existing browser/release/security envelope intact.
@@ -167,13 +168,17 @@ requireText(mindSource, [
   [/removeQuestionSentences\s*\(/, 'Deterministic question-boundary recovery is missing.'],
   [/buildDeterministicConversationFallback/, 'Local model-output fallback is missing.'],
   [/behavioral code/iu, 'Stable behavioral act code contract is missing.'],
-  [/Persistent intent/iu, 'Persistent intent guidance is missing.']
+  [/Persistent intent/iu, 'Persistent intent guidance is missing.'],
+  [/recentIntents/iu, 'Completed-intent cooldown guidance is missing.'],
+  [/playful_mock_offense/iu, 'Readable playful mock-offense guidance is missing.']
 ], 'lib/cognition/rin-mind.js');
 
 const behaviorSource = await read('lib/cognition/behavior-state.js');
 requireText(behaviorSource, [
   [/strongNoQuestion/, 'Explicit no-question state is missing.'],
-  [/fatigue/, 'Question fatigue tracking is missing.']
+  [/fatigue/, 'Question fatigue tracking is missing.'],
+  [/likelyInflectionTypo/, 'Stable male-user typo handling is missing.'],
+  [/novelty/, 'Soft behavioral novelty pressure is missing.']
 ], 'lib/cognition/behavior-state.js');
 
 const driveSource = await read('lib/cognition/drive-state.js');
@@ -216,7 +221,9 @@ requireText(localSettingsSource, [
 const intentPolicySource = await read('lib/cognition/intent-policy.js');
 requireText(intentPolicySource, [
   [/local_intent_persistence/, 'Persistent intent continuation policy is missing.'],
-  [/MULTI_TURN_ACTS/, 'Multi-turn volition policies are missing.']
+  [/MULTI_TURN_ACTS/, 'Multi-turn volition policies are missing.'],
+  [/intentSimilarity/, 'Recent-intent similarity cooldown is missing.'],
+  [/local_intent_progress/, 'Gradual local intent progress is missing.']
 ], 'lib/cognition/intent-policy.js');
 
 const viewportSource = await read('public/js/chat_viewport.js');
@@ -228,4 +235,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2, one semantic model call, sticker volition, browser/security envelope.');
+console.log('Build smoke OK: Rin Mind v2.2, gradual intent lifecycle, one semantic model call, sticker volition, browser/security envelope.');
