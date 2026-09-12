@@ -493,8 +493,12 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
   if (committed?.mood) {
     const questionReason = String(decision?.question?.reason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
     const questionPressure = String(data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
-    const intent = committed.conversationState?.rinIntent || null;
-    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${intent?.status || 'none'}:${intent?.goal || '-'}; intentProgress=${intent?.progress ?? '-'}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
+    const storedIntent = committed.conversationState?.rinIntent || null;
+    const transitionIntent = data?.stateTransition?.rinIntent || null;
+    const intent = storedIntent || (['completed', 'cancelled'].includes(transitionIntent?.status) ? transitionIntent : null);
+    const intentTelemetry = data?.cognition?.intentTelemetry || {};
+    const novelty = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
+    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${intent?.status || 'none'}:${intent?.goal || '-'}; intentOp=${decision?.intentTransition?.operation || 'none'}; intentAge=${intent?.turnCount ?? intentTelemetry?.activeAge ?? '-'}; intentProgress=${intent?.progress ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; behaviorNovelty=${novelty}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
   }
   return committed;
 }
@@ -1660,8 +1664,10 @@ function stickerDebugSummary(data = null) {
   const budget = state?.mode === 'always'
     ? 'always'
     : `${Number(state?.usedStickerTurns || 0)}/${state?.limitStickerTurns ?? '-'}`;
+  const intentTelemetry = data?.cognition?.intentTelemetry || null;
+  const novelty = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
   const tokenSummary = metrics
-    ? `; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}`
+    ? `; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; intentOp=${intentTelemetry?.operation || '-'}; intentAge=${intentTelemetry?.activeAge ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; behaviorNovelty=${novelty}`
     : '';
   return `; stickerMode=${state?.mode || '-'}; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerHard=${state?.hardAvailable === true ? 'yes' : 'no'}:${state?.hardReason || '-'}; stickerBudget=${budget}; stickerGap=${state?.turnsSinceSticker ?? '-'}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}${tokenSummary}`;
 }
