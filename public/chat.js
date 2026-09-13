@@ -497,8 +497,9 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
     const transitionIntent = data?.stateTransition?.rinIntent || null;
     const intent = storedIntent || (['completed', 'cancelled'].includes(transitionIntent?.status) ? transitionIntent : null);
     const intentTelemetry = data?.cognition?.intentTelemetry || {};
-    const novelty = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
-    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${intent?.status || 'none'}:${intent?.goal || '-'}; intentOp=${decision?.intentTransition?.operation || 'none'}; intentAge=${intent?.turnCount ?? intentTelemetry?.activeAge ?? '-'}; intentProgress=${intent?.progress ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; behaviorNovelty=${novelty}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
+    const noveltyPressure = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
+    const socialMisreadRisk = Number(data?.cognition?.behaviorState?.socialMisread?.risk || 0);
+    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${intent?.status || 'none'}:${intent?.goal || '-'}; intentKind=${intent?.kind || decision?.intentTransition?.kind || '-'}; intentPhase=${intent?.phase || decision?.intentTransition?.phase || '-'}; intentOp=${decision?.intentTransition?.operation || 'none'}; intentAge=${intent?.turnCount ?? intentTelemetry?.activeAge ?? '-'}; intentProgress=${intent?.progress ?? '-'}; intentEngagement=${intent?.engagement ?? decision?.intentTransition?.engagement ?? '-'}; intentSaturation=${intent?.saturation ?? decision?.intentTransition?.saturation ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; noveltyPressure=${noveltyPressure}; socialMisreadRisk=${socialMisreadRisk}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
   }
   return committed;
 }
@@ -1665,9 +1666,10 @@ function stickerDebugSummary(data = null) {
     ? 'always'
     : `${Number(state?.usedStickerTurns || 0)}/${state?.limitStickerTurns ?? '-'}`;
   const intentTelemetry = data?.cognition?.intentTelemetry || null;
-  const novelty = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
+  const noveltyPressure = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
+  const socialMisreadRisk = Number(data?.cognition?.behaviorState?.socialMisread?.risk || 0);
   const tokenSummary = metrics
-    ? `; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; intentOp=${intentTelemetry?.operation || '-'}; intentAge=${intentTelemetry?.activeAge ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; behaviorNovelty=${novelty}`
+    ? `; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; intentOp=${intentTelemetry?.operation || '-'}; intentKind=${intentTelemetry?.kind || '-'}; intentPhase=${intentTelemetry?.phase || '-'}; intentAge=${intentTelemetry?.activeAge ?? '-'}; intentProgress=${intentTelemetry?.progress ?? '-'}; intentEngagement=${intentTelemetry?.engagement ?? '-'}; intentSaturation=${intentTelemetry?.saturation ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; noveltyPressure=${noveltyPressure}; socialMisreadRisk=${socialMisreadRisk}`
     : '';
   return `; stickerMode=${state?.mode || '-'}; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerHard=${state?.hardAvailable === true ? 'yes' : 'no'}:${state?.hardReason || '-'}; stickerBudget=${budget}; stickerGap=${state?.turnsSinceSticker ?? '-'}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}${tokenSummary}`;
 }
