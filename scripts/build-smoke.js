@@ -220,10 +220,10 @@ requireText(localSettingsSource, [
 
 const intentPolicySource = await read('lib/cognition/intent-policy.js');
 requireText(intentPolicySource, [
-  [/local_intent_persistence/, 'Persistent intent continuation policy is missing.'],
+  [/maintenance_sustain/, 'Maintenance intent sustain policy is missing.'],
   [/MULTI_TURN_ACTS/, 'Multi-turn volition policies are missing.'],
   [/intentSimilarity/, 'Recent-intent similarity cooldown is missing.'],
-  [/local_intent_progress/, 'Gradual local intent progress is missing.']
+  [/local_achievement_progress/, 'Achievement intent progress policy is missing.']
 ], 'lib/cognition/intent-policy.js');
 
 const viewportSource = await read('public/js/chat_viewport.js');
@@ -235,4 +235,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.2, gradual intent lifecycle, one semantic model call, sticker volition, browser/security envelope.');
+console.log('Build smoke OK: Rin Mind v2.3, typed intent lifecycle, social disambiguation, one semantic model call, sticker volition, browser/security envelope.');
