@@ -10,13 +10,14 @@ const none = () => ({
 });
 
 const activePlay = (overrides = {}) => ({
-  status: 'active', goal: 'сохранять взаимную игровую близость, пока она остаётся приятной обоим',
+  schema: 'rin-persistent-intent-v5', status: 'active', kind: 'maintenance', phase: 'sustain',
+  goal: 'сохранять взаимную игровую близость, пока она остаётся приятной обоим',
   motive: 'Рин нравится игра', target: 'playful_closeness', scene: 'playful_flirt',
-  progress: 0.08, commitment: 78, turnCount: 1, minTurns: 2, maxTurns: 8, ...overrides
+  progress: null, engagement: 80, saturation: 0, commitment: 78, turnCount: 1, minTurns: 2, maxTurns: 16, ...overrides
 });
 
 const completedPlay = (overrides = {}) => ({
-  ...activePlay(), status: 'completed', progress: 1, terminalAtTurn: 10, cooldownUntilTurn: 20, ...overrides
+  ...activePlay(), status: 'completed', phase: 'completed', progress: null, terminalAtTurn: 10, cooldownUntilTurn: 20, ...overrides
 });
 
 test('isolated feminine first-person inflection is normalized as a likely typo for the known male user', () => {
@@ -38,15 +39,18 @@ test('behavior state exposes gender-stability and soft novelty pressure without 
   assert.match(state.novelty.guidance, /не ломать|другим/iu);
 });
 
-test('aligned persistent intention advances gradually instead of staying frozen then jumping to one', () => {
+test('aligned playful maintenance intention sustains without pretending closeness is a progress bar', () => {
   const result = stabilizePersistentIntent({
     transition: none(), decision: { act: 'playful_tease' }, activeIntent: activePlay(),
-    recentActs: ['flirt_softly'], driveState: { playfulness: 82 }, behaviorState: { space: { strong: false } },
+    recentActs: ['flirt_softly'], driveState: { playfulness: 82 },
+    behaviorState: { space: { strong: false }, novelty: { pressure: 0 }, socialMisread: { risk: 0 } },
     scene: { type: 'playful_flirt' }, revision: 4
   });
-  assert.equal(result.operation, 'advance');
-  assert.ok(result.progress > 0.08 && result.progress < 0.3);
-  assert.equal(result.reason, 'local_intent_progress');
+  assert.equal(result.operation, 'preserve');
+  assert.equal(result.kind, 'maintenance');
+  assert.equal(result.progress, null);
+  assert.equal(result.phase, 'sustain');
+  assert.match(result.reason, /maintenance_sustain/);
 });
 
 test('recently completed semantically identical intention cannot immediately resurrect through local inference', () => {

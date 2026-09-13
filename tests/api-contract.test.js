@@ -449,11 +449,11 @@ test('multi-turn acts can acquire a persistent intent locally when the model omi
   } finally { mock.restore(); }
 });
 
-test('live persistent intent advances locally when the current act serves the same goal', async () => {
+test('live playful maintenance intent sustains locally without fake numeric progress', async () => {
   const activeIntent={
-    schema:'rin-persistent-intent-v4',id:'intent-1',rootId:'intent-1',status:'active',goal:'сохранять взаимную игровую близость',
-    motive:'ей нравится игра',target:'playful_closeness',scene:'playful_flirt',priority:60,commitment:75,progress:0.2,
-    nextMove:'продолжить игру',progressState:'started',startedAtTurn:3,updatedAtTurn:3,turnCount:1,minTurns:2,maxTurns:6,source:'rin_mind_v2'
+    schema:'rin-persistent-intent-v5',id:'intent-1',rootId:'intent-1',status:'active',kind:'maintenance',phase:'sustain',goal:'сохранять взаимную игровую близость',
+    motive:'ей нравится игра',target:'playful_closeness',scene:'playful_flirt',priority:60,commitment:75,progress:null,engagement:80,saturation:8,
+    nextMove:'продолжить игру',progressState:'sustained',startedAtTurn:3,updatedAtTurn:3,turnCount:1,minTurns:2,maxTurns:16,source:'rin_mind_v2'
   };
   const mock=installMindMock({turns:[mindTurn('Мм, посмотрим)',{act:'playful_tease'})]});
   try {
@@ -463,10 +463,12 @@ test('live persistent intent advances locally when the current act serves the sa
       memory:{conversationState:{revision:3,rinIntent:activeIntent,openLoops:[]},relationship:{playfulness:80,closeness:75,comfort:75,respect:75},mood:{energy:75,affection:70}}
     }),res);
     assert.equal(res.statusCode,200);
-    assert.equal(res.body.turnDecision.intentTransition.operation,'advance');
+    assert.equal(res.body.turnDecision.intentTransition.operation,'preserve');
+    assert.equal(res.body.turnDecision.intentTransition.kind,'maintenance');
     assert.equal(res.body.stateTransition.rinIntent.id,'intent-1');
     assert.equal(res.body.stateTransition.rinIntent.turnCount,2);
-    assert.ok(res.body.stateTransition.rinIntent.progress > 0.2);
+    assert.equal(res.body.stateTransition.rinIntent.progress,null);
+    assert.equal(res.body.stateTransition.rinIntent.phase,'sustain');
   } finally { mock.restore(); }
 });
 
