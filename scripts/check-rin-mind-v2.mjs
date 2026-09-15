@@ -19,7 +19,8 @@ const syntaxFiles = [
   'tests/local-settings.test.js',
   'tests/intent-policy.test.js',
   'tests/rin-mind-v22.test.js',
-  'tests/rin-mind-v23.test.js'
+  'tests/rin-mind-v23.test.js',
+  'tests/rin-mind-v24.test.js'
 ];
 
 function run(args, label) {
@@ -32,5 +33,5 @@ function run(args, label) {
 }
 
 for (const file of syntaxFiles) run(['--check', file], `syntax ${file}`);
-run(['--test', '--test-concurrency=1', 'tests/rin-mind-v2.test.js', 'tests/rin-mind-v2-api.test.js', 'tests/local-settings.test.js', 'tests/intent-policy.test.js', 'tests/rin-mind-v22.test.js', 'tests/rin-mind-v23.test.js'], 'Rin Mind v2 tests');
-console.log('Rin Mind v2.3: targeted checks passed.');
+run(['--test', '--test-concurrency=1', 'tests/rin-mind-v2.test.js', 'tests/rin-mind-v2-api.test.js', 'tests/local-settings.test.js', 'tests/intent-policy.test.js', 'tests/rin-mind-v22.test.js', 'tests/rin-mind-v23.test.js', 'tests/rin-mind-v24.test.js'], 'Rin Mind v2 tests');
+console.log('Rin Mind v2.4: targeted checks passed.');

@@ -170,7 +170,10 @@ requireText(mindSource, [
   [/behavioral code/iu, 'Stable behavioral act code contract is missing.'],
   [/Persistent intent/iu, 'Persistent intent guidance is missing.'],
   [/recentIntents/iu, 'Completed-intent cooldown guidance is missing.'],
-  [/playful_mock_offense/iu, 'Readable playful mock-offense guidance is missing.']
+  [/playful_mock_offense/iu, 'Readable playful mock-offense guidance is missing.'],
+  [/sceneMotif/u, 'Semantic scene motif classification is missing.'],
+  [/frameAlignment/u, 'Contextual social-frame alignment is missing.'],
+  [/не классифицируй по ключевым словам/iu, 'Frame alignment must not fall back to keyword-only misread detection.']
 ], 'lib/cognition/rin-mind.js');
 
 const behaviorSource = await read('lib/cognition/behavior-state.js');
@@ -178,7 +181,9 @@ requireText(behaviorSource, [
   [/strongNoQuestion/, 'Explicit no-question state is missing.'],
   [/fatigue/, 'Question fatigue tracking is missing.'],
   [/likelyInflectionTypo/, 'Stable male-user typo handling is missing.'],
-  [/novelty/, 'Soft behavioral novelty pressure is missing.']
+  [/novelty/, 'Soft behavioral novelty pressure is missing.'],
+  [/recentMotifs/, 'Semantic motif history is missing.'],
+  [/frameEvidence/, 'Context evidence for frame alignment is missing.']
 ], 'lib/cognition/behavior-state.js');
 
 const driveSource = await read('lib/cognition/drive-state.js');
@@ -211,7 +216,10 @@ const publicChat = await read('public/chat.js');
 const localSettingsSource = await read('public/js/local_settings.js');
 requireText(publicChat, [
   [/createLocalSettings\(localStorage\)/, 'Chat settings must bind storage helpers to localStorage explicitly.'],
-  [/stickerMode=\$\{state\?\.mode/, 'Sticker diagnostics must expose the effective backend mode.']
+  [/stickerMode=\$\{state\?\.mode/, 'Sticker diagnostics must expose the effective backend mode.'],
+  [/buildTurnDebugSnapshot/, 'Post-commit turn telemetry snapshot is missing.'],
+  [/sceneMotif=\$\{snapshot\.sceneMotif\}/, 'Scene motif telemetry is missing.'],
+  [/frameAlignment=\$\{snapshot\.frameAlignment\}/, 'Frame alignment telemetry is missing.']
 ], 'public/chat.js');
 requireText(localSettingsSource, [
   [/storageGet\(storage, key, fallback\)/, 'Bound settings reader is missing.'],
@@ -235,4 +243,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.3, typed intent lifecycle, social disambiguation, one semantic model call, sticker volition, browser/security envelope.');
+console.log('Build smoke OK: Rin Mind v2.4, semantic scene control, contextual frame alignment, post-commit telemetry, one semantic model call, sticker volition.');
