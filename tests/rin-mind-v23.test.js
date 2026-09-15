@@ -55,24 +55,25 @@ test('maintenance transition stores phase, engagement and saturation while leavi
   assert.equal(next.turnCount, 3);
 });
 
-test('literal confusion after a playful act produces high social misread risk', () => {
+test('playful confusion is exposed as evidence without being hard-classified as a social misread', () => {
   const state = buildBehaviorState({
     userText: 'Как показать то? Не понимаю 😅',
     recentActs: ['accept_closeness', 'playful_tease']
   });
-  assert.equal(state.socialMisread.playfulContext, true);
-  assert.equal(state.socialMisread.level, 'high');
-  assert.ok(state.socialMisread.risk >= 80);
-  assert.match(state.socialMisread.guidance, /не прекращай флирт|маркер игры/iu);
+  assert.equal(state.frameEvidence.playfulContext, true);
+  assert.equal(state.frameEvidence.confusionCue, true);
+  assert.equal(state.frameEvidence.playfulMarker, true);
+  assert.match(state.frameEvidence.guidance, /не готовый диагноз|полному смыслу/iu);
 });
 
-test('ordinary non-playful clarification is not misclassified as a high flirt misread', () => {
+test('ordinary non-playful clarification remains only lexical evidence for the semantic frame classifier', () => {
   const state = buildBehaviorState({
     userText: 'Не понимаю, как работает этот параметр',
     recentActs: ['answer_directly']
   });
-  assert.equal(state.socialMisread.playfulContext, false);
-  assert.ok(state.socialMisread.risk < 55);
+  assert.equal(state.frameEvidence.playfulContext, false);
+  assert.equal(state.frameEvidence.confusionCue, true);
+  assert.equal(state.frameEvidence.repairCue, false);
 });
 
 test('kernel preserves Rin-local timezone and prompt gives current environment precedence over stale daypart history', () => {
@@ -104,7 +105,7 @@ test('kernel preserves Rin-local timezone and prompt gives current environment p
   assert.match(system, /2026-09-13 18:05/u);
   assert.match(system, /Asia\/Tokyo/u);
   assert.match(system, /время на устройстве пользователя/u);
-  assert.match(system, /socialMisreadRisk=/u);
+  assert.match(system, /frameAlignment/u);
   assert.match(system, /maintenance/u);
   assert.match(system, /progress=null/u);
   assert.match(system, /canonical = факты canon\/lore/u);
