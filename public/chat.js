@@ -478,6 +478,32 @@ setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
 /* НАСТРОЕНИЕ РИН */
 /* ============================= */
 
+
+function buildTurnDebugSnapshot(data = null, committed = null) {
+  const decision = data?.turnDecision || null;
+  const transitionIntent = data?.stateTransition?.rinIntent || null;
+  const storedIntent = committed?.conversationState?.rinIntent || null;
+  const intent = storedIntent || (['completed', 'cancelled'].includes(transitionIntent?.status) ? transitionIntent : transitionIntent);
+  const intentTelemetry = data?.cognition?.intentTelemetry || {};
+  const sceneControl = data?.cognition?.sceneControl || {};
+  const fallbackNoveltyPressure = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
+  return {
+    intent,
+    operation: decision?.intentTransition?.operation || intentTelemetry?.operation || 'none',
+    kind: intent?.kind || decision?.intentTransition?.kind || intentTelemetry?.kind || '-',
+    phase: intent?.phase || decision?.intentTransition?.phase || intentTelemetry?.phase || '-',
+    age: intent?.turnCount ?? intentTelemetry?.activeAge ?? 0,
+    progress: intent?.progress ?? null,
+    engagement: intent?.engagement ?? decision?.intentTransition?.engagement ?? intentTelemetry?.engagement ?? null,
+    saturation: intent?.saturation ?? decision?.intentTransition?.saturation ?? intentTelemetry?.saturation ?? null,
+    similarity: intentTelemetry?.recentSimilarity ?? 0,
+    sceneMotif: sceneControl?.sceneMotif || data?.mind?.sceneMotif || '-',
+    motifRepeat: Number(sceneControl?.motifRepeat || 0),
+    motifPressure: Number(sceneControl?.motifPressure ?? fallbackNoveltyPressure),
+    frameAlignment: sceneControl?.frameAlignment || data?.mind?.frameAlignment || '-'
+  };
+}
+
 async function commitSuccessfulTurnState({ memoryModule, userMessage = null, requestId = null, data, preparedInnerLife }) {
   const transition = data?.stateTransition || null;
   const decision = data?.turnDecision || null;
@@ -493,13 +519,8 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
   if (committed?.mood) {
     const questionReason = String(decision?.question?.reason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
     const questionPressure = String(data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
-    const storedIntent = committed.conversationState?.rinIntent || null;
-    const transitionIntent = data?.stateTransition?.rinIntent || null;
-    const intent = storedIntent || (['completed', 'cancelled'].includes(transitionIntent?.status) ? transitionIntent : null);
-    const intentTelemetry = data?.cognition?.intentTelemetry || {};
-    const noveltyPressure = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
-    const socialMisreadRisk = Number(data?.cognition?.behaviorState?.socialMisread?.risk || 0);
-    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${intent?.status || 'none'}:${intent?.goal || '-'}; intentKind=${intent?.kind || decision?.intentTransition?.kind || '-'}; intentPhase=${intent?.phase || decision?.intentTransition?.phase || '-'}; intentOp=${decision?.intentTransition?.operation || 'none'}; intentAge=${intent?.turnCount ?? intentTelemetry?.activeAge ?? '-'}; intentProgress=${intent?.progress ?? '-'}; intentEngagement=${intent?.engagement ?? decision?.intentTransition?.engagement ?? '-'}; intentSaturation=${intent?.saturation ?? decision?.intentTransition?.saturation ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; noveltyPressure=${noveltyPressure}; socialMisreadRisk=${socialMisreadRisk}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
+    const snapshot = buildTurnDebugSnapshot(data, committed);
+    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${snapshot.intent?.status || 'none'}:${snapshot.intent?.goal || '-'}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentOp=${snapshot.operation}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
   }
   return committed;
 }
@@ -1657,7 +1678,7 @@ function stickerClientPreferences() {
   };
 }
 
-function stickerDebugSummary(data = null) {
+function stickerDebugSummary(data = null, committed = null) {
   const state = data?.cognition?.stickerState || null;
   const stickerSegment = data?.deliveryPlan?.segments?.find(item => item?.type === 'sticker') || null;
   const metrics = data?.promptMetrics || null;
@@ -1665,11 +1686,9 @@ function stickerDebugSummary(data = null) {
   const budget = state?.mode === 'always'
     ? 'always'
     : `${Number(state?.usedStickerTurns || 0)}/${state?.limitStickerTurns ?? '-'}`;
-  const intentTelemetry = data?.cognition?.intentTelemetry || null;
-  const noveltyPressure = Number(data?.cognition?.behaviorState?.novelty?.pressure || 0);
-  const socialMisreadRisk = Number(data?.cognition?.behaviorState?.socialMisread?.risk || 0);
+  const snapshot = buildTurnDebugSnapshot(data, committed);
   const tokenSummary = metrics
-    ? `; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; intentOp=${intentTelemetry?.operation || '-'}; intentKind=${intentTelemetry?.kind || '-'}; intentPhase=${intentTelemetry?.phase || '-'}; intentAge=${intentTelemetry?.activeAge ?? '-'}; intentProgress=${intentTelemetry?.progress ?? '-'}; intentEngagement=${intentTelemetry?.engagement ?? '-'}; intentSaturation=${intentTelemetry?.saturation ?? '-'}; intentSimilarity=${intentTelemetry?.recentSimilarity ?? 0}; noveltyPressure=${noveltyPressure}; socialMisreadRisk=${socialMisreadRisk}`
+    ? `; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; intentOp=${snapshot.operation}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}`
     : '';
   return `; stickerMode=${state?.mode || '-'}; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerHard=${state?.hardAvailable === true ? 'yes' : 'no'}:${state?.hardReason || '-'}; stickerBudget=${budget}; stickerGap=${state?.turnsSinceSticker ?? '-'}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}${tokenSummary}`;
 }
@@ -1809,10 +1828,10 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     updatePresenceForDelivery(presenceTurn, 'online', typingRowRef);
     persistPreparedDeliveryOrThrow(preparedDelivery);
     preparedPersisted = true;
-    await commitSuccessfulTurnState({ memoryModule, requestId, data, preparedInnerLife });
+    const committedState = await commitSuccessfulTurnState({ memoryModule, requestId, data, preparedInnerLife });
     stateCommitted = true;
     const kind = await deliverCommittedAssistantTurn(preparedDelivery, { presenceTurn, scheduler: humanDeliveryScheduler });
-    dbg(`proactive complete: request=${requestId}; kind=${kind}; trigger=${type}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data)}`);
+    dbg(`proactive complete: request=${requestId}; kind=${kind}; trigger=${type}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data, committedState)}`);
     return true;
   } catch (error) {
     if (stateCommitted) {
@@ -2108,7 +2127,7 @@ async function processUserBatch(messageIds = []) {
     updatePresenceForDelivery(presenceTurn, 'online', typingRowRef);
     persistPreparedDeliveryOrThrow(preparedDelivery);
     preparedPersisted = true;
-    await commitSuccessfulTurnState({
+    const committedState = await commitSuccessfulTurnState({
       memoryModule,
       userMessage: lastUserMessage,
       requestId,
@@ -2130,7 +2149,7 @@ async function processUserBatch(messageIds = []) {
       enqueueMemoryJob({ id: requestId, userText: combinedUserText, assistantText: memoryText }, localStorage);
       void memoryJobRunner.drain();
     }
-    dbg(`reply complete: request=${requestId}; kind=${kind}; segments=${preparedDelivery.segments?.length || 0}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data)}`);
+    dbg(`reply complete: request=${requestId}; kind=${kind}; segments=${preparedDelivery.segments?.length || 0}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data, committedState)}`);
   } catch (error) {
     if (stateCommitted) {
       markUserBatchComplete(ids);
