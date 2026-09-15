@@ -7,7 +7,7 @@ import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
-import { buildBehaviorState } from '../lib/cognition/behavior-state.js';
+import { buildBehaviorState, inspectMotifNovelty } from '../lib/cognition/behavior-state.js';
 import { buildDriveState } from '../lib/cognition/drive-state.js';
 import { stabilizeTurn } from '../lib/cognition/turn-stabilizer.js';
 import { inspectIntentLifecycle } from '../lib/cognition/intent-policy.js';
@@ -222,6 +222,8 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
       wants: 'ответить без повторного платного inference',
       restraint: 'не выдавать внутреннюю ошибку пользователю',
       socialIntent: 'stable_fallback',
+      sceneMotif: 'direct_exchange',
+      frameAlignment: 'aligned',
       confidence: 100
     },
     decision,
@@ -362,7 +364,8 @@ export default async function handler(req, res) {
       userText: userTurn
     });
     const priorRecentActs = memory?.conversationState?.dialogueState?.recentActs || [];
-    const behaviorState = buildBehaviorState({ userText: userTurn, history: fullHistory, brain, recentActs: priorRecentActs });
+    const priorRecentMotifs = memory?.conversationState?.dialogueState?.recentMotifs || [];
+    const behaviorState = buildBehaviorState({ userText: userTurn, history: fullHistory, brain, recentActs: priorRecentActs, recentMotifs: priorRecentMotifs });
     const kernelState = buildKernelState({
       requestId,
       userText: userTurn,
@@ -413,6 +416,9 @@ export default async function handler(req, res) {
         modelFallback = true;
       }
     }
+
+    behaviorState.frameAlignment = mindTurn.mind?.frameAlignment || 'aligned';
+    behaviorState.sceneMotif = mindTurn.mind?.sceneMotif || 'direct_exchange';
 
     const stabilized = stabilizeTurn({
       decision: mindTurn.decision,
@@ -517,7 +523,8 @@ export default async function handler(req, res) {
     const stateTransition = buildDecisionStateTransition({
       kernelState,
       affectiveTurn,
-      decision: mindTurn.decision
+      decision: mindTurn.decision,
+      mind: mindTurn.mind
     });
     const visualReply = visualReplyFromDecision(mindTurn.decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
@@ -529,6 +536,14 @@ export default async function handler(req, res) {
       revision: kernelState.revision,
       recentActs: kernelState.dialogueState?.recentActs || []
     });
+    const motifTelemetry = inspectMotifNovelty(stateTransition?.dialogueState?.recentMotifs || []);
+    const sceneControl = {
+      sceneMotif: mindTurn.mind?.sceneMotif || 'direct_exchange',
+      frameAlignment: mindTurn.mind?.frameAlignment || 'aligned',
+      motifRepeat: motifTelemetry.streak || 0,
+      motifAppearances: motifTelemetry.appearances || 0,
+      motifPressure: motifTelemetry.pressure || 0
+    };
 
     return res.status(200).json({
       requestId,
@@ -542,7 +557,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.3',
+        promptVersion: 'rin-mind-v2.4',
         inputTokens: usage.prompt_tokens,
         outputTokens: usage.completion_tokens,
         totalTokens: usage.total_tokens,
@@ -552,7 +567,7 @@ export default async function handler(req, res) {
         semanticRetries: 0
       },
       perception: brain,
-      cognition: { ...compactKernelState(kernelState), behaviorState, driveState, intentTelemetry },
+      cognition: { ...compactKernelState(kernelState), behaviorState, driveState, intentTelemetry, sceneControl },
       mind: mindTurn.mind,
       turnDecision: mindTurn.decision,
       visualReply,
