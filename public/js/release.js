@@ -1,1 +1,1 @@
-export const RIN_RELEASE_ID = '2026-09-13-rin-mind-v2.3';
+export const RIN_RELEASE_ID = '2026-09-15-rin-mind-v2.4';
