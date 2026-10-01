@@ -142,6 +142,9 @@ requireText(apiChat, [
   [/sticker-state\.js/, 'Sticker state is not wired into chat.'],
   [/canon-retrieval\.js/, 'Server-side canon retrieval is not wired into chat.'],
   [/OPENAI_MIND_MODEL/, 'OPENAI_MIND_MODEL routing is missing.'],
+  [/gpt-6-luna/, 'GPT-6 Luna must be the default evaluation model.'],
+  [/OPENAI_MIND_REASONING_EFFORT/, 'GPT-6 Luna reasoning-effort control is missing.'],
+  [/max_completion_tokens/, 'GPT-6 Chat Completions token-limit compatibility is missing.'],
   [/buildRinMindPrompt\s*\(/, 'Rin Mind prompt construction is missing.'],
   [/parseRinMind\s*\(/, 'Rin Mind structured output parsing is missing.'],
   [/stabilizeTurn\s*\(/, 'Deterministic stabilization is missing.'],
@@ -243,4 +246,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.4, semantic scene control, contextual frame alignment, post-commit telemetry, one semantic model call, sticker volition.');
+console.log('Build smoke OK: Rin Mind v2.4 Luna test, GPT-6 Luna reasoning=none, structured output, semantic scene control, one semantic model call.');
