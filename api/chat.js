@@ -29,7 +29,9 @@ import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const MIND_MODEL = process.env.OPENAI_MIND_MODEL || process.env.OPENAI_DECISION_MODEL || 'gpt-4.1';
+const MIND_MODEL = process.env.OPENAI_MIND_MODEL || process.env.OPENAI_DECISION_MODEL || 'gpt-6-luna';
+const MIND_REASONING_EFFORT = process.env.OPENAI_MIND_REASONING_EFFORT
+  || (MIND_MODEL === 'gpt-6-luna' ? 'none' : null);
 const MIND_PARAMS = { temperature: 0.58, max_tokens: 1200 };
 const LONG_MIND_PARAMS = { temperature: 0.58, max_tokens: 2200 };
 
@@ -143,8 +145,20 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Transport retry is intentionally the only automatic model retry left in the pipeline.
 // Semantic/style validation never launches another paid model call.
-export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null }) {
-  const body = { model, temperature, max_tokens, messages };
+export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null, reasoning_effort = null }) {
+  const body = { model, messages };
+  const isGpt6 = /^gpt-6(?:[.-]|$)/iu.test(String(model || ''));
+  const reasoningEffort = reasoning_effort ? String(reasoning_effort).trim().toLowerCase() : null;
+
+  // GPT-6 Chat Completions uses max_completion_tokens. Keep legacy max_tokens for older models
+  // so OPENAI_MIND_MODEL can still be used as a rollback switch during the Luna evaluation.
+  if (max_tokens != null) {
+    if (isGpt6) body.max_completion_tokens = max_tokens;
+    else body.max_tokens = max_tokens;
+  }
+  if (reasoningEffort) body.reasoning_effort = reasoningEffort;
+  // GPT-6 accepts sampling controls only when reasoning effort is none.
+  if (temperature != null && (!isGpt6 || !reasoningEffort || reasoningEffort === 'none')) body.temperature = temperature;
   if (response_format) body.response_format = response_format;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -197,7 +211,10 @@ function usageOrZero(usage = null) {
   return {
     prompt_tokens: Number(usage?.prompt_tokens) || 0,
     completion_tokens: Number(usage?.completion_tokens) || 0,
-    total_tokens: Number(usage?.total_tokens) || 0
+    total_tokens: Number(usage?.total_tokens) || 0,
+    cached_tokens: Number(usage?.prompt_tokens_details?.cached_tokens) || 0,
+    cache_write_tokens: Number(usage?.prompt_tokens_details?.cache_write_tokens) || 0,
+    reasoning_tokens: Number(usage?.completion_tokens_details?.reasoning_tokens) || 0
   };
 }
 
@@ -396,6 +413,7 @@ export default async function handler(req, res) {
       model: MIND_MODEL,
       messages: [{ role: 'system', content: prompt.system }],
       response_format: prompt.responseFormat,
+      reasoning_effort: MIND_REASONING_EFFORT,
       ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
     });
 
@@ -557,10 +575,14 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4',
+        promptVersion: 'rin-mind-v2.4-luna-test',
         inputTokens: usage.prompt_tokens,
+        cachedInputTokens: usage.cached_tokens,
+        cacheWriteTokens: usage.cache_write_tokens,
         outputTokens: usage.completion_tokens,
+        reasoningTokens: usage.reasoning_tokens,
         totalTokens: usage.total_tokens,
+        reasoningEffort: MIND_REASONING_EFFORT || 'default',
         calls: { mind: 1, kernel: 0, realization: 0, transportAttempts: completion.requestAttempts || 1 },
         historyItems: history.length,
         modelFallback,
