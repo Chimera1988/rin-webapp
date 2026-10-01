@@ -140,3 +140,41 @@ test('reply-complete telemetry uses the same committed snapshot as the state-com
   assert.match(source, /proactive complete:[\s\S]{0,500}stickerDebugSummary\(data, committedState\)/u);
   assert.match(source, /function buildTurnDebugSnapshot\(data = null, committed = null\)/u);
 });
+
+test('Rin Mind makes emoji sparse, non-mirroring, and secondary to stickers', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const promptProfile = JSON.parse(await readFile(new URL('../data/canon/rin_prompt_profile.json', import.meta.url), 'utf8'));
+  const { system } = buildRinMindPrompt({
+    profile: { prompt_profile: promptProfile, base_rules: '' },
+    state: {
+      conversationState: 'ongoing',
+      userText: 'Вот и хорошо',
+      behaviorState: buildBehaviorState({ userText: 'Вот и хорошо' }),
+      driveState: { curiosity: 30, connection: 70, playfulness: 55, autonomy: 60, selfRespect: 70, needForSpace: 0, questionImpulse: 0 },
+      stickerState: { mode: 'smart', available: true, hardAvailable: true, propensity: 0.3, desireModifier: 1 },
+      stickerCandidates: [{ id: 'tender_soft_smile', meaning: 'мягкая тёплая улыбка' }],
+      recentHistory: []
+    }
+  });
+  assert.match(system, /по умолчанию пишет без эмодзи/iu);
+  assert.match(system, /не зеркалит эмодзи пользователя автоматически/iu);
+  assert.match(system, /предпочитай подходящий стикер эмодзи/iu);
+  assert.match(system, /редкой микроинтонации/iu);
+});
+
+test('static frame-alignment guidance does not prime a concrete emoji', () => {
+  const { system } = buildRinMindPrompt({
+    profile: { prompt_profile: { identity: { full_name: 'Рин Акихара' } }, base_rules: '' },
+    state: {
+      conversationState: 'ongoing',
+      userText: 'Я тебя не понимаю) Суд присяжных, объясните мне, в чем я виновен?',
+      behaviorState: buildBehaviorState({ userText: 'Я тебя не понимаю) Суд присяжных, объясните мне, в чем я виновен?' }),
+      driveState: { curiosity: 40, connection: 70, playfulness: 70, autonomy: 60, selfRespect: 70, needForSpace: 0, questionImpulse: 0 },
+      stickerState: { mode: 'off', available: false, hardAvailable: false },
+      stickerCandidates: [],
+      recentHistory: []
+    }
+  });
+  assert.match(system, /Суд присяжных/u);
+  assert.doesNotMatch(system, /😉/u);
+});
