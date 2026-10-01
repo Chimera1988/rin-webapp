@@ -9,7 +9,7 @@ const originalEnv = {
 };
 process.env.ACCESS_PIN = '1357';
 process.env.OPENAI_API_KEY = 'test-key';
-process.env.OPENAI_MIND_MODEL = 'gpt-4.1';
+process.env.OPENAI_MIND_MODEL = 'gpt-6-luna';
 
 const chat = await import('../api/chat.js?rin-mind-v2-contract');
 
@@ -75,6 +75,11 @@ test('normal Rin Mind turn uses one semantic model request', async () => {
     const body = JSON.parse(options.body || '{}');
     bodies.push(body);
     assert.equal(body?.response_format?.json_schema?.name, 'rin_mind_turn_v2');
+    assert.equal(body?.model, 'gpt-6-luna');
+    assert.equal(body?.reasoning_effort, 'none');
+    assert.equal(body?.temperature, 0.58);
+    assert.equal(body?.max_completion_tokens, 1200);
+    assert.equal('max_tokens' in body, false);
     return openAiResponse(mindTurn('Угу, я здесь)'));
   };
   try {
@@ -144,6 +149,32 @@ test('invalid structured model output degrades locally instead of making a seman
     assert.equal(res.body.promptMetrics.modelFallback, true);
     assert.equal(res.body.promptMetrics.semanticRetries, 0);
     assert.ok(res.body.reply.length > 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test('GPT-6 request compatibility removes temperature above none reasoning', async () => {
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (_url, options = {}) => {
+    captured = JSON.parse(options.body || '{}');
+    return openAiResponse(mindTurn('ok'));
+  };
+  try {
+    await chat.openaiChat({
+      model: 'gpt-6-luna',
+      messages: [{ role: 'system', content: 'x' }],
+      temperature: 0.58,
+      max_tokens: 1200,
+      reasoning_effort: 'low'
+    });
+    assert.equal(captured.model, 'gpt-6-luna');
+    assert.equal(captured.reasoning_effort, 'low');
+    assert.equal(captured.max_completion_tokens, 1200);
+    assert.equal('max_tokens' in captured, false);
+    assert.equal('temperature' in captured, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -10,7 +10,7 @@ const originalEnv = {
 };
 process.env.ACCESS_PIN = '1357';
 process.env.OPENAI_API_KEY = 'test-key';
-process.env.OPENAI_MIND_MODEL = 'gpt-4.1';
+process.env.OPENAI_MIND_MODEL = 'gpt-6-luna';
 
 const chat = await import('../api/chat.js?contract-rin-mind-v2');
 const memoryApi = await import('../api/memory.js?contract-rin-mind-v2');
@@ -57,6 +57,10 @@ function installMindMock({ turns = [mindTurn()], bodies = [] } = {}) {
     const body = JSON.parse(options.body || '{}');
     bodies.push(body);
     assert.equal(body?.response_format?.json_schema?.name, 'rin_mind_turn_v2');
+    assert.equal(body?.model, 'gpt-6-luna');
+    assert.equal(body?.reasoning_effort, 'none');
+    assert.equal(body?.max_completion_tokens, 1200);
+    assert.equal('max_tokens' in body, false);
     const value = turns[Math.min(index++, turns.length - 1)];
     return openAiResponse(typeof value === 'function' ? value(body) : value);
   };

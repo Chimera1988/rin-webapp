@@ -104,7 +104,8 @@ test('active chat runtime uses Rin Mind as the single semantic decision owner', 
   assert.match(source, /rin-mind\.js/);
   assert.match(source, /buildRinMindPrompt/);
   assert.match(source, /parseRinMind/);
-  assert.match(source, /const MIND_MODEL = .*gpt-4\.1/);
+  assert.match(source, /const MIND_MODEL = .*gpt-6-luna/);
+  assert.match(source, /OPENAI_MIND_REASONING_EFFORT/);
   assert.match(source, /OPENAI_MIND_MODEL/);
   assert.doesNotMatch(source, /OPENAI_REALIZATION_MODEL/);
   assert.doesNotMatch(source, /buildKernelPrompt|parseKernelDecision|realizeDecision/);
