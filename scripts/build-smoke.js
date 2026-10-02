@@ -234,8 +234,21 @@ requireText(intentPolicySource, [
   [/maintenance_sustain/, 'Maintenance intent sustain policy is missing.'],
   [/MULTI_TURN_ACTS/, 'Multi-turn volition policies are missing.'],
   [/intentSimilarity/, 'Recent-intent similarity cooldown is missing.'],
-  [/local_achievement_progress/, 'Achievement intent progress policy is missing.']
+  [/local_achievement_progress/, 'Achievement intent progress policy is missing.'],
+  [/maintenance_complete_guarded_live_scene/, 'Maintenance completion guard is missing.']
 ], 'lib/cognition/intent-policy.js');
+
+const chatApiSource = await read('api/chat.js');
+requireText(chatApiSource, [
+  [/prompt_cache_options/, 'Explicit prompt cache options are missing.'],
+  [/prompt_cache_breakpoint/, 'Stable prompt cache breakpoint is missing.'],
+  [/supportsExplicitPromptCache/, 'Model-aware prompt cache capability guard is missing.']
+], 'api/chat.js');
+
+requireText(mindSource, [
+  [/stableSystem/, 'Stable Rin Mind prompt prefix is missing.'],
+  [/dynamicSystem/, 'Dynamic Rin Mind prompt suffix is missing.']
+], 'lib/cognition/rin-mind.js');
 
 const viewportSource = await read('public/js/chat_viewport.js');
 if (!/--rin-viewport-offset-top/.test(viewportSource)) fail('public/js/chat_viewport.js must retain visual viewport offset handling.');
@@ -246,4 +259,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.4 Luna test, GPT-6 Luna reasoning=none, structured output, semantic scene control, one semantic model call.');
+console.log('Build smoke OK: Rin Mind v2.4.2 Luna, maintenance completion guard, explicit stable-prefix cache, one semantic model call.');
