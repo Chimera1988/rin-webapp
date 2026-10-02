@@ -143,9 +143,32 @@ function upstreamError(message, code, status = null) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+export function supportsExplicitPromptCache(model = '') {
+  const value = String(model || '').trim().toLowerCase();
+  if (/^gpt-6(?:[.-]|$)/u.test(value)) return true;
+  const match = value.match(/^gpt-5\.(\d+)(?:[.-]|$)/u);
+  return Boolean(match && Number(match[1]) >= 6);
+}
+
+export function buildMindMessages(prompt = null, model = '') {
+  const system = String(prompt?.system || '').trim();
+  const stable = String(prompt?.stableSystem || '').trim();
+  const dynamic = String(prompt?.dynamicSystem || '').trim();
+  if (!supportsExplicitPromptCache(model) || !stable || !dynamic) {
+    return [{ role: 'system', content: system }];
+  }
+  return [{
+    role: 'system',
+    content: [
+      { type: 'text', text: stable, prompt_cache_breakpoint: { mode: 'explicit' } },
+      { type: 'text', text: dynamic }
+    ]
+  }];
+}
+
 // Transport retry is intentionally the only automatic model retry left in the pipeline.
 // Semantic/style validation never launches another paid model call.
-export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null, reasoning_effort = null }) {
+export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null, reasoning_effort = null, prompt_cache_options = null }) {
   const body = { model, messages };
   const isGpt6 = /^gpt-6(?:[.-]|$)/iu.test(String(model || ''));
   const reasoningEffort = reasoning_effort ? String(reasoning_effort).trim().toLowerCase() : null;
@@ -160,6 +183,7 @@ export async function openaiChat({ model, messages, temperature, max_tokens, res
   // GPT-6 accepts sampling controls only when reasoning effort is none.
   if (temperature != null && (!isGpt6 || !reasoningEffort || reasoningEffort === 'none')) body.temperature = temperature;
   if (response_format) body.response_format = response_format;
+  if (prompt_cache_options && supportsExplicitPromptCache(model)) body.prompt_cache_options = prompt_cache_options;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let response;
@@ -409,11 +433,13 @@ export default async function handler(req, res) {
       trigger
     });
 
+    const explicitPromptCache = supportsExplicitPromptCache(MIND_MODEL);
     const completion = await openaiChat({
       model: MIND_MODEL,
-      messages: [{ role: 'system', content: prompt.system }],
+      messages: buildMindMessages(prompt, MIND_MODEL),
       response_format: prompt.responseFormat,
       reasoning_effort: MIND_REASONING_EFFORT,
+      prompt_cache_options: explicitPromptCache ? { mode: 'explicit', ttl: '30m' } : null,
       ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
     });
 
@@ -575,7 +601,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4-luna-test',
+        promptVersion: 'rin-mind-v2.4.2-luna-maintenance-cache',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
