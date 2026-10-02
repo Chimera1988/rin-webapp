@@ -112,3 +112,47 @@ test('achievement horizon still closes a stale goal locally', () => {
   assert.equal(result.progress, 1);
   assert.equal(result.reason, 'achievement_horizon_reached');
 });
+
+test('maintenance completion is guarded while aligned scene is still engaged and unsaturated', () => {
+  const result = stabilizePersistentIntent({
+    transition: { ...none(), operation: 'complete', reason: 'local beat felt complete' },
+    decision: { act: 'answer_directly' },
+    activeIntent: maintenance({ turnCount: 4, engagement: 68, saturation: 0 }),
+    recentActs: ['playful_tease', 'share_self'],
+    behaviorState: { space: { strong: false }, novelty: { pressure: 0 }, frameAlignment: 'aligned' },
+    driveState: { playfulness: 68 },
+    scene: { type: 'playful_flirt' }
+  });
+  assert.equal(result.operation, 'preserve');
+  assert.equal(result.kind, 'maintenance');
+  assert.equal(result.phase, 'sustain');
+  assert.equal(result.progress, null);
+  assert.equal(result.reason, 'maintenance_complete_guarded_live_scene');
+});
+
+test('maintenance completion remains allowed after genuine saturation', () => {
+  const result = stabilizePersistentIntent({
+    transition: { ...none(), operation: 'complete', reason: 'scene has run its course' },
+    decision: { act: 'playful_tease' },
+    activeIntent: maintenance({ turnCount: 8, engagement: 68, saturation: 86 }),
+    recentActs: ['playful_tease', 'playful_tease', 'playful_tease'],
+    behaviorState: { space: { strong: false }, novelty: { pressure: 90 }, frameAlignment: 'aligned' },
+    driveState: { playfulness: 65 },
+    scene: { type: 'playful_flirt' }
+  });
+  assert.equal(result.operation, 'complete');
+  assert.equal(result.phase, 'completed');
+});
+
+test('maintenance completion remains allowed when the scene itself changed', () => {
+  const result = stabilizePersistentIntent({
+    transition: { ...none(), operation: 'complete', reason: 'new scene' },
+    decision: { act: 'answer_directly' },
+    activeIntent: maintenance({ turnCount: 4, engagement: 70, saturation: 0 }),
+    behaviorState: { space: { strong: false }, novelty: { pressure: 0 }, frameAlignment: 'aligned' },
+    driveState: { playfulness: 70 },
+    scene: { type: 'serious_reflection' }
+  });
+  assert.equal(result.operation, 'complete');
+  assert.equal(result.phase, 'completed');
+});

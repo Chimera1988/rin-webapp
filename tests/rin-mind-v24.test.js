@@ -178,3 +178,42 @@ test('static frame-alignment guidance does not prime a concrete emoji', () => {
   assert.match(system, /Суд присяжных/u);
   assert.doesNotMatch(system, /😉/u);
 });
+
+test('Rin Mind exposes a stable cacheable core and keeps per-turn state in the dynamic suffix', () => {
+  const prompt = buildRinMindPrompt({
+    profile: { prompt_profile: { identity: { full_name: 'Рин Акихара' } }, base_rules: 'BASE-STABLE' },
+    state: {
+      conversationState: 'ongoing',
+      userText: 'Уникальная текущая реплика 74291',
+      environment: { rinTz: 'Asia/Tokyo', rinHuman: '2 октября, 07:15', partOfDay: 'утро' },
+      behaviorState: buildBehaviorState({ userText: 'Уникальная текущая реплика 74291' }),
+      driveState: { curiosity: 30, connection: 70, playfulness: 55, autonomy: 60, selfRespect: 70, needForSpace: 0, questionImpulse: 0 },
+      stickerState: { mode: 'smart', available: true, hardAvailable: true, propensity: 0.3, desireModifier: 1 },
+      stickerCandidates: [{ id: 'tender_soft_smile', meaning: 'мягкая тёплая улыбка' }],
+      recentHistory: []
+    }
+  });
+  assert.ok(prompt.stableSystem.length > 1000);
+  assert.match(prompt.stableSystem, /BASE-STABLE/u);
+  assert.match(prompt.stableSystem, /maintenance/u);
+  assert.doesNotMatch(prompt.stableSystem, /74291/u);
+  assert.doesNotMatch(prompt.stableSystem, /07:15/u);
+  assert.match(prompt.dynamicSystem, /74291/u);
+  assert.match(prompt.dynamicSystem, /07:15/u);
+  assert.match(prompt.dynamicSystem, /tender_soft_smile/u);
+  assert.equal(prompt.system, `${prompt.stableSystem}\n\n${prompt.dynamicSystem}`);
+});
+
+test('maintenance prompt distinguishes a living dynamic from a completed micro-beat', () => {
+  const { stableSystem } = buildRinMindPrompt({
+    profile: { prompt_profile: { identity: { full_name: 'Рин Акихара' } }, base_rules: '' },
+    state: {
+      conversationState: 'ongoing', userText: 'Хорошо)',
+      behaviorState: buildBehaviorState({ userText: 'Хорошо)' }),
+      driveState: { curiosity: 30, connection: 70, playfulness: 60, autonomy: 60, selfRespect: 70, needForSpace: 0, questionImpulse: 0 },
+      stickerState: { mode: 'off', available: false, hardAvailable: false }, stickerCandidates: [], recentHistory: []
+    }
+  });
+  assert.match(stableSystem, /Завершение одной микротемы/iu);
+  assert.match(stableSystem, /НЕ означают завершение maintenance intent/iu);
+});

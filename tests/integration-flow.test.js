@@ -90,7 +90,12 @@ test('login → Rin Mind chat → durable memory extraction → next Rin Mind re
   try {
     const loginRes = createRes(); await login(createReq({ headers: { 'x-rin-pin': '9999' } }), loginRes); assert.equal(loginRes.statusCode, 200);
     globalThis.fetch = structuredFetch({
-      decide: payload => { prompts.push(payload.messages[0].content); chatCount += 1; return decision(); },
+      decide: payload => {
+        const content = payload.messages[0].content;
+        prompts.push(Array.isArray(content) ? content.map(part => part?.text || '').join('\n') : String(content || ''));
+        chatCount += 1;
+        return decision();
+      },
       realize: () => realization(chatCount === 1 ? 'Запомнила.' : 'Да, помню проект Rin.'),
       memory: { facts: [{ path: 'user.project', value: 'Rin', confidence: 0.95 }], events: [], sharedMoments: [] }
     });

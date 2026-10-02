@@ -80,6 +80,12 @@ test('normal Rin Mind turn uses one semantic model request', async () => {
     assert.equal(body?.temperature, 0.58);
     assert.equal(body?.max_completion_tokens, 1200);
     assert.equal('max_tokens' in body, false);
+    assert.deepEqual(body?.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
+    assert.ok(Array.isArray(body?.messages?.[0]?.content));
+    assert.equal(body.messages[0].content.length, 2);
+    assert.deepEqual(body.messages[0].content[0].prompt_cache_breakpoint, { mode: 'explicit' });
+    assert.doesNotMatch(body.messages[0].content[0].text, /Ты тут\?/u);
+    assert.match(body.messages[0].content[1].text, /Ты тут\?/u);
     return openAiResponse(mindTurn('Угу, я здесь)'));
   };
   try {
@@ -178,4 +184,18 @@ test('GPT-6 request compatibility removes temperature above none reasoning', asy
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('explicit prompt caching is enabled only for GPT-5.6+ and keeps rollback models plain', () => {
+  const prompt = { system: 'stable\n\ndynamic', stableSystem: 'stable', dynamicSystem: 'dynamic' };
+  const luna = chat.buildMindMessages(prompt, 'gpt-6-luna');
+  assert.ok(Array.isArray(luna[0].content));
+  assert.deepEqual(luna[0].content[0].prompt_cache_breakpoint, { mode: 'explicit' });
+  assert.equal(chat.supportsExplicitPromptCache('gpt-6-luna'), true);
+  assert.equal(chat.supportsExplicitPromptCache('gpt-5.6-luna'), true);
+  assert.equal(chat.supportsExplicitPromptCache('gpt-5.4-mini'), false);
+  assert.equal(chat.supportsExplicitPromptCache('gpt-4.1'), false);
+
+  const rollback = chat.buildMindMessages(prompt, 'gpt-4.1');
+  assert.deepEqual(rollback, [{ role: 'system', content: 'stable\n\ndynamic' }]);
 });

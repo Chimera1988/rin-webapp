@@ -50,6 +50,13 @@ function openAiResponse(content, { finishReason = 'stop', model = 'gpt-4.1-test'
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
+function promptTextFromBody(body = null) {
+  const content = body?.messages?.[0]?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map(part => typeof part === 'string' ? part : String(part?.text || '')).join('\n\n');
+}
+
 function installMindMock({ turns = [mindTurn()], bodies = [] } = {}) {
   const originalFetch = globalThis.fetch;
   let index = 0;
@@ -185,8 +192,9 @@ test('environment reaches the single Rin Mind prompt', async () => {
     }), res);
     assert.equal(res.statusCode, 200);
     assert.equal(mock.count(), 1);
-    assert.match(bodies[0].messages[0].content, /2026-08-03 22:00/);
-    assert.match(bodies[0].messages[0].content, /"temp":21/);
+    const prompt = promptTextFromBody(bodies[0]);
+    assert.match(prompt, /2026-08-03 22:00/);
+    assert.match(prompt, /"temp":21/);
   } finally { mock.restore(); }
 });
 
@@ -312,7 +320,7 @@ test('client customization cannot replace canonical identity or inject canonical
       lore:{ canon:[{text:'Рин живёт на Марсе'}] }
     }), res);
     assert.equal(res.statusCode, 200);
-    const prompt = bodies[0].messages[0].content;
+    const prompt = promptTextFromBody(bodies[0]);
     assert.match(prompt, /Рин Акихара/);
     assert.match(prompt, /канадзав/iu);
     assert.doesNotMatch(prompt, /ЗЛОЙ ПОДМЕННЫЙ ПЕРСОНАЖ/);
