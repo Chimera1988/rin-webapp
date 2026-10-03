@@ -265,6 +265,8 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
       socialIntent: 'stable_fallback',
       sceneMotif: 'direct_exchange',
       frameAlignment: 'aligned',
+      literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : 'none',
+      referenceAnchor: null,
       confidence: 100
     },
     decision,
@@ -463,6 +465,10 @@ export default async function handler(req, res) {
 
     behaviorState.frameAlignment = mindTurn.mind?.frameAlignment || 'aligned';
     behaviorState.sceneMotif = mindTurn.mind?.sceneMotif || 'direct_exchange';
+    behaviorState.literalCorrection = {
+      ...(behaviorState.literalCorrection || {}),
+      model: behaviorState?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none')
+    };
 
     const stabilized = stabilizeTurn({
       decision: mindTurn.decision,
@@ -586,7 +592,9 @@ export default async function handler(req, res) {
       frameAlignment: mindTurn.mind?.frameAlignment || 'aligned',
       motifRepeat: motifTelemetry.streak || 0,
       motifAppearances: motifTelemetry.appearances || 0,
-      motifPressure: motifTelemetry.pressure || 0
+      motifPressure: motifTelemetry.pressure || 0,
+      literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none'),
+      referenceAnchor: mindTurn.mind?.referenceAnchor || null
     };
 
     return res.status(200).json({
@@ -601,7 +609,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.2-luna-maintenance-cache',
+        promptVersion: 'rin-mind-v2.4.3-luna-continuity-static-cache',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
