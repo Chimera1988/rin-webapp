@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState, compactKernelState } from '../lib/cognition/kernel-state.js';
@@ -150,6 +151,17 @@ export function supportsExplicitPromptCache(model = '') {
   return Boolean(match && Number(match[1]) >= 6);
 }
 
+export function buildMindCacheKey(stableSystem = '', model = '', responseFormat = null) {
+  const stable = String(stableSystem || '').trim();
+  if (!stable || !supportsExplicitPromptCache(model)) return null;
+  // Structured-output instructions are rendered before developer content and are
+  // therefore part of the reusable prefix. Include the static schema in the
+  // accounting key so the debug key tracks the complete stable cache contract.
+  const format = responseFormat && typeof responseFormat === 'object' ? JSON.stringify(responseFormat) : '';
+  const digest = createHash('sha256').update(`${String(model || '').toLowerCase()}\n${format}\n${stable}`, 'utf8').digest('hex').slice(0, 40);
+  return `rin-mind-${digest}`;
+}
+
 export function buildMindMessages(prompt = null, model = '') {
   const system = String(prompt?.system || '').trim();
   const stable = String(prompt?.stableSystem || '').trim();
@@ -157,18 +169,21 @@ export function buildMindMessages(prompt = null, model = '') {
   if (!supportsExplicitPromptCache(model) || !stable || !dynamic) {
     return [{ role: 'system', content: system }];
   }
-  return [{
-    role: 'system',
-    content: [
-      { type: 'text', text: stable, prompt_cache_breakpoint: { mode: 'explicit' } },
-      { type: 'text', text: dynamic }
-    ]
-  }];
+  // GPT-5.6+ explicit caching is most predictable when the reusable developer
+  // prefix is its own message and the volatile turn state is appended as a new
+  // message. Do not extend the cached message with dynamic content.
+  return [
+    {
+      role: 'developer',
+      content: [{ type: 'text', text: stable, prompt_cache_breakpoint: { mode: 'explicit' } }]
+    },
+    { role: 'developer', content: dynamic }
+  ];
 }
 
 // Transport retry is intentionally the only automatic model retry left in the pipeline.
 // Semantic/style validation never launches another paid model call.
-export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null, reasoning_effort = null, prompt_cache_options = null }) {
+export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null, reasoning_effort = null, prompt_cache_options = null, prompt_cache_key = null }) {
   const body = { model, messages };
   const isGpt6 = /^gpt-6(?:[.-]|$)/iu.test(String(model || ''));
   const reasoningEffort = reasoning_effort ? String(reasoning_effort).trim().toLowerCase() : null;
@@ -184,6 +199,7 @@ export async function openaiChat({ model, messages, temperature, max_tokens, res
   if (temperature != null && (!isGpt6 || !reasoningEffort || reasoningEffort === 'none')) body.temperature = temperature;
   if (response_format) body.response_format = response_format;
   if (prompt_cache_options && supportsExplicitPromptCache(model)) body.prompt_cache_options = prompt_cache_options;
+  if (prompt_cache_key && supportsExplicitPromptCache(model)) body.prompt_cache_key = String(prompt_cache_key).slice(0, 64);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let response;
@@ -252,7 +268,7 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
     stance: 'короткая, спокойная, личная',
     question: { mode: 'none', reason: null },
     replyLink: { targetEventId: null, reason: null },
-    delivery: { segments: [{ type: 'text', purpose: 'fallback', stickerIntent: null, maxChars: 320 }] },
+    delivery: { messageShape: 'single', segments: [{ type: 'text', purpose: 'fallback', stickerIntent: null, maxChars: 320 }] },
     intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
     openLoops: { open: [], resolveIds: [] },
     realityMode: 'grounded'
@@ -436,12 +452,14 @@ export default async function handler(req, res) {
     });
 
     const explicitPromptCache = supportsExplicitPromptCache(MIND_MODEL);
+    const promptCacheKey = explicitPromptCache ? buildMindCacheKey(prompt.stableSystem, MIND_MODEL, prompt.responseFormat) : null;
     const completion = await openaiChat({
       model: MIND_MODEL,
       messages: buildMindMessages(prompt, MIND_MODEL),
       response_format: prompt.responseFormat,
       reasoning_effort: MIND_REASONING_EFFORT,
       prompt_cache_options: explicitPromptCache ? { mode: 'explicit', ttl: '30m' } : null,
+      prompt_cache_key: promptCacheKey,
       ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
     });
 
@@ -609,7 +627,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.3-luna-continuity-static-cache',
+        promptVersion: 'rin-mind-v2.4.4-luna-reciprocity-rhythm-cache',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
@@ -617,6 +635,9 @@ export default async function handler(req, res) {
         reasoningTokens: usage.reasoning_tokens,
         totalTokens: usage.total_tokens,
         reasoningEffort: MIND_REASONING_EFFORT || 'default',
+        cacheMode: explicitPromptCache ? 'explicit' : 'implicit_or_legacy',
+        cacheKey: promptCacheKey || null,
+        cachePrefixChars: explicitPromptCache ? String(prompt.stableSystem || '').length : 0,
         calls: { mind: 1, kernel: 0, realization: 0, transportAttempts: completion.requestAttempts || 1 },
         historyItems: history.length,
         modelFallback,
