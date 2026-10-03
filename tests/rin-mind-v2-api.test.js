@@ -29,6 +29,7 @@ function mindTurn(text, overrides = {}) {
     question: { mode: 'none', reason: null },
     replyLink: { targetEventId: null, reason: null },
     delivery: {
+      messageShape: 'single',
       segments: [{ type: 'text', purpose: 'reply', stickerIntent: null, maxChars: 320, text }]
     },
     intentTransition: {
@@ -81,11 +82,15 @@ test('normal Rin Mind turn uses one semantic model request', async () => {
     assert.equal(body?.max_completion_tokens, 1200);
     assert.equal('max_tokens' in body, false);
     assert.deepEqual(body?.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
-    assert.ok(Array.isArray(body?.messages?.[0]?.content));
-    assert.equal(body.messages[0].content.length, 2);
+    assert.equal(body?.messages?.length, 2);
+    assert.equal(body.messages[0].role, 'developer');
+    assert.ok(Array.isArray(body.messages[0].content));
+    assert.equal(body.messages[0].content.length, 1);
     assert.deepEqual(body.messages[0].content[0].prompt_cache_breakpoint, { mode: 'explicit' });
     assert.doesNotMatch(body.messages[0].content[0].text, /Ты тут\?/u);
-    assert.match(body.messages[0].content[1].text, /Ты тут\?/u);
+    assert.equal(body.messages[1].role, 'developer');
+    assert.match(String(body.messages[1].content), /Ты тут\?/u);
+    assert.match(String(body.prompt_cache_key || ''), /^rin-mind-[a-f0-9]{40}$/u);
     return openAiResponse(mindTurn('Угу, я здесь)'));
   };
   try {

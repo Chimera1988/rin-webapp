@@ -21,7 +21,7 @@ const decision = (overrides = {}) => ({
   act: 'direct_response', focus: 'ответить по смыслу', stance: 'лично и конкретно',
   question: { mode: 'none', reason: null },
   replyLink: { targetEventId: null, reason: null },
-  delivery: { mode: 'single_text', segments: [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620 }] },
+  delivery: { mode: 'single_text', messageShape: 'single', segments: [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620 }] },
   intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
   openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded', ...overrides
 });
@@ -47,7 +47,7 @@ function structuredFetch({ decide, realize, memory } = {}) {
       }));
       return oa({
         ...selectedDecision,
-        delivery: { segments },
+        delivery: { messageShape: selectedDecision?.delivery?.messageShape || (segments.filter(item => item?.type === 'text').length >= 2 ? 'split' : 'single'), segments },
         mind: {
           felt: 'спокойная вовлечённость', wants: 'ответить естественно', restraint: null,
           socialIntent: 'respond', confidence: 88
@@ -91,8 +91,11 @@ test('login → Rin Mind chat → durable memory extraction → next Rin Mind re
     const loginRes = createRes(); await login(createReq({ headers: { 'x-rin-pin': '9999' } }), loginRes); assert.equal(loginRes.statusCode, 200);
     globalThis.fetch = structuredFetch({
       decide: payload => {
-        const content = payload.messages[0].content;
-        prompts.push(Array.isArray(content) ? content.map(part => part?.text || '').join('\n') : String(content || ''));
+        const prompt = (Array.isArray(payload.messages) ? payload.messages : []).map(message => {
+          const content = message?.content;
+          return Array.isArray(content) ? content.map(part => part?.text || '').join('\n') : String(content || '');
+        }).join('\n');
+        prompts.push(prompt);
         chatCount += 1;
         return decision();
       },

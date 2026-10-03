@@ -23,6 +23,7 @@ function mindTurn(text = 'Угу.', overrides = {}) {
     question: { mode: 'none', reason: null },
     replyLink: { targetEventId: null, reason: null },
     delivery: {
+      messageShape: 'single',
       segments: text == null ? [] : [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620, text }]
     },
     intentTransition: {
@@ -51,11 +52,14 @@ function openAiResponse(content, { finishReason = 'stop', model = 'gpt-4.1-test'
 }
 
 function promptTextFromBody(body = null) {
-  const content = body?.messages?.[0]?.content;
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return content.map(part => typeof part === 'string' ? part : String(part?.text || '')).join('\n\n');
+  return (Array.isArray(body?.messages) ? body.messages : []).map(message => {
+    const content = message?.content;
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    return content.map(part => typeof part === 'string' ? part : String(part?.text || '')).join('\n\n');
+  }).filter(Boolean).join('\n\n');
 }
+
 
 function installMindMock({ turns = [mindTurn()], bodies = [] } = {}) {
   const originalFetch = globalThis.fetch;

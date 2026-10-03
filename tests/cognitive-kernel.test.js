@@ -19,7 +19,8 @@ const decision = overrides => normalizeTurnDecision({
 test('strict TurnDecision schema eliminates free-form sticker intents and impossible state transitions before validation', () => {
   const normal = buildTurnDecisionJsonSchema({ activeIntent: null, conversationState: 'ongoing', allowStickers: true });
   const delivery = normal.schema.properties.delivery;
-  assert.deepEqual(delivery.required, ['segments']);
+  assert.deepEqual(delivery.required, ['messageShape', 'segments']);
+  assert.deepEqual(delivery.properties.messageShape.enum, ['single', 'split']);
   assert.equal('mode' in delivery.properties, false);
   const segment = delivery.properties.segments.items.properties;
   assert.ok(segment.stickerIntent.enum.includes('kiss_goodnight'));
