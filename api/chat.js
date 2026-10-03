@@ -627,7 +627,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.4-luna-reciprocity-rhythm-cache',
+        promptVersion: 'rin-mind-v2.4.5-luna-short-term-dialogue',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
@@ -638,6 +638,9 @@ export default async function handler(req, res) {
         cacheMode: explicitPromptCache ? 'explicit' : 'implicit_or_legacy',
         cacheKey: promptCacheKey || null,
         cachePrefixChars: explicitPromptCache ? String(prompt.stableSystem || '').length : 0,
+        shortTermExchanges: Number(prompt?.shortTermMetrics?.exchanges || 0),
+        shortTermSpeakerTurns: Number(prompt?.shortTermMetrics?.speakerTurns || 0),
+        shortTermChars: Number(prompt?.shortTermMetrics?.chars || 0),
         calls: { mind: 1, kernel: 0, realization: 0, transportAttempts: completion.requestAttempts || 1 },
         historyItems: history.length,
         modelFallback,
