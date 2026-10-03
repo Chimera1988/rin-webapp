@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildBehaviorState } from '../lib/cognition/behavior-state.js';
 import { buildDialogueState } from '../lib/cognition/dialogue-state.js';
-import { buildRinMindJsonSchema, buildRinMindPrompt, LITERAL_CORRECTIONS, serializeCompactState } from '../lib/cognition/rin-mind.js';
+import { buildRinMindJsonSchema, buildRinMindPrompt, LITERAL_CORRECTIONS, serializeCompactState, serializeShortTermDialogue } from '../lib/cognition/rin-mind.js';
 
 const baseProfile = { prompt_profile: { identity: { full_name: 'Рин Акихара' } }, base_rules: '' };
 
@@ -70,9 +70,18 @@ test('compact state keeps local history and continuity anchors under heavy optio
   assert.ok(serialized.length <= 6800);
   const parsed = JSON.parse(serialized);
   assert.equal(parsed.userText, 'Так это же я про твое одеяло)');
-  assert.ok(parsed.recentHistory.some(item => /сбежала обратно под одеяло/iu.test(item.content)));
   assert.equal(parsed.continuity.anchors.at(-1).referent, 'одеяло');
   assert.equal(parsed.continuity.anchors.at(-1).owner, 'rin');
+
+  const shortTerm = serializeShortTermDialogue(baseState({
+    recentHistory: [
+      { role: 'assistant', kind: 'text', content: 'Выходной-то есть. Просто решила с утра разобрать один текст — пока не передумала и не сбежала обратно под одеяло.' },
+      { role: 'user', kind: 'text', content: 'Под одеяло?) Звучит заманчиво.' },
+      { role: 'assistant', kind: 'text', content: 'Если закончишь быстрее, я не буду против твоего возвращения под него.' },
+      { role: 'user', kind: 'text', content: 'Так это же я про твое одеяло)' }
+    ]
+  }));
+  assert.match(shortTerm, /сбежала обратно под одеяло/iu);
 });
 
 test('literal correction detector catches the two observed continuity failures', () => {
