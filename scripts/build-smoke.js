@@ -52,6 +52,7 @@ await requireFiles([
   'lib/server/canonical-profile.js',
   'lib/server/canon-retrieval.js',
   'lib/cognition/behavior-state.js',
+  'lib/cognition/life-texture.js',
   'lib/cognition/drive-state.js',
   'lib/cognition/intent-policy.js',
   'lib/cognition/rin-mind.js',
@@ -77,7 +78,8 @@ await requireFiles([
   'tests/rin-mind-v2.test.js',
   'tests/rin-mind-v2-api.test.js',
   'tests/rin-mind-v22.test.js',
-  'tests/rin-mind-v244.test.js'
+  'tests/rin-mind-v244.test.js',
+  'tests/rin-mind-v246.test.js'
 ]);
 
 // Keep the existing browser/release/security envelope intact.
@@ -181,6 +183,10 @@ requireText(mindSource, [
   [/frameAlignment/u, 'Contextual social-frame alignment is missing.'],
   [/не классифицируй по ключевым словам/iu, 'Frame alignment must not fall back to keyword-only misread detection.'],
   [/delivery\.messageShape/u, 'Messenger rhythm must expose an intentional single/split choice.'],
+  [/delivery\.responseDepth/u, 'Response Economy depth control is missing.'],
+  [/Response Economy/u, 'Response Economy guidance is missing.'],
+  [/Life Texture/u, 'Life Texture guidance is missing.'],
+  [/lifeDomain/u, 'Semantic life-domain ownership is missing.'],
   [/ВЗАИМНОЕ ВНИМАНИЕ/u, 'Reciprocal-attention guidance is missing.']
 ], 'lib/cognition/rin-mind.js');
 
@@ -191,6 +197,7 @@ requireText(behaviorSource, [
   [/likelyInflectionTypo/, 'Stable male-user typo handling is missing.'],
   [/novelty/, 'Soft behavioral novelty pressure is missing.'],
   [/recentMotifs/, 'Semantic motif history is missing.'],
+  [/lifeNovelty/, 'Life-topic novelty state is missing.'],
   [/frameEvidence/, 'Context evidence for frame alignment is missing.']
 ], 'lib/cognition/behavior-state.js');
 
@@ -215,7 +222,8 @@ requireText(stabilizerSource, [
   [/repairMaleUserAddress/, 'Local gender repair is missing.'],
   [/delivery_recovered_with_local_fallback/, 'Local delivery recovery is missing.'],
   [/sticker_removed_hard_unavailable/, 'Hard sticker safety recovery is missing.'],
-  [/sticker_removed_immediate_repeat/, 'Immediate sticker repetition protection is missing.']
+  [/sticker_removed_immediate_repeat/, 'Immediate sticker repetition protection is missing.'],
+  [/response_depth_budget_applied/, 'Response-depth hard safety budget is missing.']
 ], 'lib/cognition/turn-stabilizer.js');
 
 // Error rendering is allowed to be implemented in the authenticated bootstrap bridge
@@ -230,6 +238,9 @@ requireText(publicChat, [
   [/sceneMotif=\$\{snapshot\.sceneMotif\}/, 'Scene motif telemetry is missing.'],
   [/frameAlignment=\$\{snapshot\.frameAlignment\}/, 'Frame alignment telemetry is missing.'],
   [/messageShape=\$\{snapshot\.messageShape\}/, 'Messenger-shape telemetry is missing.'],
+  [/responseDepth=\$\{snapshot\.responseDepth\}/, 'Response-depth telemetry is missing.'],
+  [/lifeDomain=\$\{snapshot\.lifeDomain\}/, 'Life-domain telemetry is missing.'],
+  [/lifeNovelty=\$\{snapshot\.lifeNoveltyPressure\}/, 'Life-novelty telemetry is missing.'],
   [/reciprocityPressure=\$\{snapshot\.reciprocityPressure\}/, 'Reciprocal-attention telemetry is missing.']
 ], 'public/chat.js');
 requireText(localSettingsSource, [
@@ -267,4 +278,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.4.5 Luna, six-exchange raw short-term dialogue, reciprocal attention, voluntary multi-message rhythm, explicit stable-prefix cache, one semantic model call.');
+console.log('Build smoke OK: Rin Mind v2.4.6 Luna, Life Texture + semantic topic novelty + Response Economy, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');
