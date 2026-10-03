@@ -76,7 +76,8 @@ await requireFiles([
   'scripts/check-rin-mind-v2.mjs',
   'tests/rin-mind-v2.test.js',
   'tests/rin-mind-v2-api.test.js',
-  'tests/rin-mind-v22.test.js'
+  'tests/rin-mind-v22.test.js',
+  'tests/rin-mind-v244.test.js'
 ]);
 
 // Keep the existing browser/release/security envelope intact.
@@ -151,7 +152,9 @@ requireText(apiChat, [
   [/semanticRetries\s*:\s*0/, 'Semantic retry budget must remain zero.'],
   [/calls\s*:\s*\{\s*mind\s*:\s*1\s*,\s*kernel\s*:\s*0\s*,\s*realization\s*:\s*0/s, 'Token telemetry must expose one semantic call.'],
   [/retrieveCanonicalLore\(canonCue\)/, 'Canonical lore must be retrieved server-side.'],
-  [/RETRYABLE_OPENAI_STATUSES/, 'Transport retry classification is missing.']
+  [/RETRYABLE_OPENAI_STATUSES/, 'Transport retry classification is missing.'],
+  [/buildMindCacheKey/, 'Stable Rin Mind cache-contract key is missing.'],
+  [/role:\s*'developer'/, 'GPT-6 stable/dynamic prompt must use developer messages around the cache boundary.']
 ], 'api/chat.js');
 
 const semanticCalls = (apiChat.match(/await\s+openaiChat\s*\(/g) || []).length;
@@ -176,7 +179,9 @@ requireText(mindSource, [
   [/playful_mock_offense/iu, 'Readable playful mock-offense guidance is missing.'],
   [/sceneMotif/u, 'Semantic scene motif classification is missing.'],
   [/frameAlignment/u, 'Contextual social-frame alignment is missing.'],
-  [/не классифицируй по ключевым словам/iu, 'Frame alignment must not fall back to keyword-only misread detection.']
+  [/не классифицируй по ключевым словам/iu, 'Frame alignment must not fall back to keyword-only misread detection.'],
+  [/delivery\.messageShape/u, 'Messenger rhythm must expose an intentional single/split choice.'],
+  [/ВЗАИМНОЕ ВНИМАНИЕ/u, 'Reciprocal-attention guidance is missing.']
 ], 'lib/cognition/rin-mind.js');
 
 const behaviorSource = await read('lib/cognition/behavior-state.js');
@@ -192,7 +197,8 @@ requireText(behaviorSource, [
 const driveSource = await read('lib/cognition/drive-state.js');
 requireText(driveSource, [
   [/curiosity/, 'Curiosity drive is missing.'],
-  [/questionImpulse/, 'Question impulse drive is missing.']
+  [/questionImpulse/, 'Question impulse drive is missing.'],
+  [/reciprocalAttention/, 'Reciprocal-attention drive is missing.']
 ], 'lib/cognition/drive-state.js');
 
 const stickerStateSource = await read('lib/cognition/sticker-state.js');
@@ -222,7 +228,9 @@ requireText(publicChat, [
   [/stickerMode=\$\{state\?\.mode/, 'Sticker diagnostics must expose the effective backend mode.'],
   [/buildTurnDebugSnapshot/, 'Post-commit turn telemetry snapshot is missing.'],
   [/sceneMotif=\$\{snapshot\.sceneMotif\}/, 'Scene motif telemetry is missing.'],
-  [/frameAlignment=\$\{snapshot\.frameAlignment\}/, 'Frame alignment telemetry is missing.']
+  [/frameAlignment=\$\{snapshot\.frameAlignment\}/, 'Frame alignment telemetry is missing.'],
+  [/messageShape=\$\{snapshot\.messageShape\}/, 'Messenger-shape telemetry is missing.'],
+  [/reciprocityPressure=\$\{snapshot\.reciprocityPressure\}/, 'Reciprocal-attention telemetry is missing.']
 ], 'public/chat.js');
 requireText(localSettingsSource, [
   [/storageGet\(storage, key, fallback\)/, 'Bound settings reader is missing.'],
@@ -259,4 +267,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.4.3 Luna, continuity anchors, literal correction, static cacheable schema, one semantic model call.');
+console.log('Build smoke OK: Rin Mind v2.4.4 Luna, reciprocal attention, voluntary multi-message rhythm, explicit stable-prefix cache, one semantic model call.');
