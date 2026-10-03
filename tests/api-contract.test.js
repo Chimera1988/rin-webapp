@@ -221,7 +221,7 @@ test('always sticker mode exposes sticker delivery without smart budget or coold
   } finally { mock.restore(); }
 });
 
-test('smart mode blocks ordinary sticker planning when rolling target is exhausted', async () => {
+test('smart mode blocks ordinary sticker delivery while Rin Mind keeps one static cacheable schema', async () => {
   const prior = [];
   for (let turn = 1; turn <= 9; turn += 1) {
     const turnId = `prior-${turn}`;
@@ -238,7 +238,8 @@ test('smart mode blocks ordinary sticker planning when rolling target is exhaust
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.cognition.stickerState.available, false);
     assert.equal(res.body.cognition.stickerState.reason, 'rolling_budget_exhausted');
-    assert.deepEqual(bodies[0].response_format.json_schema.schema.properties.delivery.properties.segments.items.properties.type.enum, ['text']);
+    assert.deepEqual(bodies[0].response_format.json_schema.schema.properties.delivery.properties.segments.items.properties.type.enum, ['text', 'sticker']);
+    assert.match(JSON.stringify(bodies[0].messages), /Стикер на этом ходе НЕ разрешён/iu);
   } finally { mock.restore(); }
 });
 
