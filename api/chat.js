@@ -10,6 +10,7 @@ import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
 import { buildBehaviorState, inspectMotifNovelty } from '../lib/cognition/behavior-state.js';
 import { buildDriveState } from '../lib/cognition/drive-state.js';
+import { inspectLifeNovelty } from '../lib/cognition/life-texture.js';
 import { stabilizeTurn } from '../lib/cognition/turn-stabilizer.js';
 import { inspectIntentLifecycle } from '../lib/cognition/intent-policy.js';
 import {
@@ -268,7 +269,7 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
     stance: 'короткая, спокойная, личная',
     question: { mode: 'none', reason: null },
     replyLink: { targetEventId: null, reason: null },
-    delivery: { messageShape: 'single', segments: [{ type: 'text', purpose: 'fallback', stickerIntent: null, maxChars: 320 }] },
+    delivery: { responseDepth: 'short', messageShape: 'single', segments: [{ type: 'text', purpose: 'fallback', stickerIntent: null, maxChars: 320 }] },
     intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
     openLoops: { open: [], resolveIds: [] },
     realityMode: 'grounded'
@@ -280,6 +281,8 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
       restraint: 'не выдавать внутреннюю ошибку пользователю',
       socialIntent: 'stable_fallback',
       sceneMotif: 'direct_exchange',
+      lifeDomain: 'none',
+      lifeMotif: null,
       frameAlignment: 'aligned',
       literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : 'none',
       referenceAnchor: null,
@@ -424,7 +427,15 @@ export default async function handler(req, res) {
     });
     const priorRecentActs = memory?.conversationState?.dialogueState?.recentActs || [];
     const priorRecentMotifs = memory?.conversationState?.dialogueState?.recentMotifs || [];
-    const behaviorState = buildBehaviorState({ userText: userTurn, history: fullHistory, brain, recentActs: priorRecentActs, recentMotifs: priorRecentMotifs });
+    const priorRecentLifeBeats = memory?.conversationState?.dialogueState?.recentLifeBeats || [];
+    const behaviorState = buildBehaviorState({
+      userText: userTurn,
+      history: fullHistory,
+      brain,
+      recentActs: priorRecentActs,
+      recentMotifs: priorRecentMotifs,
+      recentLifeBeats: priorRecentLifeBeats
+    });
     const kernelState = buildKernelState({
       requestId,
       userText: userTurn,
@@ -501,7 +512,8 @@ export default async function handler(req, res) {
       behaviorState,
       driveState,
       scene: kernelState.scene,
-      fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn })
+      fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn }),
+      longRequested: isLong
     });
     mindTurn.decision = stabilized.decision;
     mindTurn.realization = stabilized.realization;
@@ -605,6 +617,11 @@ export default async function handler(req, res) {
       recentActs: kernelState.dialogueState?.recentActs || []
     });
     const motifTelemetry = inspectMotifNovelty(stateTransition?.dialogueState?.recentMotifs || []);
+    const lifeTelemetry = inspectLifeNovelty(stateTransition?.dialogueState?.recentLifeBeats || []);
+    const currentLifeMotif = mindTurn.mind?.lifeMotif || null;
+    const currentLifeAppearances = currentLifeMotif
+      ? (lifeTelemetry.recentBeats || []).filter(item => item?.motif === currentLifeMotif).length
+      : 0;
     const sceneControl = {
       sceneMotif: mindTurn.mind?.sceneMotif || 'direct_exchange',
       frameAlignment: mindTurn.mind?.frameAlignment || 'aligned',
@@ -612,7 +629,12 @@ export default async function handler(req, res) {
       motifAppearances: motifTelemetry.appearances || 0,
       motifPressure: motifTelemetry.pressure || 0,
       literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none'),
-      referenceAnchor: mindTurn.mind?.referenceAnchor || null
+      referenceAnchor: mindTurn.mind?.referenceAnchor || null,
+      lifeDomain: mindTurn.mind?.lifeDomain || 'none',
+      lifeMotif: currentLifeMotif,
+      lifeMotifAppearances: currentLifeAppearances,
+      lifeNoveltyPressure: Number(lifeTelemetry.pressure || 0),
+      responseDepth: mindTurn.decision?.delivery?.responseDepth || 'normal'
     };
 
     return res.status(200).json({
@@ -627,7 +649,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.5-luna-short-term-dialogue',
+        promptVersion: 'rin-mind-v2.4.6-life-texture-response-economy',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
