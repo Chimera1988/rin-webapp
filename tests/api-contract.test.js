@@ -23,6 +23,7 @@ function mindTurn(text = 'Угу.', overrides = {}) {
     question: { mode: 'none', reason: null },
     replyLink: { targetEventId: null, reason: null },
     delivery: {
+      responseDepth: 'normal',
       messageShape: 'single',
       segments: text == null ? [] : [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620, text }]
     },
@@ -33,6 +34,12 @@ function mindTurn(text = 'Угу.', overrides = {}) {
     openLoops: { open: [], resolveIds: [] },
     realityMode: 'grounded',
     mind: {
+      sceneMotif: 'direct_exchange',
+      lifeDomain: 'none',
+      lifeMotif: null,
+      frameAlignment: 'aligned',
+      literalCorrection: 'none',
+      referenceAnchor: null,
       felt: 'спокойная вовлечённость',
       wants: 'ответить естественно',
       restraint: null,

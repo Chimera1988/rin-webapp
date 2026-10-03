@@ -68,7 +68,8 @@ test('Rin Mind static structured-output contract is byte-stable across dynamic t
   });
   assert.equal(JSON.stringify(first), JSON.stringify(second));
   const delivery = first.schema.properties.delivery;
-  assert.deepEqual(delivery.required, ['messageShape', 'segments']);
+  assert.deepEqual(delivery.required, ['responseDepth', 'messageShape', 'segments']);
+  assert.deepEqual(delivery.properties.responseDepth.enum, ['micro', 'short', 'normal', 'extended']);
   assert.deepEqual(delivery.properties.messageShape.enum, ['single', 'split']);
   assert.deepEqual(delivery.properties.segments.items.properties.type.enum, ['text', 'sticker']);
 });

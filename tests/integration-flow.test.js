@@ -21,7 +21,7 @@ const decision = (overrides = {}) => ({
   act: 'direct_response', focus: 'ответить по смыслу', stance: 'лично и конкретно',
   question: { mode: 'none', reason: null },
   replyLink: { targetEventId: null, reason: null },
-  delivery: { mode: 'single_text', messageShape: 'single', segments: [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620 }] },
+  delivery: { mode: 'single_text', responseDepth: 'normal', messageShape: 'single', segments: [{ type: 'text', purpose: 'main_reply', stickerIntent: null, maxChars: 620 }] },
   intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
   openLoops: { open: [], resolveIds: [] }, realityMode: 'grounded', ...overrides
 });
@@ -47,8 +47,10 @@ function structuredFetch({ decide, realize, memory } = {}) {
       }));
       return oa({
         ...selectedDecision,
-        delivery: { messageShape: selectedDecision?.delivery?.messageShape || (segments.filter(item => item?.type === 'text').length >= 2 ? 'split' : 'single'), segments },
+        delivery: { responseDepth: selectedDecision?.delivery?.responseDepth || 'normal', messageShape: selectedDecision?.delivery?.messageShape || (segments.filter(item => item?.type === 'text').length >= 2 ? 'split' : 'single'), segments },
         mind: {
+          sceneMotif: 'direct_exchange', lifeDomain: 'none', lifeMotif: null,
+          frameAlignment: 'aligned', literalCorrection: 'none', referenceAnchor: null,
           felt: 'спокойная вовлечённость', wants: 'ответить естественно', restraint: null,
           socialIntent: 'respond', confidence: 88
         }

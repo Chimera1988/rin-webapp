@@ -29,6 +29,7 @@ function mindTurn(text, overrides = {}) {
     question: { mode: 'none', reason: null },
     replyLink: { targetEventId: null, reason: null },
     delivery: {
+      responseDepth: 'normal',
       messageShape: 'single',
       segments: [{ type: 'text', purpose: 'reply', stickerIntent: null, maxChars: 320, text }]
     },
@@ -39,6 +40,12 @@ function mindTurn(text, overrides = {}) {
     openLoops: { open: [], resolveIds: [] },
     realityMode: 'grounded',
     mind: {
+      sceneMotif: 'direct_exchange',
+      lifeDomain: 'none',
+      lifeMotif: null,
+      frameAlignment: 'aligned',
+      literalCorrection: 'none',
+      referenceAnchor: null,
       felt: 'спокойная вовлечённость',
       wants: 'сохранить естественный контакт',
       restraint: null,
