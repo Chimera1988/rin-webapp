@@ -615,7 +615,8 @@ export default async function handler(req, res) {
       kernelState,
       affectiveTurn,
       decision: mindTurn.decision,
-      mind: mindTurn.mind
+      mind: mindTurn.mind,
+      userText: userTurn
     });
     const visualReply = visualReplyFromDecision(mindTurn.decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
@@ -633,6 +634,9 @@ export default async function handler(req, res) {
     const currentLifeAppearances = currentLifeMotif
       ? (lifeTelemetry.recentBeats || []).filter(item => item?.motif === currentLifeMotif).length
       : 0;
+    const appliedCommitment = [...(stateTransition?.dialogueState?.sceneCommitments || [])]
+      .reverse()
+      .find(item => Number(item?.updatedAtTurn) === Number(kernelState.revision || 0) + 1) || null;
     const sceneControl = {
       sceneMotif: mindTurn.mind?.sceneMotif || 'direct_exchange',
       frameAlignment: mindTurn.mind?.frameAlignment || 'aligned',
@@ -648,10 +652,12 @@ export default async function handler(req, res) {
       responseDepth: mindTurn.decision?.delivery?.responseDepth || 'normal',
       responseShortLock: Number(behaviorState?.responseRhythm?.shortLockPressure || 0),
       responseSingleLock: Number(behaviorState?.responseRhythm?.singleLockPressure || 0),
-      commitmentAction: mindTurn.mind?.commitmentAction || 'none',
+      commitmentAction: appliedCommitment?.lastAction || mindTurn.mind?.commitmentAction || 'none',
+      commitmentRequestedAction: mindTurn.mind?.commitmentAction || 'none',
       commitmentConflict: mindTurn.mind?.commitmentConflict || 'none',
-      commitmentTargetId: mindTurn.mind?.commitmentTargetId || null,
-      commitmentSubject: mindTurn.mind?.commitmentSubject || null,
+      commitmentTargetId: appliedCommitment?.id || mindTurn.mind?.commitmentTargetId || null,
+      commitmentSubject: appliedCommitment?.subject || mindTurn.mind?.commitmentSubject || null,
+      commitmentHorizon: appliedCommitment?.horizon || null,
       activeCommitments: (stateTransition?.dialogueState?.sceneCommitments || []).filter(item => ['active', 'contested'].includes(item?.status)).length
     };
 
@@ -667,7 +673,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.7-commitments-rhythm-calibration',
+        promptVersion: 'rin-mind-v2.4.8-commitment-lifecycle-integrity',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
