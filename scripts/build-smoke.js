@@ -79,7 +79,8 @@ await requireFiles([
   'tests/rin-mind-v2-api.test.js',
   'tests/rin-mind-v22.test.js',
   'tests/rin-mind-v244.test.js',
-  'tests/rin-mind-v246.test.js'
+  'tests/rin-mind-v246.test.js',
+  'tests/rin-mind-v247.test.js'
 ]);
 
 // Keep the existing browser/release/security envelope intact.
@@ -278,4 +279,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.4.6 Luna, Life Texture + semantic topic novelty + Response Economy, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');
+console.log('Build smoke OK: Rin Mind v2.4.7 Luna, scene commitments + autonomy-aware conflict handling + response rhythm calibration, Life Texture, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');

@@ -142,7 +142,7 @@ const server = createServer(async (req, res) => {
         model: { kernel:'gpt-4.1', realization:'gpt-4o-mini' }, turnDecision, deliveryPlan,
         validation:{decision:{passed:true,warnings:[]},realization:{passed:true,warnings:[],reply:stickerOnly?'':reply}},
         stateTransition: {
-          schema: 'rin-state-transition-v4',
+          schema: 'rin-state-transition-v5',
           dialogueState: { scene: stickerOnly ? 'romance' : 'everyday', topic: current, relationToPreviousTurn: 'continuation' },
           beliefUpdates: [], openLoopUpdates: [], resolvedLoopIds: [],
           moodState: body.memory?.mood || { affection: 65, energy: 65 },
