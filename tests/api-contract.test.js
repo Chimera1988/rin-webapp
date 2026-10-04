@@ -349,7 +349,7 @@ test('affective state and one state transition are exposed from the integrated t
     assert.equal(res.statusCode, 200);
     assert.ok(res.body.affectiveTurn);
     assert.ok(res.body.stateTransition);
-    assert.equal(res.body.stateTransition.schema, 'rin-state-transition-v4');
+    assert.equal(res.body.stateTransition.schema, 'rin-state-transition-v5');
     assert.equal(res.body.model.kernel, 'integrated-in-rin-mind-v2');
     assert.equal(res.body.model.realization, 'integrated-in-rin-mind-v2');
   } finally { mock.restore(); }
