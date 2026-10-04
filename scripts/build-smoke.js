@@ -279,4 +279,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.4.7 Luna, scene commitments + autonomy-aware conflict handling + response rhythm calibration, Life Texture, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');
+console.log('Build smoke OK: Rin Mind v2.4.8 Luna, commitment lifecycle integrity + horizon-aware terminal guards + negotiation/repair disambiguation, response rhythm calibration, Life Texture, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');
