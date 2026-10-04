@@ -286,6 +286,13 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
       frameAlignment: 'aligned',
       literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : 'none',
       referenceAnchor: null,
+      commitmentAction: 'none',
+      commitmentConflict: 'none',
+      commitmentTargetId: null,
+      commitmentSubject: null,
+      commitmentOwner: 'none',
+      commitmentStrength: 0,
+      commitmentReason: null,
       confidence: 100
     },
     decision,
@@ -428,13 +435,17 @@ export default async function handler(req, res) {
     const priorRecentActs = memory?.conversationState?.dialogueState?.recentActs || [];
     const priorRecentMotifs = memory?.conversationState?.dialogueState?.recentMotifs || [];
     const priorRecentLifeBeats = memory?.conversationState?.dialogueState?.recentLifeBeats || [];
+    const priorRecentResponseDepths = memory?.conversationState?.dialogueState?.recentResponseDepths || [];
+    const priorRecentMessageShapes = memory?.conversationState?.dialogueState?.recentMessageShapes || [];
     const behaviorState = buildBehaviorState({
       userText: userTurn,
       history: fullHistory,
       brain,
       recentActs: priorRecentActs,
       recentMotifs: priorRecentMotifs,
-      recentLifeBeats: priorRecentLifeBeats
+      recentLifeBeats: priorRecentLifeBeats,
+      recentResponseDepths: priorRecentResponseDepths,
+      recentMessageShapes: priorRecentMessageShapes
     });
     const kernelState = buildKernelState({
       requestId,
@@ -634,7 +645,14 @@ export default async function handler(req, res) {
       lifeMotif: currentLifeMotif,
       lifeMotifAppearances: currentLifeAppearances,
       lifeNoveltyPressure: Number(lifeTelemetry.pressure || 0),
-      responseDepth: mindTurn.decision?.delivery?.responseDepth || 'normal'
+      responseDepth: mindTurn.decision?.delivery?.responseDepth || 'normal',
+      responseShortLock: Number(behaviorState?.responseRhythm?.shortLockPressure || 0),
+      responseSingleLock: Number(behaviorState?.responseRhythm?.singleLockPressure || 0),
+      commitmentAction: mindTurn.mind?.commitmentAction || 'none',
+      commitmentConflict: mindTurn.mind?.commitmentConflict || 'none',
+      commitmentTargetId: mindTurn.mind?.commitmentTargetId || null,
+      commitmentSubject: mindTurn.mind?.commitmentSubject || null,
+      activeCommitments: (stateTransition?.dialogueState?.sceneCommitments || []).filter(item => ['active', 'contested'].includes(item?.status)).length
     };
 
     return res.status(200).json({
@@ -649,7 +667,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.6-life-texture-response-economy',
+        promptVersion: 'rin-mind-v2.4.7-commitments-rhythm-calibration',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
