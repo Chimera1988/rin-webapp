@@ -47,6 +47,7 @@ export function defaultRelationshipState(now = Date.now()) {
       turn: 0
     },
     sharedMoments: [],
+    sharedSymbols: [],
     lastInteractionAt: now,
     updatedAt: now
   };
@@ -86,6 +87,7 @@ export function normalizeRelationshipState(input = {}, now = Date.now()) {
       turn: Math.max(0, Math.round(finite(dynamic.turn, 0)))
     },
     sharedMoments: Array.isArray(source.sharedMoments) ? source.sharedMoments.slice(-20) : [],
+    sharedSymbols: Array.isArray(source.sharedSymbols) ? source.sharedSymbols.slice(-12) : [],
     lastInteractionAt: finite(source.lastInteractionAt, now),
     updatedAt: finite(source.updatedAt, now)
   };
