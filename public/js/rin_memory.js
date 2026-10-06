@@ -16,7 +16,7 @@ import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } 
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
-const DIARY_SCHEMA_VERSION = 7;
+const DIARY_SCHEMA_VERSION = 8;
 
 
 
@@ -488,7 +488,59 @@ function innerLifePart(env = {}) {
   return 'day';
 }
 
-function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Date.now(), policy = {}) {
+function lifeActivityLoad(activity = '') {
+  const text = cleanText(activity, 240).toLowerCase();
+  if (/(редакт|работает|текст|перевод|задач|заметк)/iu.test(text)) return 66;
+  if (/(разбирает|приводит в порядок|собирается начать)/iu.test(text)) return 52;
+  if (/(пауза|чай|тишин|готовится ко сну|сон)/iu.test(text)) return 30;
+  return 42;
+}
+
+function innerLifeBaselines(part = 'day') {
+  if (part === 'night') return { energy: 38, quiet: 72, load: 30 };
+  if (part === 'evening') return { energy: 53, quiet: 48, load: 42 };
+  if (part === 'morning') return { energy: 67, quiet: 30, load: 44 };
+  return { energy: 64, quiet: 28, load: 52 };
+}
+
+function negativeSelfEmotion(emotionalState = null) {
+  const type = cleanText(emotionalState?.primary?.type, 60).toLowerCase();
+  const intensity = clamp(emotionalState?.primary?.intensity ?? 0, 0, 100);
+  return ['fatigue', 'sadness', 'frustration', 'irritation', 'hurt', 'disappointment', 'concern'].includes(type)
+    ? intensity
+    : 0;
+}
+
+function evolvePersistentLifeState(current, { part = 'day', relationship = null, emotionalState = null, mood = null, now = Date.now(), activityChanged = false } = {}) {
+  const base = innerLifeBaselines(part);
+  const lastStateAt = finiteNumber(current.lastStateAt || current.lastChangedAt || current.startedAt, now);
+  const elapsedHours = Math.max(0, now - lastStateAt) / 3600000;
+  const blend = activityChanged ? 0.72 : Math.min(0.55, 0.12 + elapsedHours * 0.12);
+  const activityLoad = lifeActivityLoad(current.activity);
+  const moodEnergy = clamp(mood?.energy ?? current.energy ?? base.energy, 0, 100);
+  const targetEnergy = clamp(base.energy * 0.62 + moodEnergy * 0.38, 0, 100);
+  const targetLoad = clamp(base.load * 0.35 + activityLoad * 0.65, 0, 100);
+  const targetQuiet = clamp(base.quiet + Math.max(0, 52 - targetEnergy) * 0.55 + Math.max(0, targetLoad - 65) * 0.2, 0, 100);
+  const closeness = clamp(relationship?.closeness ?? 42, 0, 100);
+  const trust = clamp(relationship?.trust ?? 55, 0, 100);
+  const comfort = clamp(relationship?.comfort ?? 52, 0, 100);
+  const vulnerability = clamp(relationship?.vulnerability ?? 28, 0, 100);
+  const negativePressure = negativeSelfEmotion(emotionalState);
+  const targetShare = clamp(28 + closeness * 0.16 + trust * 0.14 + comfort * 0.12 + vulnerability * 0.08 + negativePressure * 0.18 - targetQuiet * 0.08, 0, 100);
+  const lerp = (from, to) => clamp(finiteNumber(from, to) * (1 - blend) + to * blend, 0, 100);
+
+  current.energy = lerp(current.energy, targetEnergy);
+  current.mentalLoad = lerp(current.mentalLoad, targetLoad);
+  current.needForQuiet = lerp(current.needForQuiet, targetQuiet);
+  current.desireToShare = lerp(current.desireToShare, targetShare);
+  current.unfinishedThought = /(редакт|работает|текст|перевод|заметк)/iu.test(cleanText(current.activity, 220))
+    ? cleanText(current.activityGoal || current.focus, 260)
+    : cleanText(current.unfinishedThought, 260);
+  current.lastStateAt = now;
+  return current;
+}
+
+function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Date.now(), policy = {}, context = {}) {
   const current = { ...defaultInnerLife(), ...(currentInput || {}) };
   const part = innerLifePart(env);
   const minMinutes = clamp(policy?.activityMinMinutes ?? 35, 5, 24 * 60);
@@ -496,6 +548,8 @@ function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Dat
   const continueAcrossMessages = policy?.continueAcrossMessages !== false;
   const expired = !continueAcrossMessages || !current.activity || !current.expiresAt || now >= current.expiresAt || current.part !== part;
   if (expired) {
+    const previousActivity = cleanText(current.activity, 180);
+    const previousFocus = cleanText(current.activityGoal || current.focus, 220);
     const pool = INNER_LIFE_POOLS[part] || INNER_LIFE_POOLS.day;
     const recent = new Set((current.recentActivities || []).slice(-2));
     let index = Number.parseInt(stableHashBase36(`${env?.rinHuman || ''}|${part}|${current.interactionCount}`), 36) % pool.length;
@@ -510,19 +564,38 @@ function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Dat
       part,
       startedAt: now,
       lastChangedAt: now,
-      energy: part === 'night' ? 42 : part === 'evening' ? 55 : 66,
       expiresAt: now + durationMinutes * 60000,
+      carryover: previousActivity && previousActivity !== selected.activity
+        ? cleanText(`до этого: ${previousActivity}${previousFocus ? `; фокус был: ${previousFocus}` : ''}`, 320)
+        : cleanText(current.carryover, 320),
       recentActivities: [...(current.recentActivities || []), selected.activity].slice(-8)
     });
   }
+  evolvePersistentLifeState(current, {
+    part,
+    relationship: context.relationship,
+    emotionalState: context.emotionalState,
+    mood: context.mood,
+    now,
+    activityChanged: expired
+  });
   current.lastUserAt = now;
   current.interactionCount = finiteNumber(current.interactionCount, 0) + 1;
   return normalizeInnerLife(current);
 }
 
 export async function prepareInnerLife(env = {}, userText = '', now = Date.now(), policy = {}) {
+  if (now && typeof now === 'object' && !Array.isArray(now)) {
+    policy = now;
+    now = Date.now();
+  }
+  const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   const diary = await loadDiary();
-  return clone(computeInnerLife(diary.innerLife, env, userText, now, policy));
+  return clone(computeInnerLife(diary.innerLife, env, userText, timestamp, policy, {
+    relationship: diary.relationship,
+    emotionalState: diary.conversationState?.emotionalState,
+    mood: diary.mood
+  }));
 }
 
 function applyMoodDecay(currentInput = {}, now = Date.now()) {
