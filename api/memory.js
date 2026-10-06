@@ -17,10 +17,11 @@ const confidence = value => {
 
 export function createEmptyMemoryResult() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     facts: [],
     events: [],
     sharedMoments: [],
+    sharedSymbols: [],
     factRetractions: []
   };
 }
@@ -59,6 +60,30 @@ export function sanitizeMemoryResult(value) {
       importance: clamp(item?.importance, 1, 10, 6)
     });
   }
+
+  for (const item of list(value?.sharedSymbols, 2)) {
+    const rawId = clean(item?.id || item?.label, 80).toLowerCase();
+    const id = rawId.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+    const label = clean(item?.label || item?.name || id, 80);
+    const meaning = clean(item?.meaning || item?.description, 700);
+    if (!id || !label || !meaning) continue;
+    const strings = (input, max, len) => list(input, max).map(entry => clean(entry, len)).filter(Boolean);
+    result.sharedSymbols.push({
+      id,
+      label,
+      scope: 'relationship_private',
+      privacy: 'private',
+      origin: clean(item?.origin, 400) || 'shared_history',
+      meaning,
+      aliases: strings(item?.aliases, 8, 80),
+      associations: strings(item?.associations, 12, 140),
+      manifestations: strings(item?.manifestations, 8, 240),
+      avoid: strings(item?.avoid, 8, 240),
+      salience: clamp(item?.salience, 0, 100, 60),
+      minCloseness: clamp(item?.minCloseness, 0, 100, 45),
+      importance: clamp(item?.importance, 1, 10, 7)
+    });
+  }
   for (const item of list(value?.factRetractions, 5)) {
     const path = clean(item?.path, 100);
     if (/^user\.[a-zA-Z0-9_.-]+$/.test(path)) result.factRetractions.push({ path });
@@ -76,10 +101,12 @@ async function extractMemory({ userText, assistantText, existingMemory }) {
 
 Conversational open loops и active intent здесь не анализируй и не возвращай: ими владеет ConversationState/Cognitive Kernel. sharedMoments должны быть редкими и значимыми.
 
+sharedSymbols — ещё более редкий слой приватной символики отношений: повторяющийся образ, прозвище, метафора или маленький ритуал, который приобрёл устойчивое значение именно между пользователем и Рин. Не создавай sharedSymbol из одноразовой шутки. Возвращай его только при первом явном закреплении или когда существующий символ получил действительно новую устойчивую грань. Используй стабильный id латиницей; scope=relationship_private. Символ не является новой базовой личностью Рин и не должен превращаться в режим.
+
 Если пользователь прямо исправляет ранее сохранённый факт о себе, верни старый путь в factRetractions и новую версию в facts. Не выводи factRetractions для догадок ассистента, которых не было в facts.
 
 Формат:
-{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"sharedMoments":[]}
+{"facts":[{"path":"user.preference","value":"...","confidence":0.9}],"events":[{"text":"...","type":"plan","tags":["..."],"importance":7}],"sharedMoments":[],"sharedSymbols":[{"id":"private_symbol","label":"...","origin":"...","meaning":"...","aliases":[],"associations":[],"manifestations":[],"avoid":[],"salience":65,"minCloseness":45,"importance":8}]}
 `.trim();
 
   const userPrompt = `

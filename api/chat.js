@@ -9,6 +9,7 @@ import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognit
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
 import { buildBehaviorState, inspectMotifNovelty } from '../lib/cognition/behavior-state.js';
+import { inspectSharedSymbols } from '../lib/cognition/shared-symbols.js';
 import { buildDriveState } from '../lib/cognition/drive-state.js';
 import { inspectLifeNovelty } from '../lib/cognition/life-texture.js';
 import { stabilizeTurn } from '../lib/cognition/turn-stabilizer.js';
@@ -286,6 +287,9 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
       frameAlignment: 'aligned',
       literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : 'none',
       referenceAnchor: null,
+      sharedSymbolId: null,
+      sharedSymbolExpression: 'none',
+      sharedSymbolReason: null,
       commitmentAction: 'none',
       commitmentConflict: 'none',
       commitmentTargetId: null,
@@ -462,10 +466,20 @@ export default async function handler(req, res) {
     });
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
     const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
+    const sharedSymbolState = inspectSharedSymbols({
+      profile,
+      memory,
+      userText: userTurn,
+      history: fullHistory,
+      brain,
+      affectiveTurn,
+      dialogueState: kernelState.dialogueState,
+      activeIntent: kernelState.activeIntent
+    });
     const stickerCandidates = stickerState.available === true
       ? buildStickerCandidates({ userText: userTurn, state: kernelState, brain, affectiveTurn, limit: 12 })
       : [];
-    const mindState = { ...kernelState, behaviorState, driveState, realityBoundary, stickerCandidates };
+    const mindState = { ...kernelState, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates };
     const prompt = buildRinMindPrompt({
       profile,
       state: mindState,
@@ -492,7 +506,7 @@ export default async function handler(req, res) {
       modelFallback = true;
     } else {
       try {
-        mindTurn = parseRinMind(completion.content, { behaviorState });
+        mindTurn = parseRinMind(completion.content, { behaviorState, sharedSymbolState });
       } catch (error) {
         console.warn('Rin Mind structured output unusable; deterministic fallback used', {
           requestId,
@@ -637,6 +651,9 @@ export default async function handler(req, res) {
     const appliedCommitment = [...(stateTransition?.dialogueState?.sceneCommitments || [])]
       .reverse()
       .find(item => Number(item?.updatedAtTurn) === Number(kernelState.revision || 0) + 1) || null;
+    const sharedSymbolCandidate = (sharedSymbolState?.candidates || [])[0] || null;
+    const appliedSharedSymbol = (sharedSymbolState?.candidates || [])
+      .find(item => item?.id === mindTurn.mind?.sharedSymbolId) || null;
     const sceneControl = {
       sceneMotif: mindTurn.mind?.sceneMotif || 'direct_exchange',
       frameAlignment: mindTurn.mind?.frameAlignment || 'aligned',
@@ -658,7 +675,14 @@ export default async function handler(req, res) {
       commitmentTargetId: appliedCommitment?.id || mindTurn.mind?.commitmentTargetId || null,
       commitmentSubject: appliedCommitment?.subject || mindTurn.mind?.commitmentSubject || null,
       commitmentHorizon: appliedCommitment?.horizon || null,
-      activeCommitments: (stateTransition?.dialogueState?.sceneCommitments || []).filter(item => ['active', 'contested'].includes(item?.status)).length
+      activeCommitments: (stateTransition?.dialogueState?.sceneCommitments || []).filter(item => ['active', 'contested'].includes(item?.status)).length,
+      sharedSymbolCandidateId: sharedSymbolCandidate?.id || null,
+      sharedSymbolCandidateActivation: Number(sharedSymbolCandidate?.activation || 0),
+      sharedSymbolCandidateDirectRecall: Boolean(sharedSymbolCandidate?.directRecall),
+      sharedSymbolId: mindTurn.mind?.sharedSymbolId || null,
+      sharedSymbolExpression: mindTurn.mind?.sharedSymbolExpression || 'none',
+      sharedSymbolActivation: Number(appliedSharedSymbol?.activation || 0),
+      sharedSymbolRepetitionPressure: Number((appliedSharedSymbol || sharedSymbolCandidate)?.repetitionPressure || 0)
     };
 
     return res.status(200).json({
@@ -673,7 +697,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.8-commitment-lifecycle-integrity',
+        promptVersion: 'rin-mind-v2.4.9-shared-symbols-associative-recall',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
