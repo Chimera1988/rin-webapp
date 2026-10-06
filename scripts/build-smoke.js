@@ -80,7 +80,10 @@ await requireFiles([
   'tests/rin-mind-v22.test.js',
   'tests/rin-mind-v244.test.js',
   'tests/rin-mind-v246.test.js',
-  'tests/rin-mind-v247.test.js'
+  'tests/rin-mind-v247.test.js',
+  'tests/rin-mind-v248.test.js',
+  'tests/rin-mind-v249.test.js',
+  'lib/cognition/shared-symbols.js'
 ]);
 
 // Keep the existing browser/release/security envelope intact.
@@ -242,7 +245,8 @@ requireText(publicChat, [
   [/responseDepth=\$\{snapshot\.responseDepth\}/, 'Response-depth telemetry is missing.'],
   [/lifeDomain=\$\{snapshot\.lifeDomain\}/, 'Life-domain telemetry is missing.'],
   [/lifeNovelty=\$\{snapshot\.lifeNoveltyPressure\}/, 'Life-novelty telemetry is missing.'],
-  [/reciprocityPressure=\$\{snapshot\.reciprocityPressure\}/, 'Reciprocal-attention telemetry is missing.']
+  [/reciprocityPressure=\$\{snapshot\.reciprocityPressure\}/, 'Reciprocal-attention telemetry is missing.'],
+  [/sharedSymbol=\$\{snapshot\.sharedSymbolId\}/, 'Shared-symbol telemetry is missing.']
 ], 'public/chat.js');
 requireText(localSettingsSource, [
   [/storageGet\(storage, key, fallback\)/, 'Bound settings reader is missing.'],
@@ -279,4 +283,4 @@ if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat fail
 // Syntax validation covers every JS file in the repository, including files in this bundle.
 runNode(['scripts/check-syntax.js'], 'repository syntax check');
 
-console.log('Build smoke OK: Rin Mind v2.4.8 Luna, commitment lifecycle integrity + horizon-aware terminal guards + negotiation/repair disambiguation, response rhythm calibration, Life Texture, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');
+console.log('Build smoke OK: Rin Mind v2.4.9 Luna, Shared Relationship Symbols + associative recall + anti-trigger/repetition guards, commitment lifecycle integrity, response rhythm calibration, Life Texture, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');
