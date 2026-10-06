@@ -16,7 +16,7 @@ import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } 
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
-const DIARY_SCHEMA_VERSION = 6;
+const DIARY_SCHEMA_VERSION = 7;
 
 
 
@@ -244,6 +244,49 @@ function normalizeMoment(item = {}, index = 0) {
   };
 }
 
+function normalizeSharedSymbol(item = {}, index = 0) {
+  const rawId = cleanText(item.id || item.key || item.label, 80).toLowerCase();
+  const id = rawId.replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+  const label = cleanText(item.label || item.name || id, 80);
+  const meaning = cleanText(item.meaning || item.description, 900);
+  if (!id || !label || !meaning) return null;
+  const list = (value, max, len) => [...new Set((Array.isArray(value) ? value : [])
+    .map(entry => cleanText(entry, len)).filter(Boolean))].slice(0, max);
+  const ts = finiteNumber(item.updatedAt ?? item.ts ?? item.createdAt, Date.now() + index);
+  return {
+    id,
+    label,
+    scope: cleanText(item.scope, 40) || 'relationship_private',
+    privacy: cleanText(item.privacy, 40) || 'private',
+    origin: cleanText(item.origin, 500) || 'shared_history',
+    meaning,
+    aliases: list(item.aliases, 8, 80),
+    associations: list(item.associations, 12, 140),
+    manifestations: list(item.manifestations, 8, 260),
+    avoid: list(item.avoid, 8, 260),
+    salience: clamp(item.salience ?? (Number.isFinite(Number(item.importance)) ? Number(item.importance) * 10 : 55), 0, 100),
+    minCloseness: clamp(item.minCloseness ?? 45, 0, 100),
+    updatedAt: ts
+  };
+}
+
+function mergeSharedSymbol(current = null, incoming = null) {
+  if (!current) return incoming;
+  if (!incoming) return current;
+  const mergeList = (a, b, max) => [...new Set([...(a || []), ...(b || [])])].slice(0, max);
+  return normalizeSharedSymbol({
+    ...current,
+    ...incoming,
+    id: current.id,
+    aliases: mergeList(current.aliases, incoming.aliases, 8),
+    associations: mergeList(current.associations, incoming.associations, 12),
+    manifestations: mergeList(current.manifestations, incoming.manifestations, 8),
+    avoid: mergeList(current.avoid, incoming.avoid, 8),
+    salience: Math.max(Number(current.salience) || 0, Number(incoming.salience) || 0),
+    updatedAt: Math.max(Number(current.updatedAt) || 0, Number(incoming.updatedAt) || 0)
+  });
+}
+
 function normalizeSummary(item = {}, index = 0) {
   const text = cleanText(item.text, 2200);
   if (!text) return null;
@@ -286,6 +329,8 @@ function normalizeDiary(input = {}) {
     playfulness: relationSource.playfulness ?? moodSource.playfulness ?? 45,
     sharedMoments: (Array.isArray(relationSource.sharedMoments) ? relationSource.sharedMoments : [])
       .map(normalizeMoment).filter(Boolean).slice(-20),
+    sharedSymbols: (Array.isArray(relationSource.sharedSymbols) ? relationSource.sharedSymbols : [])
+      .map(normalizeSharedSymbol).filter(Boolean).slice(-12),
     lastInteractionAt: finiteNumber(relationSource.lastInteractionAt, now),
     updatedAt: finiteNumber(relationSource.updatedAt, now)
   }, now);
@@ -657,7 +702,7 @@ export async function applyMemoryExtraction(extracted = {}, { jobId = '', now = 
   const id = cleanText(jobId, 120);
   return mutateDiary(diary => {
     if (id && diary.processedMemoryJobs.includes(id)) {
-      return { applied: false, duplicate: true, jobId: id, savedFactPaths: [], retractedFactPaths: [], eventCount: 0, momentCount: 0 };
+      return { applied: false, duplicate: true, jobId: id, savedFactPaths: [], retractedFactPaths: [], eventCount: 0, momentCount: 0, symbolCount: 0 };
     }
 
     const savedFactPaths = [];
@@ -728,9 +773,25 @@ export async function applyMemoryExtraction(extracted = {}, { jobId = '', now = 
       momentCount += 1;
     }
 
+    let symbolCount = 0;
+    for (const symbol of Array.isArray(extracted?.sharedSymbols) ? extracted.sharedSymbols : []) {
+      if ((Number(symbol?.importance) || 0) < 7) continue;
+      const normalized = normalizeSharedSymbol({ ...symbol, updatedAt: symbol?.updatedAt ?? now });
+      if (!normalized || normalized.scope !== 'relationship_private') continue;
+      const relationship = { ...defaultRelationship(), ...(diary.relationship || {}) };
+      const current = Array.isArray(relationship.sharedSymbols) ? relationship.sharedSymbols : [];
+      const index = current.findIndex(existing => existing?.id === normalized.id);
+      relationship.sharedSymbols = index >= 0
+        ? current.map((existing, itemIndex) => itemIndex === index ? mergeSharedSymbol(existing, normalized) : existing).slice(-12)
+        : [...current, normalized].slice(-12);
+      relationship.updatedAt = now;
+      diary.relationship = relationship;
+      symbolCount += 1;
+    }
+
     consolidateDiaryInPlace(diary, now);
     if (id) diary.processedMemoryJobs = [...new Set([...(diary.processedMemoryJobs || []), id])].slice(-80);
-    return { applied: true, duplicate: false, jobId: id || null, savedFactPaths, retractedFactPaths, eventCount, momentCount };
+    return { applied: true, duplicate: false, jobId: id || null, savedFactPaths, retractedFactPaths, eventCount, momentCount, symbolCount };
   });
 }
 
@@ -769,6 +830,22 @@ export async function addSharedMoment(item = {}) {
     const current = Array.isArray(relationship.sharedMoments) ? relationship.sharedMoments : [];
     if (current.some(existing => existing.id === moment.id || existing.key === moment.key)) return false;
     relationship.sharedMoments = [...current, moment].slice(-20);
+    relationship.updatedAt = Date.now();
+    diary.relationship = relationship;
+    return true;
+  });
+}
+
+export async function addSharedSymbol(item = {}) {
+  const symbol = normalizeSharedSymbol({ ...item, updatedAt: item.updatedAt ?? Date.now() });
+  if (!symbol || symbol.scope !== 'relationship_private') return false;
+  return mutateDiary(diary => {
+    const relationship = { ...defaultRelationship(), ...(diary.relationship || {}) };
+    const current = Array.isArray(relationship.sharedSymbols) ? relationship.sharedSymbols : [];
+    const index = current.findIndex(existing => existing?.id === symbol.id);
+    relationship.sharedSymbols = index >= 0
+      ? current.map((existing, itemIndex) => itemIndex === index ? mergeSharedSymbol(existing, symbol) : existing).slice(-12)
+      : [...current, symbol].slice(-12);
     relationship.updatedAt = Date.now();
     diary.relationship = relationship;
     return true;
