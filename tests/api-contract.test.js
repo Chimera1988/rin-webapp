@@ -116,7 +116,7 @@ test('memory extractor owns durable facts/events/shared moments, not conversatio
     sharedMoments: [{ text: 'Общий вечер', importance: 8 }],
     mood: { affection: 99 }, relationship: { trust: 99 }
   });
-  assert.equal(result.schemaVersion, 4);
+  assert.equal(result.schemaVersion, 5);
   assert.ok(result.events[0].id && result.events[0].key);
   assert.ok(result.sharedMoments[0].id && result.sharedMoments[0].key);
   assert.equal('openLoops' in result, false);
@@ -517,5 +517,5 @@ test('visual reply can target only an earlier event in the current user batch', 
 test('memory sanitizer accepts explicit fact retractions only under user namespace', () => {
   const out = memoryApi.sanitizeMemoryResult({ factRetractions: [{ path:'user.trait.selfCritical' }, { path:'self.secret' }, { path:'world.x' }] });
   assert.deepEqual(out.factRetractions, [{ path:'user.trait.selfCritical' }]);
-  assert.equal(out.schemaVersion, 4);
+  assert.equal(out.schemaVersion, 5);
 });
