@@ -1,4 +1,4 @@
-export const INNER_LIFE_SCHEMA = 'rin-inner-life-v3';
+export const INNER_LIFE_SCHEMA = 'rin-inner-life-v4';
 export const INNER_LIFE_REALITY_MODES = new Set(['simulated_character_world', 'grounded']);
 
 const clean = (value, max = 300) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -21,9 +21,15 @@ export function normalizeInnerLife(input = {}) {
     activityGoal: clean(source.activityGoal, 220),
     part: clean(source.part, 30),
     energy: clamp(source.energy, 0, 100, 60),
+    mentalLoad: clamp(source.mentalLoad, 0, 100, 42),
+    needForQuiet: clamp(source.needForQuiet, 0, 100, 35),
+    desireToShare: clamp(source.desireToShare, 0, 100, 48),
+    unfinishedThought: clean(source.unfinishedThought, 260),
+    carryover: clean(source.carryover, 320),
     startedAt: Math.max(0, numberOr(source.startedAt, 0)),
     expiresAt: Math.max(0, numberOr(source.expiresAt, 0)),
     lastChangedAt: Math.max(0, numberOr(source.lastChangedAt, source.startedAt || 0)),
+    lastStateAt: Math.max(0, numberOr(source.lastStateAt, source.lastChangedAt || source.startedAt || 0)),
     lastUserAt: Math.max(0, numberOr(source.lastUserAt, 0)),
     interactionCount: Math.max(0, Math.round(numberOr(source.interactionCount, 0))),
     recentActivities: (Array.isArray(source.recentActivities) ? source.recentActivities : [])
