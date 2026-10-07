@@ -8,7 +8,7 @@ import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
-import { buildBehaviorState, inspectMotifNovelty } from '../lib/cognition/behavior-state.js';
+import { buildBehaviorState, extractVocativeAddresses, inspectMotifNovelty } from '../lib/cognition/behavior-state.js';
 import { inspectSharedSymbols } from '../lib/cognition/shared-symbols.js';
 import { buildDriveState } from '../lib/cognition/drive-state.js';
 import { inspectLifeNovelty } from '../lib/cognition/life-texture.js';
@@ -637,6 +637,8 @@ export default async function handler(req, res) {
     });
     const visualReply = visualReplyFromDecision(mindTurn.decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
+    const realizedVocatives = extractVocativeAddresses(reply);
+    const primaryVocative = realizedVocatives[0] || null;
     const usage = usageOrZero(completion.usage);
     const intentTelemetry = inspectIntentLifecycle({
       activeIntent: kernelState.activeIntent,
@@ -654,6 +656,17 @@ export default async function handler(req, res) {
     const appliedCommitment = [...(stateTransition?.dialogueState?.sceneCommitments || [])]
       .reverse()
       .find(item => Number(item?.updatedAtTurn) === Number(kernelState.revision || 0) + 1) || null;
+    const resolvedLoopIds = new Set(Array.isArray(stateTransition?.resolvedLoopIds) ? stateTransition.resolvedLoopIds : []);
+    const callbackLoopMap = new Map();
+    for (const loop of Array.isArray(kernelState?.openLoops) ? kernelState.openLoops : []) {
+      if (loop?.id && !resolvedLoopIds.has(loop.id)) callbackLoopMap.set(loop.id, loop);
+    }
+    for (const loop of Array.isArray(stateTransition?.openLoopUpdates) ? stateTransition.openLoopUpdates : []) {
+      if (loop?.id && !resolvedLoopIds.has(loop.id)) callbackLoopMap.set(loop.id, loop);
+    }
+    const activeFutureCallbacks = [...callbackLoopMap.values()].filter(item => item?.type === 'future_callback');
+    const detectedFutureCallback = (stateTransition?.openLoopUpdates || []).find(item => item?.type === 'future_callback' && item?.source === 'user_future_callback') || null;
+    const resolvedFutureCallback = [...resolvedLoopIds].find(id => (kernelState?.openLoops || []).some(item => item?.id === id && item?.type === 'future_callback')) || null;
     const sharedSymbolCandidate = (sharedSymbolState?.candidates || [])[0] || null;
     const appliedSharedSymbol = (sharedSymbolState?.candidates || [])
       .find(item => item?.id === mindTurn.mind?.sharedSymbolId) || null;
@@ -692,6 +705,23 @@ export default async function handler(req, res) {
       responseDepth: mindTurn.decision?.delivery?.responseDepth || 'normal',
       responseShortLock: Number(behaviorState?.responseRhythm?.shortLockPressure || 0),
       responseSingleLock: Number(behaviorState?.responseRhythm?.singleLockPressure || 0),
+      vocativePressure: Number(behaviorState?.vocative?.pressure || 0),
+      vocativeRawPressure: Number(behaviorState?.vocative?.rawPressure || 0),
+      vocativeRecentTurns: Number(behaviorState?.vocative?.recentVocativeTurns || 0),
+      vocativeRecent6: Number(behaviorState?.vocative?.recent6 || 0),
+      vocativeStreak: Number(behaviorState?.vocative?.streak || 0),
+      vocativeTurnsSinceAny: Number(behaviorState?.vocative?.turnsSinceAny || 0),
+      vocativeLastExact: behaviorState?.vocative?.lastExact || null,
+      vocativeLastClass: behaviorState?.vocative?.lastClass || null,
+      vocativeExactGapRemaining: Number(behaviorState?.vocative?.exactGapRemaining || 0),
+      vocativeClassGapRemaining: Number(behaviorState?.vocative?.classGapRemaining || 0),
+      vocativeAnyGapRemaining: Number(behaviorState?.vocative?.anyGapRemaining || 0),
+      vocativeStrongAvoid: Boolean(behaviorState?.vocative?.strongAvoid),
+      vocativeDirectRequest: Boolean(behaviorState?.vocative?.directRequest),
+      vocativeUsed: primaryVocative?.exact || null,
+      vocativeUsedClass: primaryVocative?.semanticClass || null,
+      vocativeUsedCount: realizedVocatives.length,
+      vocativeOverride: Boolean(behaviorState?.vocative?.strongAvoid && realizedVocatives.length > 0),
       commitmentAction: appliedCommitment?.lastAction || mindTurn.mind?.commitmentAction || 'none',
       commitmentRequestedAction: mindTurn.mind?.commitmentAction || 'none',
       commitmentConflict: mindTurn.mind?.commitmentConflict || 'none',
@@ -699,6 +729,12 @@ export default async function handler(req, res) {
       commitmentSubject: appliedCommitment?.subject || mindTurn.mind?.commitmentSubject || null,
       commitmentHorizon: appliedCommitment?.horizon || null,
       activeCommitments: (stateTransition?.dialogueState?.sceneCommitments || []).filter(item => ['active', 'contested'].includes(item?.status)).length,
+      futureCallbackDetected: Boolean(detectedFutureCallback),
+      futureCallbackId: detectedFutureCallback?.id || activeFutureCallbacks[0]?.id || null,
+      futureCallbackSubject: detectedFutureCallback?.subject || activeFutureCallbacks[0]?.subject || null,
+      futureCallbackCue: detectedFutureCallback?.temporalCue || activeFutureCallbacks[0]?.temporalCue || null,
+      futureCallbackActive: activeFutureCallbacks.length,
+      futureCallbackResolvedId: resolvedFutureCallback || null,
       sharedSymbolCandidateId: sharedSymbolCandidate?.id || null,
       sharedSymbolCandidateActivation: Number(sharedSymbolCandidate?.activation || 0),
       sharedSymbolCandidateDirectRecall: Boolean(sharedSymbolCandidate?.directRecall),
@@ -720,7 +756,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.11-daily-rhythm-sleep-weekend-weather',
+        promptVersion: 'rin-mind-v2.4.12-dialogue-naturalness-continuity',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
