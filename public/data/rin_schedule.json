@@ -1,5 +1,5 @@
 {
-  "_schema": "rin-schedule-v2",
+  "_schema": "rin-schedule-v3",
   "timezone": "Asia/Tokyo",
   "location": {
     "name": "Kanazawa",
@@ -8,27 +8,9 @@
     "lon": 136.6562
   },
   "windows": [
-    {
-      "id": "morning",
-      "from": "08:00",
-      "to": "10:30",
-      "pool": "morning",
-      "probability": 0.55
-    },
-    {
-      "id": "day_ping",
-      "from": "13:00",
-      "to": "16:30",
-      "pool": "day",
-      "probability": 0.28
-    },
-    {
-      "id": "evening",
-      "from": "19:30",
-      "to": "22:30",
-      "pool": "evening",
-      "probability": 0.5
-    }
+    { "id": "morning", "from": "08:00", "to": "10:30", "pool": "morning", "probability": 0.55 },
+    { "id": "day_ping", "from": "13:00", "to": "16:30", "pool": "day", "probability": 0.28 },
+    { "id": "evening", "from": "19:30", "to": "22:30", "pool": "evening", "probability": 0.5 }
   ],
   "probability_semantics": "one_draw_per_window_when_eligible",
   "poll_interval_seconds": 60,
@@ -38,5 +20,60 @@
     "activity_min_minutes": 35,
     "activity_max_minutes": 104,
     "continue_across_messages": true
+  },
+  "weekly_rhythm": {
+    "work_days": [1, 2, 3, 4, 5],
+    "weekend_days": [0, 6],
+    "weekday": {
+      "wake_window": { "from": "06:45", "to": "07:30" },
+      "morning_personal_until": "08:00",
+      "work_blocks": [
+        { "from": "08:00", "to": "11:30" },
+        { "from": "13:00", "to": "17:30" }
+      ],
+      "midday_window": { "from": "11:30", "to": "13:30" },
+      "evening_transition": { "from": "17:30", "to": "20:00" },
+      "free_evening": { "from": "20:00", "to": "23:00" },
+      "sleep_window": { "from": "23:30", "to": "00:30" },
+      "work_default": true
+    },
+    "saturday": {
+      "wake_window": { "from": "07:30", "to": "09:30" },
+      "morning_personal_until": "10:00",
+      "work_blocks": [],
+      "midday_window": { "from": "11:30", "to": "13:30" },
+      "evening_transition": { "from": "17:30", "to": "20:00" },
+      "free_evening": { "from": "20:00", "to": "23:30" },
+      "sleep_window": { "from": "23:50", "to": "01:00" },
+      "work_default": false
+    },
+    "sunday": {
+      "wake_window": { "from": "08:00", "to": "09:30" },
+      "morning_personal_until": "10:00",
+      "work_blocks": [],
+      "midday_window": { "from": "11:30", "to": "13:30" },
+      "evening_transition": { "from": "17:30", "to": "20:00" },
+      "free_evening": { "from": "20:00", "to": "23:00" },
+      "sleep_window": { "from": "23:15", "to": "00:15" },
+      "work_default": false
+    },
+    "weekend_work": {
+      "default": "off",
+      "requires_established_reason": true,
+      "minimum_pressure": 88
+    }
+  },
+  "sleep": {
+    "target_sleep_minutes": 450,
+    "settle_after_chat_minutes": 18,
+    "continuity_grace_minutes": 30,
+    "winding_down_minutes": 60,
+    "drowsy_minutes": 20,
+    "max_debt_minutes": 300
+  },
+  "weather_grounding": {
+    "enabled": true,
+    "refresh_max_age_minutes": 20,
+    "outdoor_policy": "adapt_or_avoid"
   }
 }
