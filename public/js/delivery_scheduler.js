@@ -40,17 +40,19 @@ async function waitCancelable(ms, { shouldCancel = () => false, setTimer = setTi
 
 export function createHumanDeliveryScheduler({ random = Math.random, setTimer = setTimeout } = {}) {
   return {
-    async waitBeforeSilence({ userChars = 0, messageCount = 1, onPresence = () => {}, shouldCancel = () => false } = {}) {
+    async waitBeforeSilence({ userChars = 0, messageCount = 1, onPresence = () => {}, onRead = () => {}, shouldCancel = () => false } = {}) {
       onPresence('online');
       const readDelay = computeHumanReadDelay({ userChars, messageCount, random });
       if (!await waitCancelable(readDelay, { shouldCancel, setTimer })) return { cancelled: true, phase: 'read' };
+      onRead();
       return { cancelled: false, readDelay, composeDelay: 0 };
     },
 
-    async waitBeforeFirstSegment({ userChars = 0, messageCount = 1, firstSegment = null, onPresence = () => {}, shouldCancel = () => false } = {}) {
+    async waitBeforeFirstSegment({ userChars = 0, messageCount = 1, firstSegment = null, onPresence = () => {}, onRead = () => {}, shouldCancel = () => false } = {}) {
       onPresence('online');
       const readDelay = computeHumanReadDelay({ userChars, messageCount, random });
       if (!await waitCancelable(readDelay, { shouldCancel, setTimer })) return { cancelled: true, phase: 'read' };
+      onRead();
       onPresence('typing');
       const composeDelay = computeHumanComposeDelay({ chars: String(firstSegment?.text || '').length, kind: firstSegment?.type || 'text', random });
       if (!await waitCancelable(composeDelay, { shouldCancel, setTimer })) return { cancelled: true, phase: 'compose' };
