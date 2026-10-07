@@ -87,6 +87,7 @@ export function normalizeChatMessage(value = {}, index = 0) {
   if (kind === 'sticker' && !stickerSrc) return null;
 
   const tsNumber = Number(value.ts);
+  const readAtNumber = Number(value?.receipt?.readAt);
   return {
     schemaVersion: CHAT_SCHEMA_VERSION,
     id: cleanInlineText(value.id, 100) || `legacy-${index}-${Number.isFinite(tsNumber) ? tsNumber : Date.now()}`,
@@ -102,6 +103,9 @@ export function normalizeChatMessage(value = {}, index = 0) {
     status,
     content,
     ts: Number.isFinite(tsNumber) ? tsNumber : Date.now(),
+    ...(role === 'user' && Number.isFinite(readAtNumber) && readAtNumber > 0 ? {
+      receipt: { readAt: readAtNumber }
+    } : {}),
     ...(kind === 'silence' ? {
       silence: {
         reason: cleanInlineText(value.silence?.reason, 320) || 'осознанное молчание',
