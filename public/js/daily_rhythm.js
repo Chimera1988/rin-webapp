@@ -172,6 +172,10 @@ export function resolveDailyRhythm(env = {}, policy = {}, currentInput = {}, now
       if (!sleepStartedAt) sleepStartedAt = inferredSleepStart;
       const wasAlreadyInterrupted = sameCycle && current.sleepPhase === 'interrupted_sleep' && gapMinutes <= continuityGraceMinutes;
       if (!wasAlreadyInterrupted) interruptions += 1;
+      // A fresh/repeated wake-up must reflect the current clock immediately. Previously
+      // lateConversationMinutes advanced only on the *next* message because the first
+      // interrupted turn took this branch instead of the continuous-conversation branch.
+      lateConversationMinutes = Math.max(lateConversationMinutes, Math.round(Math.max(0, now - plannedSleepAt) / 60000));
       phase = 'interrupted_sleep';
       wakeReason = 'kirill_message';
       lastWakeAt = now;

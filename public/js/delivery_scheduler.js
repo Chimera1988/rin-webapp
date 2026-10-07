@@ -3,15 +3,19 @@ export const USER_AGGREGATION_WINDOW_MS = 1250;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
 const sample = (random, min, max) => Math.round(min + clamp(random(), 0, 1) * (max - min));
 
-export function computeHumanReadDelay({ userChars = 0, messageCount = 1, random = Math.random } = {}) {
+export function computeHumanReadDelay({ userChars = 0, messageCount = 1, denseConversation = false, random = Math.random } = {}) {
   const chars = Math.max(0, Number(userChars) || 0);
   const count = Math.max(1, Number(messageCount) || 1);
   const base = 550 + Math.min(1500, chars * 7) + Math.min(500, (count - 1) * 180);
-  return Math.round(clamp(base + sample(random, -160, 260), 450, 2400));
+  const normal = Math.round(clamp(base + sample(random, -160, 260), 450, 2400));
+  return denseConversation ? Math.round(clamp(normal * 0.55, 260, 1250)) : normal;
 }
 
-export function computeHumanComposeDelay({ chars = 0, kind = 'text', random = Math.random } = {}) {
-  if (kind === 'sticker') return sample(random, 450, 950);
+export function computeHumanComposeDelay({ chars = 0, kind = 'text', denseConversation = false, random = Math.random } = {}) {
+  if (kind === 'sticker') {
+    const normal = sample(random, 450, 950);
+    return denseConversation ? Math.round(clamp(normal * 0.6, 280, 620)) : normal;
+  }
   const length = Math.max(0, Number(chars) || 0);
   let min;
   let max;
@@ -20,10 +24,12 @@ export function computeHumanComposeDelay({ chars = 0, kind = 'text', random = Ma
   else if (length <= 160) [min, max] = [2600, 5000];
   else if (length <= 300) [min, max] = [4200, 7600];
   else [min, max] = [6500, 10500];
-  return sample(random, min, max);
+  const normal = sample(random, min, max);
+  return denseConversation ? Math.round(clamp(normal * 0.55, 500, 5800)) : normal;
 }
 
-export function computeInterSegmentDelay({ nextKind = 'text', random = Math.random } = {}) {
+export function computeInterSegmentDelay({ nextKind = 'text', denseConversation = false, random = Math.random } = {}) {
+  if (denseConversation) return nextKind === 'sticker' ? sample(random, 240, 520) : sample(random, 320, 760);
   return nextKind === 'sticker' ? sample(random, 350, 850) : sample(random, 520, 1200);
 }
 
@@ -40,32 +46,32 @@ async function waitCancelable(ms, { shouldCancel = () => false, setTimer = setTi
 
 export function createHumanDeliveryScheduler({ random = Math.random, setTimer = setTimeout } = {}) {
   return {
-    async waitBeforeSilence({ userChars = 0, messageCount = 1, onPresence = () => {}, onRead = () => {}, shouldCancel = () => false } = {}) {
+    async waitBeforeSilence({ userChars = 0, messageCount = 1, denseConversation = false, onPresence = () => {}, onRead = () => {}, shouldCancel = () => false } = {}) {
       onPresence('online');
-      const readDelay = computeHumanReadDelay({ userChars, messageCount, random });
+      const readDelay = computeHumanReadDelay({ userChars, messageCount, denseConversation, random });
       if (!await waitCancelable(readDelay, { shouldCancel, setTimer })) return { cancelled: true, phase: 'read' };
       onRead();
       return { cancelled: false, readDelay, composeDelay: 0 };
     },
 
-    async waitBeforeFirstSegment({ userChars = 0, messageCount = 1, firstSegment = null, onPresence = () => {}, onRead = () => {}, shouldCancel = () => false } = {}) {
+    async waitBeforeFirstSegment({ userChars = 0, messageCount = 1, firstSegment = null, denseConversation = false, onPresence = () => {}, onRead = () => {}, shouldCancel = () => false } = {}) {
       onPresence('online');
-      const readDelay = computeHumanReadDelay({ userChars, messageCount, random });
+      const readDelay = computeHumanReadDelay({ userChars, messageCount, denseConversation, random });
       if (!await waitCancelable(readDelay, { shouldCancel, setTimer })) return { cancelled: true, phase: 'read' };
       onRead();
       onPresence('typing');
-      const composeDelay = computeHumanComposeDelay({ chars: String(firstSegment?.text || '').length, kind: firstSegment?.type || 'text', random });
+      const composeDelay = computeHumanComposeDelay({ chars: String(firstSegment?.text || '').length, kind: firstSegment?.type || 'text', denseConversation, random });
       if (!await waitCancelable(composeDelay, { shouldCancel, setTimer })) return { cancelled: true, phase: 'compose' };
       return { cancelled: false, readDelay, composeDelay };
     },
 
-    async waitBetweenSegments({ nextSegment = null, onPresence = () => {}, shouldCancel = () => false } = {}) {
+    async waitBetweenSegments({ nextSegment = null, denseConversation = false, onPresence = () => {}, shouldCancel = () => false } = {}) {
       onPresence('online');
-      const gap = computeInterSegmentDelay({ nextKind: nextSegment?.type || 'text', random });
+      const gap = computeInterSegmentDelay({ nextKind: nextSegment?.type || 'text', denseConversation, random });
       if (!await waitCancelable(gap, { shouldCancel, setTimer })) return { cancelled: true, phase: 'gap' };
       if (nextSegment?.type === 'text') {
         onPresence('typing');
-        const composeDelay = computeHumanComposeDelay({ chars: String(nextSegment?.text || '').length, kind: 'text', random });
+        const composeDelay = computeHumanComposeDelay({ chars: String(nextSegment?.text || '').length, kind: 'text', denseConversation, random });
         if (!await waitCancelable(composeDelay, { shouldCancel, setTimer })) return { cancelled: true, phase: 'compose' };
         return { cancelled: false, gap, composeDelay };
       }
