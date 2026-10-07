@@ -59,6 +59,15 @@ const replyPreviewText = document.getElementById('replyPreviewText');
 const replyPreviewThumb = document.getElementById('replyPreviewThumb');
 const replyCancelEl = document.getElementById('replyCancel');
 const peerStatus    = document.getElementById('peerStatus');
+const chatActionsToggle = document.getElementById('chatActionsToggle');
+const chatActionsMenu = document.getElementById('chatActionsMenu');
+const selectMessagesAction = document.getElementById('selectMessagesAction');
+const copyConversationAction = document.getElementById('copyConversationAction');
+const messageSelectionBar = document.getElementById('messageSelectionBar');
+const messageSelectionCount = document.getElementById('messageSelectionCount');
+const cancelMessageSelection = document.getElementById('cancelMessageSelection');
+const copySelectedMessages = document.getElementById('copySelectedMessages');
+const chatToast = document.getElementById('chatToast');
 
 const chatViewport = createChatViewportController({
   root: document.documentElement,
@@ -627,6 +636,8 @@ function showSettingsPage(name='main'){
 
 function openSettings(){
   if (!settingsPanel) return;
+  closeChatActionsMenu();
+  if (messageSelectionActive) exitMessageSelection();
   showSettingsPage('main');
   settingsPanel.classList.remove('hidden');
   document.body.classList.add('settings-open');
@@ -649,6 +660,15 @@ settingsBackBtns.forEach(button => {
 });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
+  if (messageSelectionActive) {
+    exitMessageSelection();
+    return;
+  }
+  if (chatActionsMenu && !chatActionsMenu.hidden) {
+    closeChatActionsMenu();
+    chatActionsToggle?.focus();
+    return;
+  }
   if (replySelection) {
     clearReplySelection({ focus: true });
     return;
@@ -869,6 +889,207 @@ if (resetApp){
   };
 }
 
+/* === Управление сообщениями: выбор, копирование и статусы доставки === */
+let messageSelectionActive = false;
+const selectedMessageIds = new Set();
+let chatToastTimer = null;
+
+function setChatActionsMenuOpen(open = false) {
+  if (!chatActionsMenu || !chatActionsToggle) return;
+  const next = Boolean(open);
+  chatActionsMenu.hidden = !next;
+  chatActionsToggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+}
+
+function closeChatActionsMenu() {
+  setChatActionsMenuOpen(false);
+}
+
+function showChatToast(text, duration = 1800) {
+  if (!chatToast) return;
+  if (chatToastTimer) clearTimeout(chatToastTimer);
+  chatToast.textContent = String(text || '');
+  chatToast.hidden = false;
+  chatToastTimer = setTimeout(() => {
+    chatToast.hidden = true;
+    chatToast.textContent = '';
+  }, Math.max(700, Number(duration) || 1800));
+}
+
+function isCopyableMessage(message = null) {
+  if (!message?.id || !['user', 'assistant'].includes(message.role)) return false;
+  if (message.kind === 'silence') return false;
+  return ['text', 'voice', 'sticker'].includes(message.kind || 'text');
+}
+
+function renderedCopyableMessages() {
+  return [...chatEl.querySelectorAll('.message-row[data-message-id]')]
+    .map(row => findMessageById(row.dataset.messageId))
+    .filter(isCopyableMessage);
+}
+
+function clipboardMessageText(message = null) {
+  if (!message) return '';
+  const kind = message.kind || 'text';
+  if (kind === 'sticker') {
+    const utterance = String(message.sticker?.utterance || '').trim();
+    return utterance ? `[Стикер] ${utterance}` : '[Стикер]';
+  }
+  if (kind === 'voice') {
+    const transcript = String(message.content || '').trim();
+    return transcript ? `[Голосовое сообщение] ${transcript}` : '[Голосовое сообщение]';
+  }
+  return String(message.content || '').trim();
+}
+
+function formatMessagesForClipboard(messages = []) {
+  return messages
+    .filter(isCopyableMessage)
+    .map(message => {
+      const author = message.role === 'assistant' ? 'Рин' : 'Ты';
+      const time = fmtTime(new Date(message.ts || Date.now()));
+      const body = clipboardMessageText(message);
+      return `[${time}] ${author}: ${body}`;
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+async function writeClipboardText(text = '') {
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {}
+
+  try {
+    const helper = document.createElement('textarea');
+    helper.value = value;
+    helper.setAttribute('readonly', '');
+    helper.style.position = 'fixed';
+    helper.style.left = '-9999px';
+    helper.style.top = '0';
+    document.body.appendChild(helper);
+    helper.focus();
+    helper.select();
+    helper.setSelectionRange(0, helper.value.length);
+    const ok = document.execCommand('copy');
+    helper.remove();
+    return Boolean(ok);
+  } catch {
+    return false;
+  }
+}
+
+function renderMessageSelectionUI() {
+  chatEl.classList.toggle('is-selecting', messageSelectionActive);
+  formEl.classList.toggle('is-selecting', messageSelectionActive);
+  if (messageSelectionBar) messageSelectionBar.hidden = !messageSelectionActive;
+  if (messageSelectionCount) messageSelectionCount.textContent = String(selectedMessageIds.size);
+  if (copySelectedMessages) copySelectedMessages.disabled = selectedMessageIds.size === 0;
+
+  for (const row of chatEl.querySelectorAll('.message-row[data-message-id]')) {
+    row.classList.toggle('is-selected', selectedMessageIds.has(row.dataset.messageId));
+  }
+}
+
+function startMessageSelection() {
+  const available = renderedCopyableMessages();
+  closeChatActionsMenu();
+  if (!available.length) {
+    showChatToast('В переписке пока нечего выбирать');
+    return false;
+  }
+  clearReplySelection();
+  inputEl?.blur();
+  selectedMessageIds.clear();
+  messageSelectionActive = true;
+  renderMessageSelectionUI();
+  return true;
+}
+
+function exitMessageSelection() {
+  if (!messageSelectionActive && !selectedMessageIds.size) return;
+  messageSelectionActive = false;
+  selectedMessageIds.clear();
+  renderMessageSelectionUI();
+}
+
+function toggleSelectedMessage(messageId) {
+  const message = findMessageById(messageId);
+  if (!messageSelectionActive || !isCopyableMessage(message)) return;
+  if (selectedMessageIds.has(messageId)) selectedMessageIds.delete(messageId);
+  else selectedMessageIds.add(messageId);
+  renderMessageSelectionUI();
+}
+
+async function copyMessages(messages = [], { leaveSelection = false } = {}) {
+  const text = formatMessagesForClipboard(messages);
+  if (!text) {
+    showChatToast('Нет сообщений для копирования');
+    return false;
+  }
+  const ok = await writeClipboardText(text);
+  if (!ok) {
+    showChatToast('Не удалось скопировать сообщения', 2400);
+    return false;
+  }
+  showChatToast(messages.length === 1 ? 'Сообщение скопировано' : `Скопировано сообщений: ${messages.length}`);
+  if (!leaveSelection) exitMessageSelection();
+  return true;
+}
+
+function deliveryPresentation(status = 'complete') {
+  if (status === 'failed') return { text: '!', label: 'Не отправлено' };
+  if (status === 'pending') return { text: '✓', label: 'Отправляется' };
+  if (status === 'sent') return { text: '✓✓', label: 'Доставлено' };
+  return { text: '✓✓', label: 'Прочитано' };
+}
+
+function syncDeliveryIndicator(row = null) {
+  if (!row?.classList?.contains('me')) return;
+  const indicator = row.querySelector('.delivery-checks');
+  if (!indicator) return;
+  const state = deliveryPresentation(row.dataset.status || 'complete');
+  indicator.textContent = state.text;
+  indicator.setAttribute('aria-label', state.label);
+  indicator.title = state.label;
+}
+
+chatActionsToggle?.addEventListener('click', event => {
+  event.stopPropagation();
+  setChatActionsMenuOpen(chatActionsMenu?.hidden !== false);
+});
+selectMessagesAction?.addEventListener('click', startMessageSelection);
+copyConversationAction?.addEventListener('click', async () => {
+  closeChatActionsMenu();
+  await copyMessages(renderedCopyableMessages(), { leaveSelection: true });
+});
+cancelMessageSelection?.addEventListener('click', exitMessageSelection);
+copySelectedMessages?.addEventListener('click', async () => {
+  const ordered = renderedCopyableMessages().filter(message => selectedMessageIds.has(message.id));
+  await copyMessages(ordered);
+});
+
+document.addEventListener('click', event => {
+  if (!chatActionsMenu || chatActionsMenu.hidden) return;
+  if (chatActionsMenu.contains(event.target) || chatActionsToggle?.contains(event.target)) return;
+  closeChatActionsMenu();
+});
+
+chatEl.addEventListener('click', event => {
+  if (!messageSelectionActive) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const row = target?.closest('.message-row[data-message-id]');
+  if (!row || !chatEl.contains(row)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  toggleSelectedMessage(row.dataset.messageId);
+}, true);
+
 /* === Рендер сообщений и ответы на выбранные сообщения === */
 let replySelection = null;
 let replyFlashTimer = null;
@@ -1003,6 +1224,7 @@ function attachReplyInteraction(row, bubble, message) {
   action.innerHTML = replyIcon;
   action.addEventListener('click', event => {
     event.stopPropagation();
+    if (messageSelectionActive) return;
     selectReplyMessage(currentMessage());
   });
   const swipeIndicator = document.createElement('span');
@@ -1012,6 +1234,7 @@ function attachReplyInteraction(row, bubble, message) {
   bubble.append(action, swipeIndicator);
 
   bubble.addEventListener('contextmenu', event => {
+    if (messageSelectionActive) return;
     if (event.target.closest('button')) return;
     event.preventDefault();
     selectReplyMessage(currentMessage());
@@ -1034,6 +1257,7 @@ function attachReplyInteraction(row, bubble, message) {
   };
 
   bubble.addEventListener('pointerdown', event => {
+    if (messageSelectionActive) return;
     if (event.button != null && event.button !== 0) return;
     if (event.target.closest('button')) return;
     pointerId = event.pointerId;
@@ -1049,6 +1273,7 @@ function attachReplyInteraction(row, bubble, message) {
   });
 
   bubble.addEventListener('pointermove', event => {
+    if (messageSelectionActive) return;
     if (pointerId !== event.pointerId) return;
     const dx = event.clientX - startX;
     const dy = event.clientY - startY;
@@ -1065,6 +1290,7 @@ function attachReplyInteraction(row, bubble, message) {
   });
 
   bubble.addEventListener('pointerup', event => {
+    if (messageSelectionActive) return;
     if (pointerId !== event.pointerId) return;
     const shouldReply = !longPressed && shift >= 42;
     reset();
@@ -1078,6 +1304,22 @@ function decorateMessageRow(row, bubble, message, options = {}) {
   row.classList.add('message-row');
   if (message?.id || options.messageId) row.dataset.messageId = message?.id || options.messageId;
   if (message?.status || options.status) row.dataset.status = message?.status || options.status;
+
+  const selectionIndicator = document.createElement('span');
+  selectionIndicator.className = 'message-select-indicator';
+  selectionIndicator.textContent = '✓';
+  selectionIndicator.setAttribute('aria-hidden', 'true');
+  row.appendChild(selectionIndicator);
+
+  if (row.classList.contains('me')) {
+    const delivery = document.createElement('span');
+    delivery.className = 'delivery-checks';
+    const time = bubble.querySelector('.bubble-time');
+    if (time) time.insertAdjacentElement('afterend', delivery);
+    else bubble.appendChild(delivery);
+    syncDeliveryIndicator(row);
+  }
+
   if (message?.replySnapshot) {
     const quote = createReplyQuote(message.replySnapshot, message.inReplyTo);
     if (quote) bubble.prepend(quote);
@@ -1401,6 +1643,7 @@ function markUserMessageComplete(userMessage = null) {
   if (userRow) {
     userRow.dataset.status = 'complete';
     userRow.querySelector('.message-retry')?.remove();
+    syncDeliveryIndicator(userRow);
   }
 }
 
@@ -1785,6 +2028,7 @@ function resetBatchRows(messageIds = [], status = 'pending') {
     if (!row) continue;
     row.dataset.status = status;
     if (status !== 'failed') row.querySelector('.message-retry')?.remove();
+    syncDeliveryIndicator(row);
   }
 }
 
@@ -2033,6 +2277,7 @@ function renderFailedState(message) {
   const row = findMessageRow(message.id);
   if (!row) return;
   row.dataset.status = 'failed';
+  syncDeliveryIndicator(row);
   if (row.querySelector('.message-retry')) return;
   const retry = document.createElement('button');
   retry.type = 'button';
