@@ -8,7 +8,7 @@ import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
-import { buildBehaviorState, extractVocativeAddresses, inspectMotifNovelty } from '../lib/cognition/behavior-state.js';
+import { buildBehaviorState, extractVocativeAddresses, inspectMotifNovelty, inspectSceneClosure } from '../lib/cognition/behavior-state.js';
 import { inspectSharedSymbols } from '../lib/cognition/shared-symbols.js';
 import { buildDriveState } from '../lib/cognition/drive-state.js';
 import { inspectLifeNovelty } from '../lib/cognition/life-texture.js';
@@ -47,7 +47,9 @@ export function detectLongMode(userText) {
 
 export function detectConversationState(history = []) {
   const last = [...history].reverse().find(item => item?.role === 'user');
-  return isExplicitFarewell(last?.content) ? 'ending' : last ? 'ongoing' : 'new';
+  if (!last) return 'new';
+  if (isExplicitFarewell(last?.content)) return 'ending';
+  return inspectSceneClosure(history, last?.content || '').strong ? 'ending' : 'ongoing';
 }
 
 const PROACTIVE_TYPES = new Set(['greeting', 'scheduled', 'manual']);
@@ -756,7 +758,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.12-dialogue-naturalness-continuity',
+        promptVersion: 'rin-mind-v2.4.12.2-conversation-presence-continuity',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
