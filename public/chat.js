@@ -528,6 +528,15 @@ function buildTurnDebugSnapshot(data = null, committed = null) {
     mentalLoad: Number(sceneControl?.mentalLoad ?? data?.cognition?.innerLife?.mentalLoad ?? 0),
     needForQuiet: Number(sceneControl?.needForQuiet ?? data?.cognition?.innerLife?.needForQuiet ?? 0),
     desireToShare: Number(sceneControl?.desireToShare ?? data?.cognition?.innerLife?.desireToShare ?? 0),
+    dayType: sceneControl?.dayType || data?.cognition?.innerLife?.dayType || 'weekday',
+    workMode: sceneControl?.workMode || data?.cognition?.innerLife?.workMode || 'normal',
+    sleepPhase: sceneControl?.sleepPhase || data?.cognition?.innerLife?.sleepPhase || 'awake',
+    sleepDebtMinutes: Number(sceneControl?.sleepDebtMinutes ?? data?.cognition?.innerLife?.sleepDebtMinutes ?? 0),
+    sleepInterruptions: Number(sceneControl?.sleepInterruptions ?? data?.cognition?.innerLife?.sleepInterruptions ?? 0),
+    lateConversationMinutes: Number(sceneControl?.lateConversationMinutes ?? data?.cognition?.innerLife?.lateConversationMinutes ?? 0),
+    wakeReason: sceneControl?.wakeReason || data?.cognition?.innerLife?.wakeReason || 'unknown',
+    activitySetting: sceneControl?.activitySetting || data?.cognition?.innerLife?.activitySetting || 'unknown',
+    weatherGrounded: Boolean(sceneControl?.weatherGrounded ?? data?.cognition?.innerLife?.weatherGrounded),
     contactStance: sceneControl?.contactStance || data?.mind?.contactStance || 'open',
     selfStateDisclosure: sceneControl?.selfStateDisclosure || data?.mind?.selfStateDisclosure || 'none',
     selfStateDisclosureReason: sceneControl?.selfStateDisclosureReason || data?.mind?.selfStateDisclosureReason || '-',
@@ -574,7 +583,7 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
     const questionReason = String(decision?.question?.reason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
     const questionPressure = String(data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
     const snapshot = buildTurnDebugSnapshot(data, committed);
-    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${snapshot.intent?.status || 'none'}:${snapshot.intent?.goal || '-'}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentOp=${snapshot.operation}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; literalCorrection=${snapshot.literalCorrection}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; lifeEnergy=${snapshot.lifeEnergy}; mentalLoad=${snapshot.mentalLoad}; needQuiet=${snapshot.needForQuiet}; desireShare=${snapshot.desireToShare}; contact=${snapshot.contactStance}; selfDisclosure=${snapshot.selfStateDisclosure}; relSafety=${snapshot.relationalSafety}; statePressure=${snapshot.relationalStatePressure}; quietPresence=${snapshot.quietPresencePreferred ? 'yes' : 'no'}; shareOpportunity=${snapshot.disclosureOpportunity ? 'yes' : 'no'}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
+    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${snapshot.intent?.status || 'none'}:${snapshot.intent?.goal || '-'}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentOp=${snapshot.operation}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; literalCorrection=${snapshot.literalCorrection}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; lifeEnergy=${snapshot.lifeEnergy}; mentalLoad=${snapshot.mentalLoad}; needQuiet=${snapshot.needForQuiet}; desireShare=${snapshot.desireToShare}; dayType=${snapshot.dayType}; workMode=${snapshot.workMode}; sleep=${snapshot.sleepPhase}; sleepDebt=${snapshot.sleepDebtMinutes}; sleepInterrupt=${snapshot.sleepInterruptions}; lateChat=${snapshot.lateConversationMinutes}; wakeReason=${snapshot.wakeReason}; activitySetting=${snapshot.activitySetting}; weatherGrounded=${snapshot.weatherGrounded ? 'yes' : 'no'}; contact=${snapshot.contactStance}; selfDisclosure=${snapshot.selfStateDisclosure}; relSafety=${snapshot.relationalSafety}; statePressure=${snapshot.relationalStatePressure}; quietPresence=${snapshot.quietPresencePreferred ? 'yes' : 'no'}; shareOpportunity=${snapshot.disclosureOpportunity ? 'yes' : 'no'}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
   }
   return committed;
 }
@@ -1824,6 +1833,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     await memoryJobRunner.drain();
     const memoryModule = await ensureMemoryReady();
     const schedule = await ensureRuntimeSchedule();
+    if (environmentIsStale(schedule)) await refreshRinEnv();
     const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, '', schedule?.innerLife || {});
     const [memory, activeProfile] = await Promise.all([
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
@@ -2080,9 +2090,9 @@ async function processUserBatch(messageIds = []) {
 
   try {
     await memoryJobRunner.drain();
-    if (shouldRefreshEnvironment(combinedUserText)) await refreshRinEnv();
-    const memoryModule = await ensureMemoryReady();
     const schedule = await ensureRuntimeSchedule();
+    if (shouldRefreshEnvironment(combinedUserText) || environmentIsStale(schedule)) await refreshRinEnv();
+    const memoryModule = await ensureMemoryReady();
     const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, combinedUserText, schedule?.innerLife || {});
     const [memory, activeProfile] = await Promise.all([
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
@@ -2230,6 +2240,11 @@ async function processUserBatch(messageIds = []) {
   }
 }
 
+
+function environmentIsStale(schedule = null) {
+  const maxAgeMinutes = Math.max(5, Number(schedule?.weatherGrounding?.refreshMaxAgeMinutes || 20));
+  return !Number.isFinite(Number(currentEnv?._ts)) || Date.now() - Number(currentEnv._ts || 0) >= maxAgeMinutes * 60000;
+}
 
 async function refreshRinEnv() {
   try {
