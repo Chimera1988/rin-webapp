@@ -406,6 +406,9 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
 }
 
 export default async function handler(req, res) {
+  const handlerStartedAt = Date.now();
+  let modelStartedAt = 0;
+  let modelDurationMs = null;
   try {
     if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
@@ -494,6 +497,7 @@ export default async function handler(req, res) {
 
     const explicitPromptCache = supportsExplicitPromptCache(MIND_MODEL);
     const promptCacheKey = explicitPromptCache ? buildMindCacheKey(prompt.stableSystem, MIND_MODEL, prompt.responseFormat) : null;
+    modelStartedAt = Date.now();
     const completion = await openaiChat({
       model: MIND_MODEL,
       messages: buildMindMessages(prompt, MIND_MODEL),
@@ -503,6 +507,7 @@ export default async function handler(req, res) {
       prompt_cache_key: promptCacheKey,
       ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
     });
+    modelDurationMs = Date.now() - modelStartedAt;
 
     let mindTurn;
     let modelFallback = false;
@@ -737,6 +742,9 @@ export default async function handler(req, res) {
       futureCallbackCue: detectedFutureCallback?.temporalCue || activeFutureCallbacks[0]?.temporalCue || null,
       futureCallbackActive: activeFutureCallbacks.length,
       futureCallbackResolvedId: resolvedFutureCallback || null,
+      sceneClosureStrong: Boolean(behaviorState?.sceneClosure?.strong),
+      sceneClosureSoft: Boolean(behaviorState?.sceneClosure?.soft),
+      sceneClosureKind: behaviorState?.sceneClosure?.kind || 'none',
       sharedSymbolCandidateId: sharedSymbolCandidate?.id || null,
       sharedSymbolCandidateActivation: Number(sharedSymbolCandidate?.activation || 0),
       sharedSymbolCandidateDirectRecall: Boolean(sharedSymbolCandidate?.directRecall),
@@ -758,7 +766,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-mind-v2.4.12.2-conversation-presence-continuity',
+        promptVersion: 'rin-mind-v2.5.0-conversation-presence-natural-closure-latency',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
@@ -769,6 +777,8 @@ export default async function handler(req, res) {
         cacheMode: explicitPromptCache ? 'explicit' : 'implicit_or_legacy',
         cacheKey: promptCacheKey || null,
         cachePrefixChars: explicitPromptCache ? String(prompt.stableSystem || '').length : 0,
+        serverMs: Date.now() - handlerStartedAt,
+        modelMs: Number(modelDurationMs || 0),
         shortTermExchanges: Number(prompt?.shortTermMetrics?.exchanges || 0),
         shortTermSpeakerTurns: Number(prompt?.shortTermMetrics?.speakerTurns || 0),
         shortTermChars: Number(prompt?.shortTermMetrics?.chars || 0),
@@ -797,6 +807,12 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('Chat error', error);
     const mapped = publicError(error, 'Chat internal error');
+    const elapsed = Date.now() - handlerStartedAt;
+    mapped.body.diagnostics = {
+      serverMs: elapsed,
+      modelMs: modelDurationMs != null ? Number(modelDurationMs) : (modelStartedAt ? Math.max(0, Date.now() - modelStartedAt) : null),
+      stage: modelStartedAt ? 'model_or_post_model' : 'pre_model'
+    };
     return res.status(mapped.status).json(mapped.body);
   }
 }
