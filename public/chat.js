@@ -19,7 +19,7 @@ import { createMemoryJobRunner, enqueueMemoryJob } from './js/memory_job_queue.j
 import { activeInitiationWindow, canAutoInitiate, canGreet, initiationWindowKey, resolveInitiationPolicy } from './js/conversation_policy.js';
 import { createInitiationStateStore } from './js/initiation_state.js';
 import { createLocalSettings } from './js/local_settings.js';
-import { shouldRefreshEnvironment } from './js/environment_intent.js';
+import { environmentIntent } from './js/environment_intent.js';
 import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
 import { createPresenceController } from './js/presence_controller.js';
 import { createHumanDeliveryScheduler, createInputAggregator } from './js/delivery_scheduler.js';
@@ -126,7 +126,8 @@ let currentEnv = {
   partOfDay: '',
   userVsRinHoursDiff: 0,
   weather: null,
-  _ts: 0
+  _ts: 0,
+  _weatherTs: 0
 };
 
 function nowInTz(tz) {
@@ -1091,21 +1092,25 @@ async function copyMessages(messages = [], { leaveSelection = false } = {}) {
   return true;
 }
 
-function deliveryPresentation(status = 'complete') {
+function deliveryPresentation(message = null, statusFallback = 'complete') {
+  const status = message?.status || statusFallback;
   if (status === 'failed') return { text: '!', label: 'Не отправлено' };
   if (status === 'pending') return { text: '✓', label: 'Отправляется' };
-  if (status === 'sent') return { text: '✓✓', label: 'Доставлено' };
-  return { text: '✓✓', label: 'Прочитано' };
+  const read = Number(message?.receipt?.readAt || 0) > 0 || (status === 'complete' && !message?.receipt);
+  if (read) return { text: '✓✓', label: 'Прочитано', read: true };
+  return { text: '✓✓', label: 'Доставлено', read: false };
 }
 
 function syncDeliveryIndicator(row = null) {
   if (!row?.classList?.contains('me')) return;
   const indicator = row.querySelector('.delivery-checks');
   if (!indicator) return;
-  const state = deliveryPresentation(row.dataset.status || 'complete');
+  const message = findMessageById(row.dataset.messageId) || null;
+  const state = deliveryPresentation(message, row.dataset.status || 'complete');
   indicator.textContent = state.text;
   indicator.setAttribute('aria-label', state.label);
   indicator.title = state.label;
+  row.dataset.read = state.read === true ? 'true' : 'false';
 }
 
 chatActionsToggle?.addEventListener('click', event => {
@@ -1363,9 +1368,7 @@ function decorateMessageRow(row, bubble, message, options = {}) {
   if (row.classList.contains('me')) {
     const delivery = document.createElement('span');
     delivery.className = 'delivery-checks';
-    const time = bubble.querySelector('.bubble-time');
-    if (time) time.insertAdjacentElement('afterend', delivery);
-    else bubble.appendChild(delivery);
+    bubble.appendChild(delivery);
     syncDeliveryIndicator(row);
   }
 
@@ -1694,6 +1697,29 @@ function markUserMessageComplete(userMessage = null) {
     userRow.querySelector('.message-retry')?.remove();
     syncDeliveryIndicator(userRow);
   }
+}
+
+function markUserMessageRead(userMessage = null, readAt = Date.now()) {
+  if (!userMessage?.id) return false;
+  const timestamp = Number(readAt) || Date.now();
+  const current = history.find(item => item?.id === userMessage.id && item?.role === 'user');
+  if (!current) return false;
+  if (Number(current?.receipt?.readAt || 0) > 0) return false;
+  const next = updateMessage(history, userMessage.id, { receipt: { readAt: timestamp } });
+  const userRow = findMessageRow(userMessage.id);
+  if (userRow) syncDeliveryIndicator(userRow);
+  return Boolean(next);
+}
+
+function markUserBatchRead(messageIds = []) {
+  let changed = false;
+  const readAt = Date.now();
+  for (const id of messageIds) {
+    const message = history.find(item => item?.id === id && item?.role === 'user');
+    if (message && markUserMessageRead(message, readAt)) changed = true;
+  }
+  if (changed) saveHistory(history);
+  return changed;
 }
 
 function markUserBatchComplete(messageIds = []) {
@@ -2126,7 +2152,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     await memoryJobRunner.drain();
     const memoryModule = await ensureMemoryReady();
     const schedule = await ensureRuntimeSchedule();
-    if (environmentIsStale(schedule)) await refreshRinEnv();
+    await refreshRinEnv({ refreshWeather: environmentIsStale(schedule) });
     const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, '', schedule?.innerLife || {});
     const [memory, activeProfile] = await Promise.all([
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
@@ -2385,7 +2411,8 @@ async function processUserBatch(messageIds = []) {
   try {
     await memoryJobRunner.drain();
     const schedule = await ensureRuntimeSchedule();
-    if (shouldRefreshEnvironment(combinedUserText) || environmentIsStale(schedule)) await refreshRinEnv();
+    const envIntent = environmentIntent(combinedUserText);
+    await refreshRinEnv({ refreshWeather: envIntent === 'weather' || environmentIsStale(schedule) });
     const memoryModule = await ensureMemoryReady();
     const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, combinedUserText, schedule?.innerLife || {});
     const [memory, activeProfile] = await Promise.all([
@@ -2463,6 +2490,7 @@ async function processUserBatch(messageIds = []) {
           userChars: combinedUserText.length,
           messageCount: messages.length,
           onPresence,
+          onRead: () => markUserBatchRead(ids),
           shouldCancel: () => inputEpoch !== epochAtStart
         })
       : await humanDeliveryScheduler.waitBeforeFirstSegment({
@@ -2470,6 +2498,7 @@ async function processUserBatch(messageIds = []) {
           messageCount: messages.length,
           firstSegment: preparedDelivery.segments[0],
           onPresence,
+          onRead: () => markUserBatchRead(ids),
           shouldCancel: () => inputEpoch !== epochAtStart
         });
 
@@ -2537,27 +2566,36 @@ async function processUserBatch(messageIds = []) {
 
 function environmentIsStale(schedule = null) {
   const maxAgeMinutes = Math.max(5, Number(schedule?.weatherGrounding?.refreshMaxAgeMinutes || 20));
-  return !Number.isFinite(Number(currentEnv?._ts)) || Date.now() - Number(currentEnv._ts || 0) >= maxAgeMinutes * 60000;
+  const weatherTs = Number(currentEnv?._weatherTs || 0);
+  return !Number.isFinite(weatherTs) || weatherTs <= 0 || Date.now() - weatherTs >= maxAgeMinutes * 60000;
 }
 
-async function refreshRinEnv() {
+async function refreshRinEnv({ refreshWeather = true } = {}) {
   try {
     const schedule = await ensureRuntimeSchedule();
     if (!schedule?.timezone) return;
     const rin = nowInTz(schedule.timezone);
     const monthIdx = rin.getMonth();
+    const priorWeather = currentEnv?.weather || null;
+    const priorWeatherTs = Number(currentEnv?._weatherTs || (priorWeather ? currentEnv?._ts : 0) || 0);
     const env = {
       _ts: Date.now(),
+      _weatherTs: Number.isFinite(priorWeatherTs) ? priorWeatherTs : 0,
       rinTz: schedule.timezone,
       rinHuman: fmtRinHuman(rin),
       season: seasonFromMonth(monthIdx),
       month: monthNameRu(monthIdx),
       partOfDay: partOfDayFromHour(rin.getHours()),
       userVsRinHoursDiff: hoursDiffWithRin(schedule.timezone),
-      weather: null
+      weather: priorWeather
     };
-    const weather = await fetchRinWeather(schedule.location);
-    if (weather) env.weather = weather;
+    if (refreshWeather || !priorWeather) {
+      const weather = await fetchRinWeather(schedule.location);
+      if (weather) {
+        env.weather = weather;
+        env._weatherTs = Date.now();
+      }
+    }
     currentEnv = env;
   } catch (error) {
     dbg('refresh env failed: ' + (error?.message || error));

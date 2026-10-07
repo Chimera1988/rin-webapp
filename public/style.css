@@ -338,7 +338,11 @@ body.chat-app {
   backdrop-filter: blur(18px) saturate(1.12);
 }
 .bubble.her { background: linear-gradient(145deg, var(--bubble-her), color-mix(in srgb, var(--bubble-her) 82%, var(--surface-soft))); }
-.bubble.me { background: linear-gradient(145deg, var(--bubble-me), color-mix(in srgb, var(--bubble-me) 76%, var(--surface))); }
+.bubble.me {
+  padding-right: 29px;
+  padding-bottom: 13px;
+  background: linear-gradient(145deg, var(--bubble-me), color-mix(in srgb, var(--bubble-me) 76%, var(--surface)));
+}
 .bubble::after {
   content: "";
   position: absolute;
@@ -678,19 +682,23 @@ body.chat-app {
 .chat.is-selecting .reply-swipe-indicator { display: none !important; }
 
 .delivery-checks {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
+  z-index: 2;
   display: inline-flex;
-  min-width: 12px;
+  min-width: 10px;
   align-items: center;
   justify-content: flex-end;
-  margin-left: 3px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: -3px;
+  line-height: 1;
+  letter-spacing: -2.4px;
   white-space: nowrap;
-  vertical-align: baseline;
+  pointer-events: none;
 }
-.message-row[data-status="complete"] .delivery-checks { color: var(--accent); }
+.message-row[data-read="true"] .delivery-checks { color: var(--accent); }
 .message-row[data-status="failed"] .delivery-checks {
   color: #da4858;
   letter-spacing: 0;
