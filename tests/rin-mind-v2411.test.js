@@ -116,9 +116,10 @@ test('v2.4.11 memory simulation does not generate work at 05:50 or on a normal w
   }
 });
 
-test('v2.4.11 chat refreshes stale environment before life selection', async () => {
+test('v2.4.11+ chat refreshes local Rin time every turn while weather keeps stale/intent refresh gating', async () => {
   const chat = await readFile(new URL('../public/chat.js', import.meta.url), 'utf8');
   assert.match(chat, /environmentIsStale\(schedule\)/u);
-  assert.match(chat, /shouldRefreshEnvironment\(combinedUserText\) \|\| environmentIsStale\(schedule\)/u);
+  assert.match(chat, /const envIntent = environmentIntent\(combinedUserText\)/u);
+  assert.match(chat, /await refreshRinEnv\(\{ refreshWeather: envIntent === 'weather' \|\| environmentIsStale\(schedule\) \}\)/u);
   assert.match(chat, /fetchRinWeather\(schedule\.location\)/u);
 });

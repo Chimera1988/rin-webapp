@@ -28,6 +28,17 @@ test('typed voice and sticker messages survive persistence and reload', () => {
   assert.equal(loaded[1].sticker.src, '/stickers/tender_soft_smile.webp');
 });
 
+test('user read receipt is persisted independently from transport completion status', () => {
+  const storage = new MemoryStorage();
+  const history = [
+    createChatMessage({ role: 'user', status: 'sent', content: 'прочти меня', id: 'u-read', receipt: { readAt: 123456 } })
+  ];
+  assert.equal(saveChatHistory(history, storage), true);
+  const [loaded] = loadChatHistory(storage);
+  assert.equal(loaded.status, 'failed');
+  assert.equal(loaded.receipt.readAt, 123456);
+});
+
 
 test('durable history mutation rolls back in-memory state when persistence fails', () => {
   const history = [createChatMessage({ role: 'user', status: 'failed', content: 'retry me', id: 'u-quota' })];

@@ -4,6 +4,7 @@ import { createPresenceController, PRESENCE_LABELS } from '../public/js/presence
 
 class FakeClock {
   #nextId = 1; #now = 0; #tasks = new Map();
+  now = () => this.#now;
   setTimer = (callback, delay) => { const id = this.#nextId++; this.#tasks.set(id, { at: this.#now + Number(delay || 0), callback }); return id; };
   clearTimer = id => this.#tasks.delete(id);
   tick(ms) {
@@ -22,6 +23,7 @@ function fixture() {
   const controller = createPresenceController({
     render: (mode,label) => rendered.push({mode,label}), random: () => 0,
     setTimer: clock.setTimer, clearTimer: clock.clearTimer,
+    now: clock.now,
     isTransportOnline: () => online, isVisible: () => visible
   });
   return { clock, controller, rendered, setOnline:v=>{online=v;}, setVisible:v=>{visible=v;}, typingCalls:()=>typingCalls,
@@ -40,7 +42,7 @@ test('presence timing is externally driven: begin -> online, scheduler phase -> 
   f.controller.setOnline(turn);
   assert.equal(f.controller.getSnapshot().mode, 'online');
   f.controller.finishTurn(turn);
-  f.clock.tick(22_000);
+  f.clock.tick(45_000);
   assert.equal(f.controller.getSnapshot().mode, 'offline');
   assert.equal(PRESENCE_LABELS.offline, 'не в сети');
 });
@@ -80,4 +82,18 @@ test('proactive initiative can expose online only while an actual proactive turn
   assert.equal(f.controller.getSnapshot().engaged, false);
   f.controller.finishTurn(turn);
   assert.equal(f.controller.getSnapshot().mode, 'online');
+});
+
+test('dense conversation keeps Rin online across normal reply gaps instead of bouncing offline each turn', () => {
+  const f = fixture();
+  const first = f.begin({ userInitiated: true });
+  f.controller.finishTurn(first);
+  f.clock.tick(30_000);
+  const second = f.begin({ userInitiated: true });
+  f.controller.finishTurn(second);
+  assert.equal(f.controller.getSnapshot().dense, true);
+  f.clock.tick(179_999);
+  assert.equal(f.controller.getSnapshot().mode, 'online');
+  f.clock.tick(1);
+  assert.equal(f.controller.getSnapshot().mode, 'offline');
 });

@@ -28,19 +28,28 @@ test('human timing scales with content and remains bounded instead of displaying
 
 test('scheduler owns presence timing: read online, then typing, while silence never fakes typing', async () => {
   const presence = [];
+  const phases = [];
   const scheduler = createHumanDeliveryScheduler({ random: () => 0, setTimer: immediateTimer });
   const text = await scheduler.waitBeforeFirstSegment({
     userChars: 30,
     firstSegment: { type: 'text', text: 'Небольшой ответ.' },
-    onPresence: mode => presence.push(mode)
+    onPresence: mode => { presence.push(mode); phases.push(mode); },
+    onRead: () => phases.push('read')
   });
   assert.equal(text.cancelled, false);
   assert.deepEqual(presence, ['online', 'typing']);
+  assert.deepEqual(phases, ['online', 'read', 'typing']);
 
   presence.length = 0;
-  const silence = await scheduler.waitBeforeSilence({ userChars: 20, onPresence: mode => presence.push(mode) });
+  phases.length = 0;
+  const silence = await scheduler.waitBeforeSilence({
+    userChars: 20,
+    onPresence: mode => { presence.push(mode); phases.push(mode); },
+    onRead: () => phases.push('read')
+  });
   assert.equal(silence.cancelled, false);
   assert.deepEqual(presence, ['online']);
+  assert.deepEqual(phases, ['online', 'read']);
 });
 
 test('prepared delivery can be cancelled before semantic commit during human delay', async () => {

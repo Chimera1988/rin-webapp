@@ -131,7 +131,7 @@ test('v2.4.12 API and client debug expose vocative telemetry without a second mo
   assert.match(api, /extractVocativeAddresses\(reply\)/u);
   assert.match(api, /vocativePressure/u);
   assert.match(api, /vocativeOverride/u);
-  assert.match(api, /rin-mind-v2\.4\.12-dialogue-naturalness-continuity/u);
+  assert.match(api, /rin-mind-v2\.4\.12\.2-conversation-presence-continuity/u);
   assert.match(client, /vocPressure=/u);
   assert.match(client, /vocCooldown=/u);
   assert.match(client, /vocOverride=/u);
