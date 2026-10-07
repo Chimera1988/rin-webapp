@@ -138,6 +138,20 @@ test('v2.4.12 API and client debug expose vocative telemetry without a second mo
 });
 
 
+test('v2.4.12.1 client transport preserves daily-rhythm, sleep, weather and persistent-life fields', async () => {
+  const client = await readFile(new URL('../public/chat.js', import.meta.url), 'utf8');
+  for (const field of [
+    'dayType', 'dayOfWeek', 'workday', 'workMode', 'activitySetting', 'weatherGrounded', 'weatherContext',
+    'mentalLoad', 'needForQuiet', 'desireToShare', 'unfinishedThought', 'carryover',
+    'sleepPhase', 'sleepCycle', 'plannedSleepAt', 'plannedWakeAt', 'sleepStartedAt', 'lastWakeAt',
+    'lastSleepMinutes', 'sleepDebtMinutes', 'sleepInterruptions', 'lateConversationMinutes', 'wakeReason', 'sleepCarryover',
+    'lastStateAt'
+  ]) {
+    assert.match(client, new RegExp(`\\b${field}:`), `missing innerLife transport field: ${field}`);
+  }
+});
+
+
 const baseDecision = {
   act: 'respond_personally',
   focus: 'ответить естественно',
