@@ -613,6 +613,9 @@ function buildTurnDebugSnapshot(data = null, committed = null) {
     futureCallbackCue: sceneControl?.futureCallbackCue || '-',
     futureCallbackActive: Number(sceneControl?.futureCallbackActive || 0),
     futureCallbackResolvedId: sceneControl?.futureCallbackResolvedId || '-',
+    sceneClosureStrong: Boolean(sceneControl?.sceneClosureStrong ?? data?.cognition?.behaviorState?.sceneClosure?.strong),
+    sceneClosureSoft: Boolean(sceneControl?.sceneClosureSoft ?? data?.cognition?.behaviorState?.sceneClosure?.soft),
+    sceneClosureKind: sceneControl?.sceneClosureKind || data?.cognition?.behaviorState?.sceneClosure?.kind || 'none',
     sharedSymbolCandidateId: sceneControl?.sharedSymbolCandidateId || '-',
     sharedSymbolCandidateActivation: Number(sceneControl?.sharedSymbolCandidateActivation || 0),
     sharedSymbolCandidateDirectRecall: Boolean(sceneControl?.sharedSymbolCandidateDirectRecall),
@@ -642,7 +645,7 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
     const questionReason = String(decision?.question?.reason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
     const questionPressure = String(data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
     const snapshot = buildTurnDebugSnapshot(data, committed);
-    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${snapshot.intent?.status || 'none'}:${snapshot.intent?.goal || '-'}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentOp=${snapshot.operation}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; literalCorrection=${snapshot.literalCorrection}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; lifeEnergy=${snapshot.lifeEnergy}; mentalLoad=${snapshot.mentalLoad}; needQuiet=${snapshot.needForQuiet}; desireShare=${snapshot.desireToShare}; dayType=${snapshot.dayType}; workMode=${snapshot.workMode}; sleep=${snapshot.sleepPhase}; sleepDebt=${snapshot.sleepDebtMinutes}; sleepInterrupt=${snapshot.sleepInterruptions}; lateChat=${snapshot.lateConversationMinutes}; wakeReason=${snapshot.wakeReason}; activitySetting=${snapshot.activitySetting}; weatherGrounded=${snapshot.weatherGrounded ? 'yes' : 'no'}; contact=${snapshot.contactStance}; selfDisclosure=${snapshot.selfStateDisclosure}; relSafety=${snapshot.relationalSafety}; statePressure=${snapshot.relationalStatePressure}; quietPresence=${snapshot.quietPresencePreferred ? 'yes' : 'no'}; shareOpportunity=${snapshot.disclosureOpportunity ? 'yes' : 'no'}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; vocative=${String(snapshot.vocativeUsed || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeUsedClass}; vocPressure=${snapshot.vocativePressure}; vocRecent=${snapshot.vocativeRecent6}/6; vocStreak=${snapshot.vocativeStreak}; vocGap=${snapshot.vocativeTurnsSinceAny}; vocCooldown=${snapshot.vocativeAnyGapRemaining}/${snapshot.vocativeClassGapRemaining}/${snapshot.vocativeExactGapRemaining}; vocLast=${String(snapshot.vocativeLastExact || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeLastClass}; vocAvoid=${snapshot.vocativeStrongAvoid ? 'yes' : 'no'}; vocDirect=${snapshot.vocativeDirectRequest ? 'yes' : 'no'}; vocOverride=${snapshot.vocativeOverride ? 'yes' : 'no'}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; callback=${snapshot.futureCallbackDetected ? 'new' : 'carry'}:${snapshot.futureCallbackCue}:${String(snapshot.futureCallbackSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; callbackActive=${snapshot.futureCallbackActive}; callbackResolved=${String(snapshot.futureCallbackResolvedId || '-').slice(-12)}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
+    dbg(`turn state committed: rev=${committed.conversationState?.revision || 0}; mood=${committed.mood.label}; emotion=${committed.conversationState?.emotionalState?.primary?.type || 'none'}; momentum=${committed.conversationState?.emotionalState?.momentum?.direction || 'steady'}; intent=${snapshot.intent?.status || 'none'}:${snapshot.intent?.goal || '-'}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentOp=${snapshot.operation}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; literalCorrection=${snapshot.literalCorrection}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; lifeEnergy=${snapshot.lifeEnergy}; mentalLoad=${snapshot.mentalLoad}; needQuiet=${snapshot.needForQuiet}; desireShare=${snapshot.desireToShare}; dayType=${snapshot.dayType}; workMode=${snapshot.workMode}; sleep=${snapshot.sleepPhase}; sleepDebt=${snapshot.sleepDebtMinutes}; sleepInterrupt=${snapshot.sleepInterruptions}; lateChat=${snapshot.lateConversationMinutes}; wakeReason=${snapshot.wakeReason}; activitySetting=${snapshot.activitySetting}; weatherGrounded=${snapshot.weatherGrounded ? 'yes' : 'no'}; contact=${snapshot.contactStance}; selfDisclosure=${snapshot.selfStateDisclosure}; relSafety=${snapshot.relationalSafety}; statePressure=${snapshot.relationalStatePressure}; quietPresence=${snapshot.quietPresencePreferred ? 'yes' : 'no'}; shareOpportunity=${snapshot.disclosureOpportunity ? 'yes' : 'no'}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; vocative=${String(snapshot.vocativeUsed || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeUsedClass}; vocPressure=${snapshot.vocativePressure}; vocRecent=${snapshot.vocativeRecent6}/6; vocStreak=${snapshot.vocativeStreak}; vocGap=${snapshot.vocativeTurnsSinceAny}; vocCooldown=${snapshot.vocativeAnyGapRemaining}/${snapshot.vocativeClassGapRemaining}/${snapshot.vocativeExactGapRemaining}; vocLast=${String(snapshot.vocativeLastExact || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeLastClass}; vocAvoid=${snapshot.vocativeStrongAvoid ? 'yes' : 'no'}; vocDirect=${snapshot.vocativeDirectRequest ? 'yes' : 'no'}; vocOverride=${snapshot.vocativeOverride ? 'yes' : 'no'}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; callback=${snapshot.futureCallbackDetected ? 'new' : 'carry'}:${snapshot.futureCallbackCue}:${String(snapshot.futureCallbackSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; callbackActive=${snapshot.futureCallbackActive}; callbackResolved=${String(snapshot.futureCallbackResolvedId || '-').slice(-12)}; closure=${snapshot.sceneClosureStrong ? 'strong' : snapshot.sceneClosureSoft ? 'soft' : 'no'}:${snapshot.sceneClosureKind}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; action=${decision?.act || 'respond_personally'}; q=${decision?.question?.mode || 'none'}:${questionReason}; qPressure=${questionPressure}`);
   }
   return committed;
 }
@@ -1685,7 +1688,7 @@ async function requestChatTurn(payload = {}) {
     method: 'POST',
     headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload)
-  }, 45_000);
+  }, 52_000);
 }
 
 function markUserMessageComplete(userMessage = null) {
@@ -1966,7 +1969,7 @@ async function renderPreparedSegment(segment, prepared) {
   return null;
 }
 
-async function deliverCommittedAssistantTurn(prepared, { presenceTurn = null, scheduler = null, startIndex = 0 } = {}) {
+async function deliverCommittedAssistantTurn(prepared, { presenceTurn = null, scheduler = null, startIndex = 0, denseConversation = false, timing = null } = {}) {
   if (prepared?.type === 'silence') {
     const message = prepared.silenceMessage;
     if (message) updateMessage(history, message.id, { status: 'complete', errorCode: null });
@@ -1989,7 +1992,11 @@ async function deliverCommittedAssistantTurn(prepared, { presenceTurn = null, sc
   for (let index = Math.max(0, startIndex); index < prepared.segments.length; index += 1) {
     const segment = prepared.segments[index];
     if (index > startIndex && scheduler) {
-      await scheduler.waitBetweenSegments({ nextSegment: segment, onPresence: setPresence, shouldCancel: () => false });
+      const between = await scheduler.waitBetweenSegments({ nextSegment: segment, denseConversation, onPresence: setPresence, shouldCancel: () => false });
+      if (timing) {
+        timing.segmentGapMs = Number(timing.segmentGapMs || 0) + Number(between?.gap || 0);
+        timing.interComposeMs = Number(timing.interComposeMs || 0) + Number(between?.composeDelay || 0);
+      }
     }
     typingRow = setTypingRow(typingRow, 'online');
     lastKind = await renderPreparedSegment(segment, prepared);
@@ -2069,7 +2076,7 @@ function stickerDebugSummary(data = null, committed = null) {
     : `${Number(state?.usedStickerTurns || 0)}/${state?.limitStickerTurns ?? '-'}`;
   const snapshot = buildTurnDebugSnapshot(data, committed);
   const tokenSummary = metrics
-    ? `; model=${data?.model?.mind || '-'}; reasoning=${metrics?.reasoningEffort || '-'}; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; cached=${Number(metrics?.cachedInputTokens || 0)}; cacheWrite=${Number(metrics?.cacheWriteTokens || 0)}; reasoningTokens=${Number(metrics?.reasoningTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; intentOp=${snapshot.operation}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; literalCorrection=${snapshot.literalCorrection}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; vocative=${String(snapshot.vocativeUsed || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeUsedClass}; vocPressure=${snapshot.vocativePressure}; vocRecent=${snapshot.vocativeRecent6}/6; vocStreak=${snapshot.vocativeStreak}; vocGap=${snapshot.vocativeTurnsSinceAny}; vocCooldown=${snapshot.vocativeAnyGapRemaining}/${snapshot.vocativeClassGapRemaining}/${snapshot.vocativeExactGapRemaining}; vocLast=${String(snapshot.vocativeLastExact || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeLastClass}; vocAvoid=${snapshot.vocativeStrongAvoid ? 'yes' : 'no'}; vocDirect=${snapshot.vocativeDirectRequest ? 'yes' : 'no'}; vocOverride=${snapshot.vocativeOverride ? 'yes' : 'no'}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; callback=${snapshot.futureCallbackDetected ? 'new' : 'carry'}:${snapshot.futureCallbackCue}:${String(snapshot.futureCallbackSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; callbackActive=${snapshot.futureCallbackActive}; callbackResolved=${String(snapshot.futureCallbackResolvedId || '-').slice(-12)}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; shortTerm=${Number(metrics?.shortTermExchanges || 0)}ex/${Number(metrics?.shortTermSpeakerTurns || 0)}turns/${Number(metrics?.shortTermChars || 0)}c; cacheMode=${metrics?.cacheMode || '-'}; cachePrefixChars=${Number(metrics?.cachePrefixChars || 0)}; cacheKey=${String(metrics?.cacheKey || '-').slice(-12)}`
+    ? `; model=${data?.model?.mind || '-'}; reasoning=${metrics?.reasoningEffort || '-'}; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; cached=${Number(metrics?.cachedInputTokens || 0)}; cacheWrite=${Number(metrics?.cacheWriteTokens || 0)}; reasoningTokens=${Number(metrics?.reasoningTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; intentOp=${snapshot.operation}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; literalCorrection=${snapshot.literalCorrection}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; vocative=${String(snapshot.vocativeUsed || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeUsedClass}; vocPressure=${snapshot.vocativePressure}; vocRecent=${snapshot.vocativeRecent6}/6; vocStreak=${snapshot.vocativeStreak}; vocGap=${snapshot.vocativeTurnsSinceAny}; vocCooldown=${snapshot.vocativeAnyGapRemaining}/${snapshot.vocativeClassGapRemaining}/${snapshot.vocativeExactGapRemaining}; vocLast=${String(snapshot.vocativeLastExact || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeLastClass}; vocAvoid=${snapshot.vocativeStrongAvoid ? 'yes' : 'no'}; vocDirect=${snapshot.vocativeDirectRequest ? 'yes' : 'no'}; vocOverride=${snapshot.vocativeOverride ? 'yes' : 'no'}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; callback=${snapshot.futureCallbackDetected ? 'new' : 'carry'}:${snapshot.futureCallbackCue}:${String(snapshot.futureCallbackSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; callbackActive=${snapshot.futureCallbackActive}; callbackResolved=${String(snapshot.futureCallbackResolvedId || '-').slice(-12)}; closure=${snapshot.sceneClosureStrong ? 'strong' : snapshot.sceneClosureSoft ? 'soft' : 'no'}:${snapshot.sceneClosureKind}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; shortTerm=${Number(metrics?.shortTermExchanges || 0)}ex/${Number(metrics?.shortTermSpeakerTurns || 0)}turns/${Number(metrics?.shortTermChars || 0)}c; cacheMode=${metrics?.cacheMode || '-'}; cachePrefixChars=${Number(metrics?.cachePrefixChars || 0)}; cacheKey=${String(metrics?.cacheKey || '-').slice(-12)}; serverMs=${Number(metrics?.serverMs || 0)}; modelMs=${Number(metrics?.modelMs || 0)}`
     : '';
   return `; stickerMode=${state?.mode || '-'}; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerHard=${state?.hardAvailable === true ? 'yes' : 'no'}:${state?.hardReason || '-'}; stickerBudget=${budget}; stickerTurns=${state?.semanticAssistantTurns ?? '-'}; stickerGap=${state?.turnsSinceSticker ?? '-'}/${state?.requiredGapTurns ?? '-'}; stickerCooldown=${state?.cooldownRemainingTurns ?? '-'}; stickerGapOk=${state?.gapSatisfied === true ? 'yes' : 'no'}; stickerLastTurn=${String(state?.lastStickerTurnKey || '-').slice(-18)}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}${tokenSummary}`;
 }
@@ -2397,8 +2404,14 @@ async function processUserBatch(messageIds = []) {
   let stateCommitted = false;
   let preparedDelivery = null;
   let preparedPersisted = false;
+  const turnStartedAt = Date.now();
+  let requestStartedAt = 0;
+  let requestMs = 0;
+  let waitResult = null;
+  const deliveryTiming = { segmentGapMs: 0, interComposeMs: 0 };
   const typingRowRef = { current: null };
   const presenceTurn = presence.beginTurn({ userInitiated: true });
+  const denseConversation = presence.getSnapshot().dense === true;
   const finishPresence = () => {
     if (presenceFinished) return;
     presenceFinished = true;
@@ -2419,6 +2432,7 @@ async function processUserBatch(messageIds = []) {
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
       ensureActiveProfile()
     ]);
+    requestStartedAt = Date.now();
     const response = await requestChatTurn({
       requestId,
       history: toApiHistory(history, requestId),
@@ -2434,6 +2448,7 @@ async function processUserBatch(messageIds = []) {
     });
     let data = {};
     try { data = await response.json(); } catch {}
+    requestMs = requestStartedAt ? Math.max(0, Date.now() - requestStartedAt) : 0;
     if (response.status === 401) {
       removeStoredPin();
       window.location.replace('/login');
@@ -2447,6 +2462,9 @@ async function processUserBatch(messageIds = []) {
       error.rewriteableWarnings = Array.isArray(data?.rewriteableWarnings) ? data.rewriteableWarnings.slice(0, 12) : [];
       error.validationClass = data?.validationClass || null;
       error.attempts = Number.isFinite(Number(data?.attempts)) ? Number(data.attempts) : null;
+      error.httpStatus = Number(response.status) || null;
+      error.serverDiagnostics = data?.diagnostics && typeof data.diagnostics === 'object' ? data.diagnostics : null;
+      error.requestMs = requestMs;
       throw error;
     }
     if (data.requestId && data.requestId !== requestId) {
@@ -2485,10 +2503,11 @@ async function processUserBatch(messageIds = []) {
       return;
     }
 
-    const waitResult = preparedDelivery.type === 'silence'
+    waitResult = preparedDelivery.type === 'silence'
       ? await humanDeliveryScheduler.waitBeforeSilence({
           userChars: combinedUserText.length,
           messageCount: messages.length,
+          denseConversation,
           onPresence,
           onRead: () => markUserBatchRead(ids),
           shouldCancel: () => inputEpoch !== epochAtStart
@@ -2497,6 +2516,7 @@ async function processUserBatch(messageIds = []) {
           userChars: combinedUserText.length,
           messageCount: messages.length,
           firstSegment: preparedDelivery.segments[0],
+          denseConversation,
           onPresence,
           onRead: () => markUserBatchRead(ids),
           shouldCancel: () => inputEpoch !== epochAtStart
@@ -2526,7 +2546,9 @@ async function processUserBatch(messageIds = []) {
 
     const kind = await deliverCommittedAssistantTurn(preparedDelivery, {
       presenceTurn,
-      scheduler: humanDeliveryScheduler
+      scheduler: humanDeliveryScheduler,
+      denseConversation,
+      timing: deliveryTiming
     });
     saveHistory(history);
     finishPresence();
@@ -2536,7 +2558,8 @@ async function processUserBatch(messageIds = []) {
       enqueueMemoryJob({ id: requestId, userText: combinedUserText, assistantText: memoryText }, localStorage);
       void memoryJobRunner.drain();
     }
-    dbg(`reply complete: request=${requestId}; kind=${kind}; segments=${preparedDelivery.segments?.length || 0}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data, committedState)}`);
+    const totalVisibleMs = Math.max(0, Date.now() - turnStartedAt);
+    dbg(`reply complete: request=${requestId}; kind=${kind}; segments=${preparedDelivery.segments?.length || 0}; build=${RIN_BUILD_VERSION}${stickerDebugSummary(data, committedState)}; requestMs=${requestMs}; readDelayMs=${Number(waitResult?.readDelay || 0)}; composeDelayMs=${Number(waitResult?.composeDelay || 0)}; segmentGapMs=${Number(deliveryTiming.segmentGapMs || 0)}; interComposeMs=${Number(deliveryTiming.interComposeMs || 0)}; totalVisibleMs=${totalVisibleMs}; denseTiming=${denseConversation ? 'yes' : 'no'}`);
   } catch (error) {
     if (stateCommitted) {
       markUserBatchComplete(ids);
@@ -2551,6 +2574,13 @@ async function processUserBatch(messageIds = []) {
     addBubble(userFacingError(code), 'assistant');
     finishPresence();
     const diagnostics = [];
+    const failedRequestMs = Number(error?.requestMs || 0) || (requestStartedAt ? Math.max(0, Date.now() - requestStartedAt) : 0);
+    if (failedRequestMs) diagnostics.push(`requestMs=${failedRequestMs}`);
+    if (Number.isFinite(Number(error?.httpStatus))) diagnostics.push(`http=${Number(error.httpStatus)}`);
+    if (Number.isFinite(Number(error?.serverDiagnostics?.serverMs))) diagnostics.push(`serverMs=${Number(error.serverDiagnostics.serverMs)}`);
+    if (Number.isFinite(Number(error?.serverDiagnostics?.modelMs))) diagnostics.push(`modelMs=${Number(error.serverDiagnostics.modelMs)}`);
+    if (error?.serverDiagnostics?.stage) diagnostics.push(`stage=${String(error.serverDiagnostics.stage).slice(0, 40)}`);
+    if (error?.message && !['Upstream timeout'].includes(String(error.message))) diagnostics.push(`error=${String(error.message).replace(/\s+/g, ' ').slice(0, 100)}`);
     if (Number.isFinite(Number(error?.attempts))) diagnostics.push(`attempts=${Number(error.attempts)}`);
     if (error?.validationClass) diagnostics.push(`class=${String(error.validationClass).slice(0, 80)}`);
     if (Array.isArray(error?.warnings) && error.warnings.length) diagnostics.push(`warnings=${error.warnings.join('|')}`);
