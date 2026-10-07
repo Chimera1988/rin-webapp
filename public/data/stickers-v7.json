@@ -3,7 +3,7 @@
   "defaults": {
     "rollingWindowTurns": 10,
     "minGapAssistantTurns": 2,
-    "explicitGestureMinGapAssistantTurns": 0,
+    "explicitGestureMinGapAssistantTurns": 1,
     "recentAssetWindow": 8,
     "semanticContract": "sticker-emotion-v3",
     "selectionMode": "exact_semantic_intent"
