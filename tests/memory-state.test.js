@@ -55,7 +55,7 @@ test('legacy top-level open loops migrate once into canonical ConversationState 
     ]
   }));
   let diary = await memory.loadDiary();
-  assert.equal(diary._schema, 8);
+  assert.equal(diary._schema, 9);
   assert.equal('openLoops' in diary, false);
   assert.deepEqual(diary.conversationState.openLoops.map(item => item.id), ['loop-a','loop-b']);
   await memory.commitTurnState({ requestId:'resolve-loop-a', now:5000, stateTransition:{ resolvedLoopIds:['loop-a'] } });
@@ -67,7 +67,7 @@ test('legacy top-level open loops migrate once into canonical ConversationState 
 test('corrupted memory falls back to a valid schema and quota failures are explicit', async () => {
   storage.setItem('rin-diary-v1', '{broken');
   const recovered = await memory.loadDiary();
-  assert.equal(recovered._schema, 8);
+  assert.equal(recovered._schema, 9);
   assert.deepEqual(recovered.events, []);
 
   const normalStorage = globalThis.localStorage;
@@ -109,11 +109,11 @@ test('inner life uses configured duration bounds and preserves the active goal a
   const durationMinutes = (prepared.expiresAt - now) / 60000;
   assert.ok(durationMinutes >= 35 && durationMinutes <= 104, `duration=${durationMinutes}`);
   assert.ok(prepared.activityGoal);
-  assert.equal(prepared.schema, 'rin-inner-life-v4');
+  assert.equal(prepared.schema, 'rin-inner-life-v5');
   await memory.commitTurnState({ requestId: 'inner-goal', innerLife: prepared, now, stateTransition: {} });
   const reloaded = await memory.loadDiary();
   assert.equal(reloaded.innerLife.activityGoal, prepared.activityGoal);
-  assert.equal(reloaded.innerLife.schema, 'rin-inner-life-v4');
+  assert.equal(reloaded.innerLife.schema, 'rin-inner-life-v5');
 });
 
 test('v2.4.10 persistent life state survives turns and keeps regulation values', async () => {
@@ -137,7 +137,7 @@ test('v2.4.10 persistent life state survives turns and keeps regulation values',
     }
   });
   const prepared = await memory.prepareInnerLife({ partOfDay: 'вечер', rinHuman: '2026-10-06 21:00' }, '', now + 5 * 60000, { continueAcrossMessages: true });
-  assert.equal(prepared.schema, 'rin-inner-life-v4');
+  assert.equal(prepared.schema, 'rin-inner-life-v5');
   assert.equal(prepared.activity, 'редактирует перевод');
   assert.ok(prepared.mentalLoad >= 60, `mentalLoad=${prepared.mentalLoad}`);
   assert.ok(prepared.needForQuiet >= 50, `needForQuiet=${prepared.needForQuiet}`);
@@ -154,7 +154,7 @@ test('v2.4.10 prepareInnerLife accepts the runtime three-argument policy call', 
     '',
     { activityMinMinutes: 35, activityMaxMinutes: 104, continueAcrossMessages: true }
   );
-  assert.equal(prepared.schema, 'rin-inner-life-v4');
+  assert.equal(prepared.schema, 'rin-inner-life-v5');
   assert.ok(Number.isFinite(prepared.startedAt));
   assert.ok(prepared.expiresAt > prepared.startedAt);
   const duration = (prepared.expiresAt - prepared.startedAt) / 60000;

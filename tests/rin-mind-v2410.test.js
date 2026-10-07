@@ -88,7 +88,7 @@ test('v2.4.10 inner-life v4 normalizes persistent regulation state', () => {
     unfinishedThought: 'вернуться к сложной формулировке',
     carryover: 'до этого работала с текстом'
   });
-  assert.equal(life.schema, 'rin-inner-life-v4');
+  assert.equal(life.schema, 'rin-inner-life-v5');
   assert.equal(life.energy, 31);
   assert.equal(life.mentalLoad, 87);
   assert.equal(life.needForQuiet, 76);
