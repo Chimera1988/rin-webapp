@@ -10,13 +10,14 @@ import { normalizeRinIntent } from '../lib/intent-contract.js';
 import { normalizeInnerLife } from '../lib/inner-life-contract.js';
 import { contentKey } from '../lib/chat-contract.js';
 import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
+import { activityPeriod, resolveDailyRhythm } from './daily_rhythm.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
-const DIARY_SCHEMA_VERSION = 8;
+const DIARY_SCHEMA_VERSION = 9;
 
 
 
@@ -450,29 +451,167 @@ export async function getRecentEvents(limit = 20, filterFn = null) {
 }
 
 const INNER_LIFE_POOLS = {
-  morning: [
-    { activity: 'просматривает рабочие заметки за чаем', trace: 'на столе лежит открытый блокнот', focus: 'спокойно войти в рабочий ритм', activityGoal: 'выбрать первую задачу без спешки' },
-    { activity: 'собирается начать работу', trace: 'проверяет заметки перед первым текстом', focus: 'не распыляться с самого утра', activityGoal: 'начать с одного конкретного текста' },
-    { activity: 'приводит в порядок рабочий стол', trace: 'переставила чашку подальше от ноутбука', focus: 'освободить место для работы', activityGoal: 'подготовить спокойное рабочее место' }
+  morning_personal: [
+    { activity: 'медленно начинает утро', trace: 'ещё не спешит открывать рабочие тексты', focus: 'проснуться без рывка', activityGoal: 'собраться к началу дня', setting: 'indoor' },
+    { activity: 'готовит завтрак и приводит себя в порядок', trace: 'утро пока остаётся личным временем', focus: 'не начинать работу раньше времени', activityGoal: 'спокойно войти в день', setting: 'indoor' },
+    { activity: 'сидит с первым напитком и приходит в себя после сна', trace: 'ноутбук пока закрыт', focus: 'дать голове окончательно проснуться', activityGoal: 'не торопить начало рабочего дня', setting: 'indoor' }
   ],
-  day: [
-    { activity: 'редактирует перевод', trace: 'задержалась на одной формулировке', focus: 'сохранить естественный ритм текста', activityGoal: 'довести текущий абзац до естественного звучания' },
-    { activity: 'работает с текстом за ноутбуком', trace: 'несколько раз перечитала один абзац', focus: 'найти точное, но не тяжёлое слово', activityGoal: 'закончить одну формулировку' },
-    { activity: 'сделала короткую паузу между задачами', trace: 'чай рядом уже немного остыл', focus: 'дать голове переключиться', activityGoal: 'не возвращаться к работе несколько минут' }
+  work_morning: [
+    { activity: 'редактирует перевод', trace: 'задержалась на одной формулировке', focus: 'сохранить естественный ритм текста', activityGoal: 'довести текущий абзац до естественного звучания', setting: 'indoor' },
+    { activity: 'разбирает издательские правки', trace: 'сверяет несколько вариантов одной фразы', focus: 'не потерять авторскую интонацию', activityGoal: 'закрыть один конкретный блок правок', setting: 'indoor' },
+    { activity: 'проверяет материал перед отправкой', trace: 'отмечает места, которые стоит вернуть переводчику', focus: 'отделить важные правки от вкусовщины', activityGoal: 'дать ясную редакторскую обратную связь', setting: 'indoor' }
   ],
-  evening: [
-    { activity: 'заваривает чай после работы', trace: 'слушает, как за окном стихает город', focus: 'отпустить рабочий день', activityGoal: 'переключиться с работы на вечер' },
-    { activity: 'перечитывает свои старые заметки', trace: 'задержалась на одной короткой записи', focus: 'никуда не торопиться', activityGoal: 'разобрать одну мысль до сна' },
-    { activity: 'разбирает заметки на рабочем столе', trace: 'нашла старую запись и на секунду задумалась', focus: 'закончить мелкие дела', activityGoal: 'оставить стол свободным к утру' }
+  midday: [
+    { activity: 'сделала перерыв на обед', trace: 'рабочий текст закрыт хотя бы ненадолго', focus: 'переключить голову', activityGoal: 'не превратить обед в продолжение работы', setting: 'indoor' },
+    { activity: 'занимается небольшими бытовыми делами между рабочими блоками', trace: 'использует паузу, чтобы отвлечься от текста', focus: 'сменить тип внимания', activityGoal: 'вернуться к работе уже с более свежей головой', setting: 'mixed' },
+    { activity: 'ненадолго вышла из рабочего ритма', trace: 'не открывает следующий файл сразу', focus: 'оставить себе нормальный перерыв', activityGoal: 'немного восстановиться перед второй частью дня', setting: 'indoor' }
   ],
-  night: [
-    { activity: 'готовится ко сну', trace: 'оставила только мягкий свет', focus: 'успокоить мысли', activityGoal: 'не затягивать ночь' },
-    { activity: 'сидит в тишине с остывающим чаем', trace: 'день ещё не совсем отпустил', focus: 'не затягивать ночь', activityGoal: 'дать дню спокойно закончиться' },
-    { activity: 'листает свои заметки перед сном', trace: 'уже начинает уставать', focus: 'не затягивать ночь', activityGoal: 'закрыть день без нового дела' }
+  work_afternoon: [
+    { activity: 'продолжает редакторскую работу', trace: 'перешла от первой правки к следующему фрагменту', focus: 'держать единый голос перевода', activityGoal: 'закончить текущую рабочую задачу без лишней спешки', setting: 'indoor' },
+    { activity: 'готовит обратную связь по переводу', trace: 'формулирует комментарии так, чтобы они были полезными, а не сухими', focus: 'объяснить причину правок', activityGoal: 'отправить понятный набор комментариев', setting: 'indoor' },
+    { activity: 'разбирает рабочую переписку по проекту', trace: 'между сообщениями возвращается к тексту', focus: 'не распыляться между мелкими вопросами', activityGoal: 'закрыть основные рабочие хвосты дня', setting: 'indoor' }
+  ],
+  evening_transition: [
+    { activity: 'заканчивает рабочий день и убирает рабочие материалы', trace: 'старается не тащить редактуру в весь вечер', focus: 'переключиться с работы на себя', activityGoal: 'оставить работу до завтра', setting: 'indoor' },
+    { activity: 'готовит ужин после работы', trace: 'рабочий экран наконец погас', focus: 'сменить ритм', activityGoal: 'вернуться в обычный вечер', setting: 'indoor' },
+    { activity: 'занимается бытовыми делами после рабочего дня', trace: 'рабочие мысли постепенно уходят на второй план', focus: 'не продолжать день как бесконечную смену', activityGoal: 'освободить вечер для личного времени', setting: 'mixed' }
+  ],
+  free_evening: [
+    { activity: 'читает для себя', trace: 'это уже не рабочий текст', focus: 'читать без редакторского карандаша в голове', activityGoal: 'просто получить удовольствие от чтения', setting: 'indoor' },
+    { activity: 'слушает музыку и отдыхает дома', trace: 'не пытается сделать вечер продуктивным', focus: 'дать дню закончиться нормально', activityGoal: 'побыть в своём ритме', setting: 'indoor' },
+    { activity: 'разбирает личные заметки', trace: 'это не издательская работа, а мысли для себя', focus: 'не превращать всё написанное в задачу', activityGoal: 'сохранить одну личную мысль', setting: 'indoor' },
+    { activity: 'устроила себе спокойный вечер без плана', trace: 'ничего срочного не пытается успеть', focus: 'не заполнять свободное время обязанностями', activityGoal: 'отдохнуть', setting: 'indoor' }
+  ],
+  weekend_morning: [
+    { activity: 'не спешит начинать выходное утро', trace: 'рабочие файлы сегодня не открывает по привычке', focus: 'оставить утро свободным', activityGoal: 'побыть без рабочего темпа', setting: 'indoor' },
+    { activity: 'дольше обычного сидит за завтраком', trace: 'никуда не торопится', focus: 'не превращать выходной в список задач', activityGoal: 'начать день медленно', setting: 'indoor' },
+    { activity: 'читает что-то для себя с утра', trace: 'читает без редакторского режима', focus: 'не работать в выходной без причины', activityGoal: 'оставить утро личным', setting: 'indoor' }
+  ],
+  weekend_day: [
+    { activity: 'занимается домом без спешки', trace: 'делает только то, что действительно хочется закончить', focus: 'не превращать выходной в рабочий проект', activityGoal: 'оставить достаточно времени на отдых', setting: 'indoor' },
+    { activity: 'читает или смотрит что-то для себя', trace: 'выбирает занятие без пользы и дедлайна', focus: 'дать голове отдохнуть от редактуры', activityGoal: 'провести часть выходного спокойно', setting: 'indoor' },
+    { activity: 'вышла ненадолго прогуляться по городу', trace: 'маршрут выбирает по погоде и настроению', focus: 'сменить обстановку', activityGoal: 'пройтись без обязательного пункта назначения', setting: 'outdoor' },
+    { activity: 'решает небольшие личные дела вне дома', trace: 'не связывает их с работой', focus: 'сделать нужное и оставить день свободным', activityGoal: 'не перегружать выходной', setting: 'mixed' }
+  ],
+  weekend_evening: [
+    { activity: 'проводит свободный вечер дома', trace: 'не открывает рабочий текст просто потому, что появилось время', focus: 'сохранить выходной выходным', activityGoal: 'отдохнуть перед следующим днём', setting: 'indoor' },
+    { activity: 'выбрала фильм или сериал на вечер', trace: 'ничего полезного из этого делать не собирается', focus: 'расслабиться', activityGoal: 'провести вечер без работы', setting: 'indoor' },
+    { activity: 'готовит что-нибудь на ужин и никуда не торопится', trace: 'день остаётся личным до самого вечера', focus: 'не возвращаться к рабочему ритму', activityGoal: 'спокойно закончить выходной', setting: 'indoor' }
+  ],
+  winddown: [
+    { activity: 'готовится ко сну', trace: 'оставила только мягкий свет', focus: 'успокоить мысли', activityGoal: 'не затягивать ночь', setting: 'indoor' },
+    { activity: 'уже заметно замедлилась перед сном', trace: 'не начинает новых дел', focus: 'дать дню закончиться', activityGoal: 'лечь спать в своём обычном окне', setting: 'indoor' },
+    { activity: 'читает совсем немного перед сном', trace: 'глаза уже начинают уставать', focus: 'не разгонять внимание снова', activityGoal: 'закрыть день', setting: 'indoor' }
+  ],
+  interrupted_sleep: [
+    { activity: 'проснулась от сообщения и ещё не до конца вышла из сна', trace: 'ночное пробуждение было реальным, поэтому она сонная', focus: 'понять, что происходит, не изображая полную бодрость', activityGoal: 'остаться в контакте и потом решить, возвращаться ли ко сну', setting: 'indoor' }
+  ],
+  waking: [
+    { activity: 'только просыпается', trace: 'утро ещё не успело превратиться в рабочий день', focus: 'прийти в себя', activityGoal: 'начать утро без резкого переключения в работу', setting: 'indoor' },
+    { activity: 'лежит ещё несколько минут после пробуждения', trace: 'не торопится вставать мгновенно', focus: 'окончательно проснуться', activityGoal: 'мягко войти в утро', setting: 'indoor' }
+  ],
+  sleeping: [
+    { activity: 'спит', trace: 'сейчас её обычное окно сна', focus: 'сон', activityGoal: 'восстановиться', setting: 'indoor' }
   ]
 };
 
-function innerLifePart(env = {}) {
+function lifeActivityLoad(activity = '') {
+  const text = cleanText(activity, 240).toLowerCase();
+  if (/(редакт|издатель|перевод|рабоч|правк|комментар)/iu.test(text)) return 68;
+  if (/(готовит|бытов|делами|магазин)/iu.test(text)) return 44;
+  if (/(прогул|вышла|город)/iu.test(text)) return 38;
+  if (/(проснулась|сонн|готовится ко сну|спит|перед сном)/iu.test(text)) return 22;
+  if (/(читает|музык|фильм|отдых)/iu.test(text)) return 28;
+  return 40;
+}
+
+function innerLifeBaselines(part = 'day', sleepPhase = 'awake', dayType = 'weekday') {
+  if (sleepPhase === 'sleeping') return { energy: 24, quiet: 90, load: 12 };
+  if (sleepPhase === 'interrupted_sleep') return { energy: 30, quiet: 78, load: 24 };
+  if (sleepPhase === 'waking') return { energy: 48, quiet: 58, load: 25 };
+  if (sleepPhase === 'drowsy' || sleepPhase === 'winding_down') return { energy: 42, quiet: 70, load: 28 };
+  if (dayType !== 'weekday') return { energy: 66, quiet: 28, load: 30 };
+  if (part === 'night') return { energy: 38, quiet: 72, load: 30 };
+  if (part === 'evening') return { energy: 53, quiet: 48, load: 42 };
+  if (part === 'morning') return { energy: 67, quiet: 30, load: 44 };
+  return { energy: 64, quiet: 28, load: 52 };
+}
+
+function negativeSelfEmotion(emotionalState = null) {
+  const type = cleanText(emotionalState?.primary?.type, 60).toLowerCase();
+  const intensity = clamp(emotionalState?.primary?.intensity ?? 0, 0, 100);
+  return ['fatigue', 'sadness', 'frustration', 'irritation', 'hurt', 'disappointment', 'concern'].includes(type)
+    ? intensity
+    : 0;
+}
+
+function evolvePersistentLifeState(current, { part = 'day', dayType = 'weekday', sleepPhase = 'awake', sleepDebtMinutes = 0, relationship = null, emotionalState = null, mood = null, now = Date.now(), activityChanged = false } = {}) {
+  const base = innerLifeBaselines(part, sleepPhase, dayType);
+  const lastStateAt = finiteNumber(current.lastStateAt || current.lastChangedAt || current.startedAt, now);
+  const elapsedHours = Math.max(0, now - lastStateAt) / 3600000;
+  const blend = activityChanged ? 0.72 : Math.min(0.55, 0.12 + elapsedHours * 0.12);
+  const activityLoad = lifeActivityLoad(current.activity);
+  const moodEnergy = clamp(mood?.energy ?? current.energy ?? base.energy, 0, 100);
+  const debtPenalty = Math.min(26, Math.max(0, Number(sleepDebtMinutes || 0)) / 10);
+  const targetEnergy = clamp(base.energy * 0.62 + moodEnergy * 0.38 - debtPenalty, 0, 100);
+  const targetLoad = clamp(base.load * 0.35 + activityLoad * 0.65 + Math.min(12, debtPenalty * 0.4), 0, 100);
+  const targetQuiet = clamp(base.quiet + Math.max(0, 52 - targetEnergy) * 0.55 + Math.max(0, targetLoad - 65) * 0.2, 0, 100);
+  const closeness = clamp(relationship?.closeness ?? 42, 0, 100);
+  const trust = clamp(relationship?.trust ?? 55, 0, 100);
+  const comfort = clamp(relationship?.comfort ?? 52, 0, 100);
+  const vulnerability = clamp(relationship?.vulnerability ?? 28, 0, 100);
+  const negativePressure = negativeSelfEmotion(emotionalState);
+  const targetShare = clamp(28 + closeness * 0.16 + trust * 0.14 + comfort * 0.12 + vulnerability * 0.08 + negativePressure * 0.18 - targetQuiet * 0.08, 0, 100);
+  const lerp = (from, to) => clamp(finiteNumber(from, to) * (1 - blend) + to * blend, 0, 100);
+
+  current.energy = lerp(current.energy, targetEnergy);
+  current.mentalLoad = lerp(current.mentalLoad, targetLoad);
+  current.needForQuiet = lerp(current.needForQuiet, targetQuiet);
+  current.desireToShare = lerp(current.desireToShare, targetShare);
+  current.unfinishedThought = /(редакт|рабоч|перевод|правк)/iu.test(cleanText(current.activity, 220))
+    ? cleanText(current.activityGoal || current.focus, 260)
+    : cleanText(current.unfinishedThought, 260);
+  current.lastStateAt = now;
+  return current;
+}
+
+function weatherContext(env = {}, rhythm = {}) {
+  if (!env?.weather || rhythm?.weather?.kind === 'unknown') return '';
+  const parts = [];
+  const desc = cleanText(env.weather.desc, 100);
+  if (desc) parts.push(desc);
+  if (Number.isFinite(Number(env.weather.temp))) parts.push(`${Math.round(Number(env.weather.temp))}°C`);
+  return parts.join(', ');
+}
+
+function poolForPeriod(period = 'free_evening', rhythm = {}) {
+  const pool = INNER_LIFE_POOLS[period] || INNER_LIFE_POOLS.free_evening;
+  if (period !== 'weekend_day') return pool;
+  if (rhythm?.weather?.outdoor === 'avoid') return pool.filter(item => item.setting !== 'outdoor');
+  if (rhythm?.weather?.outdoor === 'adapt') {
+    return [
+      ...pool.filter(item => item.setting !== 'outdoor'),
+      {
+        activity: 'вышла ненадолго, подстроив прогулку под погоду',
+        trace: 'не идёт далеко и меняет темп или маршрут из-за текущих условий',
+        focus: 'сменить обстановку без борьбы с погодой',
+        activityGoal: 'немного пройтись и вернуться, если снаружи некомфортно',
+        setting: 'outdoor'
+      }
+    ];
+  }
+  return pool;
+}
+
+function pickLifeActivity(pool = [], env = {}, period = '', current = {}) {
+  const options = pool.length ? pool : INNER_LIFE_POOLS.free_evening;
+  const recent = new Set((current.recentActivities || []).slice(-2));
+  let index = Number.parseInt(stableHashBase36(`${env?.rinHuman || ''}|${period}|${current.interactionCount}`), 36) % options.length;
+  for (let offset = 0; offset < options.length && recent.has(options[index].activity); offset += 1) index = (index + 1) % options.length;
+  return options[index];
+}
+
+function legacyInnerLifePart(env = {}) {
   const value = String(env?.partOfDay || '').toLowerCase();
   if (/утр|morning/.test(value)) return 'morning';
   if (/веч|evening/.test(value)) return 'evening';
@@ -488,82 +627,25 @@ function innerLifePart(env = {}) {
   return 'day';
 }
 
-function lifeActivityLoad(activity = '') {
-  const text = cleanText(activity, 240).toLowerCase();
-  if (/(редакт|работает|текст|перевод|задач|заметк)/iu.test(text)) return 66;
-  if (/(разбирает|приводит в порядок|собирается начать)/iu.test(text)) return 52;
-  if (/(пауза|чай|тишин|готовится ко сну|сон)/iu.test(text)) return 30;
-  return 42;
-}
-
-function innerLifeBaselines(part = 'day') {
-  if (part === 'night') return { energy: 38, quiet: 72, load: 30 };
-  if (part === 'evening') return { energy: 53, quiet: 48, load: 42 };
-  if (part === 'morning') return { energy: 67, quiet: 30, load: 44 };
-  return { energy: 64, quiet: 28, load: 52 };
-}
-
-function negativeSelfEmotion(emotionalState = null) {
-  const type = cleanText(emotionalState?.primary?.type, 60).toLowerCase();
-  const intensity = clamp(emotionalState?.primary?.intensity ?? 0, 0, 100);
-  return ['fatigue', 'sadness', 'frustration', 'irritation', 'hurt', 'disappointment', 'concern'].includes(type)
-    ? intensity
-    : 0;
-}
-
-function evolvePersistentLifeState(current, { part = 'day', relationship = null, emotionalState = null, mood = null, now = Date.now(), activityChanged = false } = {}) {
-  const base = innerLifeBaselines(part);
-  const lastStateAt = finiteNumber(current.lastStateAt || current.lastChangedAt || current.startedAt, now);
-  const elapsedHours = Math.max(0, now - lastStateAt) / 3600000;
-  const blend = activityChanged ? 0.72 : Math.min(0.55, 0.12 + elapsedHours * 0.12);
-  const activityLoad = lifeActivityLoad(current.activity);
-  const moodEnergy = clamp(mood?.energy ?? current.energy ?? base.energy, 0, 100);
-  const targetEnergy = clamp(base.energy * 0.62 + moodEnergy * 0.38, 0, 100);
-  const targetLoad = clamp(base.load * 0.35 + activityLoad * 0.65, 0, 100);
-  const targetQuiet = clamp(base.quiet + Math.max(0, 52 - targetEnergy) * 0.55 + Math.max(0, targetLoad - 65) * 0.2, 0, 100);
-  const closeness = clamp(relationship?.closeness ?? 42, 0, 100);
-  const trust = clamp(relationship?.trust ?? 55, 0, 100);
-  const comfort = clamp(relationship?.comfort ?? 52, 0, 100);
-  const vulnerability = clamp(relationship?.vulnerability ?? 28, 0, 100);
-  const negativePressure = negativeSelfEmotion(emotionalState);
-  const targetShare = clamp(28 + closeness * 0.16 + trust * 0.14 + comfort * 0.12 + vulnerability * 0.08 + negativePressure * 0.18 - targetQuiet * 0.08, 0, 100);
-  const lerp = (from, to) => clamp(finiteNumber(from, to) * (1 - blend) + to * blend, 0, 100);
-
-  current.energy = lerp(current.energy, targetEnergy);
-  current.mentalLoad = lerp(current.mentalLoad, targetLoad);
-  current.needForQuiet = lerp(current.needForQuiet, targetQuiet);
-  current.desireToShare = lerp(current.desireToShare, targetShare);
-  current.unfinishedThought = /(редакт|работает|текст|перевод|заметк)/iu.test(cleanText(current.activity, 220))
-    ? cleanText(current.activityGoal || current.focus, 260)
-    : cleanText(current.unfinishedThought, 260);
-  current.lastStateAt = now;
-  return current;
-}
-
-function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Date.now(), policy = {}, context = {}) {
+function computeLegacyCompatibleInnerLife(currentInput = {}, env = {}, now = Date.now(), policy = {}, context = {}) {
   const current = { ...defaultInnerLife(), ...(currentInput || {}) };
-  const part = innerLifePart(env);
+  const part = legacyInnerLifePart(env);
   const minMinutes = clamp(policy?.activityMinMinutes ?? 35, 5, 24 * 60);
   const maxMinutes = clamp(policy?.activityMaxMinutes ?? minMinutes, minMinutes, 24 * 60);
   const continueAcrossMessages = policy?.continueAcrossMessages !== false;
   const expired = !continueAcrossMessages || !current.activity || !current.expiresAt || now >= current.expiresAt || current.part !== part;
   if (expired) {
+    const map = { morning: 'morning_personal', day: 'work_afternoon', evening: 'free_evening', night: 'winddown' };
+    const period = map[part] || 'free_evening';
     const previousActivity = cleanText(current.activity, 180);
     const previousFocus = cleanText(current.activityGoal || current.focus, 220);
-    const pool = INNER_LIFE_POOLS[part] || INNER_LIFE_POOLS.day;
-    const recent = new Set((current.recentActivities || []).slice(-2));
-    let index = Number.parseInt(stableHashBase36(`${env?.rinHuman || ''}|${part}|${current.interactionCount}`), 36) % pool.length;
-    for (let offset = 0; offset < pool.length && recent.has(pool[index].activity); offset += 1) index = (index + 1) % pool.length;
-    const selected = pool[index];
+    const selected = pickLifeActivity(INNER_LIFE_POOLS[period], env, period, current);
     const range = Math.max(0, maxMinutes - minMinutes);
     const durationMinutes = minMinutes + (range ? Number.parseInt(stableHashBase36(selected.activity), 36) % (range + 1) : 0);
     Object.assign(current, selected, {
-      realityMode: 'simulated_character_world',
-      source: 'schedule_simulation',
+      realityMode: 'simulated_character_world', source: 'schedule_simulation',
       sceneId: `${part}:${String(env?.rinHuman || '').slice(0, 10) || 'current'}`,
-      part,
-      startedAt: now,
-      lastChangedAt: now,
+      part, activitySetting: selected.setting || 'unknown', startedAt: now, lastChangedAt: now,
       expiresAt: now + durationMinutes * 60000,
       carryover: previousActivity && previousActivity !== selected.activity
         ? cleanText(`до этого: ${previousActivity}${previousFocus ? `; фокус был: ${previousFocus}` : ''}`, 320)
@@ -572,14 +654,96 @@ function computeInnerLife(currentInput = {}, env = {}, _userText = '', now = Dat
     });
   }
   evolvePersistentLifeState(current, {
+    part, dayType: current.dayType || 'weekday', sleepPhase: current.sleepPhase || 'awake', sleepDebtMinutes: current.sleepDebtMinutes || 0,
+    relationship: context.relationship, emotionalState: context.emotionalState, mood: context.mood, now, activityChanged: expired
+  });
+  current.lastUserAt = now;
+  current.interactionCount = finiteNumber(current.interactionCount, 0) + 1;
+  return normalizeInnerLife(current);
+}
+
+function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date.now(), policy = {}, context = {}) {
+  if (!policy?.weeklyRhythm?.profiles) return computeLegacyCompatibleInnerLife(currentInput, env, now, policy, context);
+  const current = { ...defaultInnerLife(), ...(currentInput || {}) };
+  const hasUserMessage = Boolean(cleanText(userText, 2000));
+  const rhythm = resolveDailyRhythm(env, policy, current, now, hasUserMessage);
+  const period = activityPeriod(rhythm);
+  const part = period === 'sleeping' || period === 'interrupted_sleep' || period === 'winddown'
+    ? 'night'
+    : period === 'waking' || period === 'morning_personal' || period === 'work_morning'
+      ? 'morning'
+      : period === 'evening_transition' || period === 'free_evening' || period === 'weekend_evening'
+        ? 'evening'
+        : 'day';
+  const minMinutes = clamp(policy?.activityMinMinutes ?? 35, 5, 24 * 60);
+  const maxMinutes = clamp(policy?.activityMaxMinutes ?? minMinutes, minMinutes, 24 * 60);
+  const continueAcrossMessages = policy?.continueAcrossMessages !== false;
+  const dayChanged = cleanText(current.dayType, 24) !== rhythm.dayType || Number(current.dayOfWeek) !== Number(rhythm.dayOfWeek);
+  const sleepChanged = cleanText(current.sleepPhase, 40) !== rhythm.sleep.phase;
+  const periodChanged = current.part !== part;
+  const expired = !continueAcrossMessages || !current.activity || !current.expiresAt || now >= current.expiresAt || dayChanged || sleepChanged || periodChanged;
+
+  Object.assign(current, {
+    dayType: rhythm.dayType,
+    dayOfWeek: rhythm.dayOfWeek,
+    workday: rhythm.workday,
+    workMode: rhythm.workMode,
+    sleepPhase: rhythm.sleep.phase,
+    sleepCycle: rhythm.sleep.cycle,
+    plannedSleepAt: rhythm.sleep.plannedSleepAt,
+    plannedWakeAt: rhythm.sleep.plannedWakeAt,
+    sleepStartedAt: rhythm.sleep.sleepStartedAt,
+    lastWakeAt: rhythm.sleep.lastWakeAt,
+    lastSleepMinutes: rhythm.sleep.lastSleepMinutes,
+    sleepDebtMinutes: rhythm.sleep.sleepDebtMinutes,
+    sleepInterruptions: rhythm.sleep.interruptions,
+    lateConversationMinutes: rhythm.sleep.lateConversationMinutes,
+    wakeReason: rhythm.sleep.wakeReason,
+    sleepCarryover: rhythm.sleep.carryover
+  });
+
+  if (expired) {
+    const previousActivity = cleanText(current.activity, 180);
+    const previousFocus = cleanText(current.activityGoal || current.focus, 220);
+    const selected = pickLifeActivity(poolForPeriod(period, rhythm), env, period, current);
+    const range = Math.max(0, maxMinutes - minMinutes);
+    const durationMinutes = period === 'sleeping'
+      ? Math.max(minMinutes, Math.min(maxMinutes, Math.round((Math.max(now + 5 * 60000, rhythm.sleep.plannedWakeAt) - now) / 60000)))
+      : minMinutes + (range ? Number.parseInt(stableHashBase36(selected.activity), 36) % (range + 1) : 0);
+    const wContext = weatherContext(env, rhythm);
+    Object.assign(current, selected, {
+      realityMode: 'simulated_character_world',
+      source: 'daily_rhythm_simulation',
+      sceneId: `${rhythm.dayType}:${period}:${String(env?.rinHuman || '').slice(0, 10) || 'current'}`,
+      part,
+      activitySetting: selected.setting || 'unknown',
+      weatherGrounded: ['outdoor', 'mixed'].includes(selected.setting) && Boolean(wContext),
+      weatherContext: ['outdoor', 'mixed'].includes(selected.setting) ? wContext : '',
+      startedAt: now,
+      lastChangedAt: now,
+      expiresAt: now + durationMinutes * 60000,
+      carryover: previousActivity && previousActivity !== selected.activity
+        ? cleanText(`до этого: ${previousActivity}${previousFocus ? `; фокус был: ${previousFocus}` : ''}`, 320)
+        : cleanText(current.carryover, 320),
+      recentActivities: [...(current.recentActivities || []), selected.activity].slice(-8)
+    });
+  } else {
+    current.weatherContext = ['outdoor', 'mixed'].includes(current.activitySetting) ? weatherContext(env, rhythm) : '';
+    current.weatherGrounded = ['outdoor', 'mixed'].includes(current.activitySetting) && Boolean(current.weatherContext);
+  }
+
+  evolvePersistentLifeState(current, {
     part,
+    dayType: rhythm.dayType,
+    sleepPhase: rhythm.sleep.phase,
+    sleepDebtMinutes: rhythm.sleep.sleepDebtMinutes,
     relationship: context.relationship,
     emotionalState: context.emotionalState,
     mood: context.mood,
     now,
     activityChanged: expired
   });
-  current.lastUserAt = now;
+  current.lastUserAt = hasUserMessage ? now : current.lastUserAt;
   current.interactionCount = finiteNumber(current.interactionCount, 0) + 1;
   return normalizeInnerLife(current);
 }

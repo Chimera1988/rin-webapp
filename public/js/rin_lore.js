@@ -39,9 +39,93 @@ function validTimeZone(value = '') {
   }
 }
 
+function clockWindow(input = {}, defaults = {}) {
+  const from = validClock(input?.from) || validClock(defaults.from);
+  const to = validClock(input?.to) || validClock(defaults.to);
+  if (!from || !to) throw new Error('INVALID_RHYTHM_CLOCK_WINDOW');
+  return Object.freeze({ from, to });
+}
+
+function sameDayWindow(input = {}, defaults = {}) {
+  const window = clockWindow(input, defaults);
+  if (clockMinute(window.to) <= clockMinute(window.from)) throw new Error('INVALID_RHYTHM_SAME_DAY_WINDOW');
+  return window;
+}
+
+function normalizeDayProfile(source = {}, defaults = {}) {
+  const workBlocksSource = Array.isArray(source.work_blocks) ? source.work_blocks : (defaults.work_blocks || []);
+  const workBlocks = workBlocksSource.map((item, index) => {
+    const fallback = (defaults.work_blocks || [])[index] || {};
+    return sameDayWindow(item, fallback);
+  }).slice(0, 3);
+  return Object.freeze({
+    wakeWindow: clockWindow(source.wake_window, defaults.wake_window),
+    sleepWindow: clockWindow(source.sleep_window, defaults.sleep_window),
+    morningPersonalUntil: validClock(source.morning_personal_until) || validClock(defaults.morning_personal_until) || '08:00',
+    workBlocks: Object.freeze(workBlocks),
+    middayWindow: sameDayWindow(source.midday_window, defaults.midday_window),
+    eveningTransition: sameDayWindow(source.evening_transition, defaults.evening_transition),
+    freeEvening: sameDayWindow(source.free_evening, defaults.free_evening),
+    workDefault: source.work_default !== undefined ? source.work_default === true : defaults.work_default === true
+  });
+}
+
+function normalizeWeeklyRhythm(source = {}) {
+  const defaults = {
+    weekday: {
+      wake_window: { from: '06:45', to: '07:30' }, sleep_window: { from: '23:30', to: '00:30' }, morning_personal_until: '08:00',
+      work_blocks: [{ from: '08:00', to: '11:30' }, { from: '13:00', to: '17:30' }],
+      midday_window: { from: '11:30', to: '13:30' }, evening_transition: { from: '17:30', to: '20:00' }, free_evening: { from: '20:00', to: '23:00' }, work_default: true
+    },
+    saturday: {
+      wake_window: { from: '07:30', to: '09:30' }, sleep_window: { from: '23:50', to: '01:00' }, morning_personal_until: '10:00',
+      work_blocks: [], midday_window: { from: '11:30', to: '13:30' }, evening_transition: { from: '17:30', to: '20:00' }, free_evening: { from: '20:00', to: '23:30' }, work_default: false
+    },
+    sunday: {
+      wake_window: { from: '08:00', to: '09:30' }, sleep_window: { from: '23:15', to: '00:15' }, morning_personal_until: '10:00',
+      work_blocks: [], midday_window: { from: '11:30', to: '13:30' }, evening_transition: { from: '17:30', to: '20:00' }, free_evening: { from: '20:00', to: '23:00' }, work_default: false
+    }
+  };
+  const workDays = [...new Set((Array.isArray(source.work_days) ? source.work_days : [1, 2, 3, 4, 5]).map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))];
+  const weekendDays = [...new Set((Array.isArray(source.weekend_days) ? source.weekend_days : [0, 6]).map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))];
+  return Object.freeze({
+    workDays: Object.freeze(workDays.length ? workDays : [1, 2, 3, 4, 5]),
+    weekendDays: Object.freeze(weekendDays.length ? weekendDays : [0, 6]),
+    profiles: Object.freeze({
+      weekday: normalizeDayProfile(source.weekday || {}, defaults.weekday),
+      saturday: normalizeDayProfile(source.saturday || {}, defaults.saturday),
+      sunday: normalizeDayProfile(source.sunday || {}, defaults.sunday)
+    }),
+    weekendWork: Object.freeze({
+      defaultOff: source.weekend_work?.default !== 'on',
+      requiresEstablishedReason: source.weekend_work?.requires_established_reason !== false,
+      minimumPressure: Math.round(clamp(source.weekend_work?.minimum_pressure, 60, 100, 88))
+    })
+  });
+}
+
+function normalizeSleepPolicy(source = {}) {
+  return Object.freeze({
+    targetSleepMinutes: Math.round(clamp(source.target_sleep_minutes, 360, 600, 450)),
+    settleAfterChatMinutes: Math.round(clamp(source.settle_after_chat_minutes, 5, 90, 18)),
+    continuityGraceMinutes: Math.round(clamp(source.continuity_grace_minutes, 10, 120, 30)),
+    windingDownMinutes: Math.round(clamp(source.winding_down_minutes, 20, 180, 60)),
+    drowsyMinutes: Math.round(clamp(source.drowsy_minutes, 5, 90, 20)),
+    maxDebtMinutes: Math.round(clamp(source.max_debt_minutes, 60, 720, 300))
+  });
+}
+
+function normalizeWeatherGrounding(source = {}) {
+  return Object.freeze({
+    enabled: source.enabled !== false,
+    refreshMaxAgeMinutes: Math.round(clamp(source.refresh_max_age_minutes, 5, 120, 20)),
+    outdoorPolicy: String(source.outdoor_policy || 'adapt_or_avoid').trim().slice(0, 40) || 'adapt_or_avoid'
+  });
+}
+
 export function normalizeScheduleConfig(input = {}) {
   const source = input && typeof input === 'object' ? input : {};
-  if (source._schema !== 'rin-schedule-v2') throw new Error('INVALID_SCHEDULE_SCHEMA');
+  if (!['rin-schedule-v2', 'rin-schedule-v3'].includes(source._schema)) throw new Error('INVALID_SCHEDULE_SCHEMA');
 
   const timezone = validTimeZone(source.timezone);
   if (!timezone) throw new Error('INVALID_SCHEDULE_TIMEZONE');
@@ -74,9 +158,12 @@ export function normalizeScheduleConfig(input = {}) {
 
   const activityMin = Math.round(clamp(source.inner_life?.activity_min_minutes, 5, 24 * 60, 35));
   const activityMax = Math.round(clamp(source.inner_life?.activity_max_minutes, activityMin, 24 * 60, activityMin));
+  const weeklyRhythm = normalizeWeeklyRhythm(source.weekly_rhythm || {});
+  const sleep = normalizeSleepPolicy(source.sleep || {});
+  const weatherGrounding = normalizeWeatherGrounding(source.weather_grounding || {});
 
   return Object.freeze({
-    schema: 'rin-schedule-v2',
+    schema: 'rin-schedule-v3',
     timezone,
     location: Object.freeze({
       name: String(location.name || '').trim().slice(0, 80),
@@ -92,8 +179,14 @@ export function normalizeScheduleConfig(input = {}) {
     innerLife: Object.freeze({
       activityMinMinutes: activityMin,
       activityMaxMinutes: activityMax,
-      continueAcrossMessages: source.inner_life?.continue_across_messages !== false
-    })
+      continueAcrossMessages: source.inner_life?.continue_across_messages !== false,
+      weeklyRhythm,
+      sleep,
+      weatherGrounding
+    }),
+    weeklyRhythm,
+    sleep,
+    weatherGrounding
   });
 }
 
