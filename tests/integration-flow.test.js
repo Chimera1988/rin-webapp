@@ -268,5 +268,5 @@ test('40-turn sticker flow respects 30% rolling budget, survives history reload 
 
   const reconstructed=await buildStickerState({history:toApiHistory(history),preference:{mode:'smart',probability:30,safeMode:true},scene:'everyday'});
   assert.ok(reconstructed.recentAssetIds.length>0);
-  assert.equal(reconstructed.schema,'rin-sticker-state-v2');
+  assert.equal(reconstructed.schema,'rin-sticker-state-v3');
 });

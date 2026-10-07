@@ -39,44 +39,41 @@ test('cooldown is reconstructed from server-visible assistant turn history, not 
   ];
   const state = await buildStickerState({ history, preference: smart30, scene: 'everyday', userText: 'обычная реплика' });
   assert.equal(state.turnsSinceSticker, 0);
+  assert.equal(state.requiredGapTurns, 2);
+  assert.equal(state.cooldownRemainingTurns, 2);
+  assert.equal(state.semanticAssistantTurns, 4);
+  assert.equal(state.lastStickerTurnKey, 'turn-4');
   assert.equal(state.available, false);
   assert.equal(state.reason, 'cooldown');
   assert.deepEqual(state.recentAssetIds.slice(0, 1), ['tender_soft_smile']);
 });
 
-test('explicit reciprocal kiss can override smart rolling budget and cooldown when the gesture is semantically anchored', async () => {
-  const history = [
+test('explicit reciprocal gesture may override rolling budget only after one semantic-turn breathing gap', async () => {
+  const adjacent = [
     ...assistantTurn(1, { sticker: 'tender_soft_smile' }),
     ...assistantTurn(2),
     ...assistantTurn(3),
     ...assistantTurn(4, { sticker: 'greeting_soft' })
   ];
-  const neutral = await buildStickerState({ history, preference: smart30, scene: 'romance', userText: 'спасибо)' });
+  const blocked = await buildStickerState({ history: adjacent, preference: smart30, scene: 'romance', userText: 'целую тебя 😘' });
+  assert.equal(blocked.explicitGesture, true);
+  assert.equal(blocked.turnsSinceSticker, 0);
+  assert.equal(blocked.requiredGapTurns, 1);
+  assert.equal(blocked.cooldownRemainingTurns, 1);
+  assert.equal(blocked.available, false);
+  assert.equal(blocked.reason, 'explicit_gesture_gap');
+
+  const withBreathingTurn = [...adjacent, ...assistantTurn(5)];
+  const neutral = await buildStickerState({ history: withBreathingTurn, preference: smart30, scene: 'romance', userText: 'спасибо)' });
   assert.equal(neutral.available, false);
-  assert.equal(neutral.reason, 'rolling_budget_exhausted');
-  const reciprocal = await buildStickerState({ history, preference: smart30, scene: 'romance', userText: 'целую тебя 😘' });
+  assert.equal(neutral.reason, 'cooldown');
+  const reciprocal = await buildStickerState({ history: withBreathingTurn, preference: smart30, scene: 'romance', userText: 'целую тебя 😘' });
   assert.equal(reciprocal.explicitGesture, true);
   assert.equal(reciprocal.remainingStickerTurns, 0);
+  assert.equal(reciprocal.turnsSinceSticker, 1);
+  assert.equal(reciprocal.cooldownRemainingTurns, 0);
   assert.equal(reciprocal.available, true);
   assert.equal(reciprocal.reason, 'explicit_gesture_override');
-
-  const moreRoom = [
-    ...assistantTurn(1, { sticker: 'tender_soft_smile' }),
-    ...assistantTurn(2),
-    ...assistantTurn(3),
-    ...assistantTurn(4),
-    ...assistantTurn(5),
-    ...assistantTurn(6),
-    ...assistantTurn(7, { sticker: 'kiss_soft_tender' })
-  ];
-  const neutralWithRoom = await buildStickerState({ history: moreRoom, preference: smart30, scene: 'romance', userText: 'спасибо)' });
-  assert.equal(neutralWithRoom.available, false);
-  assert.equal(neutralWithRoom.reason, 'cooldown');
-  const allowed = await buildStickerState({ history: moreRoom, preference: smart30, scene: 'romance', userText: 'целую тебя 😘' });
-  assert.equal(allowed.explicitGesture, true);
-  assert.equal(allowed.remainingStickerTurns, 1);
-  assert.equal(allowed.available, true);
-  assert.equal(allowed.requiredGapTurns, 0);
 });
 
 test('off, zero-frequency, safe serious scene and always mode have distinct deterministic availability', async () => {
