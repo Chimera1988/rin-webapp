@@ -408,6 +408,7 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
         ? (() => {
             const state = innerLifeOverride || diary.innerLife;
             return {
+              schema: String(state.schema || 'rin-inner-life-v5').slice(0, 40),
               activity: String(state.activity || '').slice(0, 180),
               trace: String(state.trace || '').slice(0, 220),
               focus: String(state.focus || '').slice(0, 220),
@@ -416,14 +417,39 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
               realityMode: String(state.realityMode || 'simulated_character_world').slice(0, 40),
               source: String(state.source || 'schedule_simulation').slice(0, 80),
               sceneId: String(state.sceneId || '').slice(0, 120) || null,
+              dayType: String(state.dayType || 'weekday').slice(0, 24),
+              dayOfWeek: numberOr(state.dayOfWeek, 1),
+              workday: state.workday !== false,
+              workMode: String(state.workMode || 'normal').slice(0, 24),
+              activitySetting: String(state.activitySetting || 'unknown').slice(0, 24),
+              weatherGrounded: state.weatherGrounded === true,
+              weatherContext: String(state.weatherContext || '').slice(0, 220),
               energy: numberOr(state.energy),
+              mentalLoad: numberOr(state.mentalLoad, 42),
+              needForQuiet: numberOr(state.needForQuiet, 35),
+              desireToShare: numberOr(state.desireToShare, 48),
+              unfinishedThought: String(state.unfinishedThought || '').slice(0, 260),
+              carryover: String(state.carryover || '').slice(0, 320),
+              sleepPhase: String(state.sleepPhase || 'awake').slice(0, 40),
+              sleepCycle: String(state.sleepCycle || '').slice(0, 16),
+              plannedSleepAt: numberOr(state.plannedSleepAt),
+              plannedWakeAt: numberOr(state.plannedWakeAt),
+              sleepStartedAt: numberOr(state.sleepStartedAt),
+              lastWakeAt: numberOr(state.lastWakeAt),
+              lastSleepMinutes: numberOr(state.lastSleepMinutes),
+              sleepDebtMinutes: numberOr(state.sleepDebtMinutes),
+              sleepInterruptions: numberOr(state.sleepInterruptions),
+              lateConversationMinutes: numberOr(state.lateConversationMinutes),
+              wakeReason: String(state.wakeReason || 'unknown').slice(0, 40),
+              sleepCarryover: String(state.sleepCarryover || '').slice(0, 360),
               startedAt: numberOr(state.startedAt),
               expiresAt: numberOr(state.expiresAt),
               lastChangedAt: numberOr(state.lastChangedAt),
+              lastStateAt: numberOr(state.lastStateAt),
               lastUserAt: numberOr(state.lastUserAt),
               interactionCount: numberOr(state.interactionCount, 0),
               recentActivities: Array.isArray(state.recentActivities)
-                ? state.recentActivities.slice(-6).map(item => String(item || '').slice(0, 180)).filter(Boolean)
+                ? state.recentActivities.slice(-8).map(item => String(item || '').slice(0, 180)).filter(Boolean)
                 : []
             };
           })()
