@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { analyzeConversation } from '../lib/conversation-brain.js';
-import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
+import { observeAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState, compactKernelState } from '../lib/cognition/kernel-state.js';
 import { buildDecisionStateTransition, normalizeTurnDecision } from '../lib/cognition/turn-decision.js';
 import { validateRealization, validateTurnDecisionConstraints } from '../lib/cognition/turn-validator.js';
@@ -8,15 +8,15 @@ import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
-import { buildBehaviorState, extractVocativeAddresses, inspectMotifNovelty, inspectSceneClosure } from '../lib/cognition/behavior-state.js';
+import { extractVocativeAddresses, inspectMotifNovelty, inspectSceneClosure } from '../lib/cognition/behavior-state.js';
+import { observeTurn } from '../lib/cognition/v3/turn-observations.js';
 import { activateAssociations } from '../lib/cognition/v3/associative-memory.js';
-import { buildDriveState } from '../lib/cognition/drive-state.js';
 import { inspectLifeNovelty } from '../lib/cognition/life-texture.js';
 import { repairMaleUserAddress, stripMessengerAsteriskMarkup } from '../lib/cognition/turn-stabilizer.js';
 import { inspectIntentLifecycle } from '../lib/cognition/intent-policy.js';
 import { mapCognitiveInputs, settleCognitiveGraph } from '../lib/cognition/v3/cognitive-dynamics.js';
 import { buildCognitiveTurnPlan } from '../lib/cognition/v3/turn-plan.js';
-import { buildV3RealizationPrompt, parseV3Realization, v3FallbackRealization, unauthorizedSpeechAct } from '../lib/cognition/v3/realization.js';
+import { buildV3RealizationPrompt, parseV3Realization, v3FallbackRealization, unauthorizedSpeechAct, validateV3LifeRealization } from '../lib/cognition/v3/realization.js';
 import { detectExperienceEvidence, updateCognitiveExperience } from '../lib/cognition/v3/experience.js';
 import {
   currentUserTurn,
@@ -382,35 +382,16 @@ export default async function handler(req, res) {
     const brain = trigger ? buildProactiveBrain({ trigger, memory }) : analyzeConversation({ userText: userTurn, history: fullHistory, conversationState });
     const canonCue = trigger ? [trigger.type, trigger.reason].filter(Boolean).join(' ') : userTurn;
     const lore = await retrieveCanonicalLore(canonCue);
-    const affectiveObservation = buildAffectiveTurn({ userText: userTurn, history: fullHistory, memory, brain });
-    // Affective classifier supplies current emotion. Its v2 direct relationship/mood deltas
-    // are deliberately not decision authority in v3; the graph learns from explicit feedback.
-    const affectiveTurn = {
-      ...affectiveObservation,
-      relationshipState: memory?.relationship || affectiveObservation?.relationshipState || null,
-      moodState: memory?.mood || affectiveObservation?.moodState || null
-    };
+    // ONE emotion observation path; legacy relationship/mood writers are NOT run.
+    const affectiveTurn = observeAffectiveTurn({userText:userTurn,memory,brain});
     const stickerState = await buildStickerState({
       history: fullHistory,
       preference: body?.client?.sticker || null,
       scene: brain?.activeScene?.type || 'everyday',
       userText: userTurn
     });
-    const priorRecentActs = memory?.conversationState?.dialogueState?.recentActs || [];
-    const priorRecentMotifs = memory?.conversationState?.dialogueState?.recentMotifs || [];
-    const priorRecentLifeBeats = memory?.conversationState?.dialogueState?.recentLifeBeats || [];
-    const priorRecentResponseDepths = memory?.conversationState?.dialogueState?.recentResponseDepths || [];
-    const priorRecentMessageShapes = memory?.conversationState?.dialogueState?.recentMessageShapes || [];
-    const behaviorState = buildBehaviorState({
-      userText: userTurn,
-      history: fullHistory,
-      brain,
-      recentActs: priorRecentActs,
-      recentMotifs: priorRecentMotifs,
-      recentLifeBeats: priorRecentLifeBeats,
-      recentResponseDepths: priorRecentResponseDepths,
-      recentMessageShapes: priorRecentMessageShapes
-    });
+    // No legacy behavior-state action computation. Read-only scene/boundary telemetry.
+    const turnObservations=observeTurn({userText:userTurn,history:fullHistory,brain,memory});
     const kernelState = buildKernelState({
       requestId,
       userText: userTurn,
@@ -425,7 +406,6 @@ export default async function handler(req, res) {
       stickerState
     });
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
-    const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
     const sharedSymbolState = activateAssociations({
       profile,memory,kernelState,saved:memory?.cognitiveState
     });
@@ -434,10 +414,10 @@ export default async function handler(req, res) {
       : [];
     // Rin 3: all domain observations enter one recurrent cognitive graph.
     // Luna receives only a resolved TurnPlan and produces LANGUAGE, not decisions.
-    const cognitiveInputs = mapCognitiveInputs({kernelState,behaviorState,sharedSymbolState,driveState});
+    const cognitiveInputs = mapCognitiveInputs({kernelState,observations:turnObservations,sharedSymbolState});
     const cognitiveSettled = settleCognitiveGraph({inputs:cognitiveInputs,saved:memory?.cognitiveState});
     const turnPlan = buildCognitiveTurnPlan({
-      settled:cognitiveSettled,kernelState,behaviorState,stickerState,stickerCandidates,
+      settled:cognitiveSettled,kernelState,observations:turnObservations,stickerState,stickerCandidates,
       sharedSymbolState,longRequested:isLong,trigger
     });
     const prompt = buildV3RealizationPrompt({
@@ -492,10 +472,16 @@ export default async function handler(req, res) {
       decision:plannedDecision,realityBoundary,recentHistory:kernelState?.recentHistory||[],currentUserText:userTurn
     });
     const unauthorizedAct=unauthorizedSpeechAct(realization,turnPlan);
+    const unsupportedLife=validateV3LifeRealization(realization,turnPlan.life);
     if(unauthorizedAct)realizationValidation.hardWarnings.push(unauthorizedAct);
+    if(unsupportedLife)realizationValidation.hardWarnings.push(unsupportedLife);
     if(realizationValidation.hardWarnings?.length){
       modelFallback=true;
-      realization=cleanRealization(v3FallbackRealization(turnPlan,kernelState));
+      realization=cleanRealization(unsupportedLife?{
+        segments:(turnPlan.decision.delivery.segments||[]).filter(s=>s.type==='text').map((s,i)=>({
+          text:i===0?'Пока нет, ещё не выбралась на прогулку. Но хочется немного пройтись.':'Пока только строила планы, а не выбиралась в город.',purpose:s.purpose
+        }))
+      }:v3FallbackRealization(turnPlan,kernelState));
       realizationValidation=advisoryRealizationValidation(realization,{
         decision:plannedDecision,realityBoundary,recentHistory:kernelState?.recentHistory||[],currentUserText:userTurn
       });
@@ -506,7 +492,7 @@ export default async function handler(req, res) {
       socialIntent:plannedDecision.act,
       sceneMotif:plannedDecision.act==='natural_silence'?'farewell':
         (cognitiveSettled.behavioralState.play>.55?'playful_tension':'direct_exchange'),
-      lifeDomain:'none',lifeMotif:null,frameAlignment:'aligned',literalCorrection:behaviorState?.literalCorrection?.explicit?'explicit':'none',
+      lifeDomain:turnPlan.life.domain,lifeMotif:turnPlan.life.motif,frameAlignment:'aligned',literalCorrection:turnObservations?.literalCorrection?.explicit?'explicit':'none',
       referenceAnchor:null,sharedSymbolId:turnPlan.symbolId,sharedSymbolExpression:turnPlan.symbolExpression,
       sharedSymbolReason:turnPlan.symbolId?'associative_cognitive_activation':null,
       contactStance:turnPlan.contactStance,selfStateDisclosure:turnPlan.selfStateDisclosure,selfStateDisclosureReason:'settled_cognition',
@@ -516,8 +502,8 @@ export default async function handler(req, res) {
       commitmentReason:turnPlan.commitment.reason,confidence:95
     };
     const mindTurn={mind,decision:plannedDecision,realization};
-    behaviorState.frameAlignment=mind.frameAlignment;
-    behaviorState.sceneMotif=mind.sceneMotif;
+    turnObservations.frameAlignment=mind.frameAlignment;
+    turnObservations.sceneMotif=mind.sceneMotif;
     const deliveryPlan=await buildDeliveryPlan({
       requestId,decision:plannedDecision,realization,scene:kernelState.scene,stickerState:kernelState.stickerState,mind
     });
@@ -577,7 +563,7 @@ export default async function handler(req, res) {
       motifRepeat: motifTelemetry.streak || 0,
       motifAppearances: motifTelemetry.appearances || 0,
       motifPressure: motifTelemetry.pressure || 0,
-      literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none'),
+      literalCorrection: turnObservations?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none'),
       referenceAnchor: mindTurn.mind?.referenceAnchor || null,
       lifeDomain: mindTurn.mind?.lifeDomain || 'none',
       lifeMotif: currentLifeMotif,
@@ -604,25 +590,25 @@ export default async function handler(req, res) {
       quietPresencePreferred: Boolean(kernelState?.relationalConstancy?.quietPresencePreferred),
       disclosureOpportunity: Boolean(kernelState?.relationalConstancy?.disclosureOpportunity),
       responseDepth: mindTurn.decision?.delivery?.responseDepth || 'normal',
-      responseShortLock: Number(behaviorState?.responseRhythm?.shortLockPressure || 0),
-      responseSingleLock: Number(behaviorState?.responseRhythm?.singleLockPressure || 0),
-      vocativePressure: Number(behaviorState?.vocative?.pressure || 0),
-      vocativeRawPressure: Number(behaviorState?.vocative?.rawPressure || 0),
-      vocativeRecentTurns: Number(behaviorState?.vocative?.recentVocativeTurns || 0),
-      vocativeRecent6: Number(behaviorState?.vocative?.recent6 || 0),
-      vocativeStreak: Number(behaviorState?.vocative?.streak || 0),
-      vocativeTurnsSinceAny: Number(behaviorState?.vocative?.turnsSinceAny || 0),
-      vocativeLastExact: behaviorState?.vocative?.lastExact || null,
-      vocativeLastClass: behaviorState?.vocative?.lastClass || null,
-      vocativeExactGapRemaining: Number(behaviorState?.vocative?.exactGapRemaining || 0),
-      vocativeClassGapRemaining: Number(behaviorState?.vocative?.classGapRemaining || 0),
-      vocativeAnyGapRemaining: Number(behaviorState?.vocative?.anyGapRemaining || 0),
-      vocativeStrongAvoid: Boolean(behaviorState?.vocative?.strongAvoid),
-      vocativeDirectRequest: Boolean(behaviorState?.vocative?.directRequest),
+      responseShortLock: Number(turnObservations?.responseRhythm?.shortLockPressure || 0),
+      responseSingleLock: Number(turnObservations?.responseRhythm?.singleLockPressure || 0),
+      vocativePressure: Number(turnObservations?.vocative?.pressure || 0),
+      vocativeRawPressure: Number(turnObservations?.vocative?.rawPressure || 0),
+      vocativeRecentTurns: Number(turnObservations?.vocative?.recentVocativeTurns || 0),
+      vocativeRecent6: Number(turnObservations?.vocative?.recent6 || 0),
+      vocativeStreak: Number(turnObservations?.vocative?.streak || 0),
+      vocativeTurnsSinceAny: Number(turnObservations?.vocative?.turnsSinceAny || 0),
+      vocativeLastExact: turnObservations?.vocative?.lastExact || null,
+      vocativeLastClass: turnObservations?.vocative?.lastClass || null,
+      vocativeExactGapRemaining: Number(turnObservations?.vocative?.exactGapRemaining || 0),
+      vocativeClassGapRemaining: Number(turnObservations?.vocative?.classGapRemaining || 0),
+      vocativeAnyGapRemaining: Number(turnObservations?.vocative?.anyGapRemaining || 0),
+      vocativeStrongAvoid: Boolean(turnObservations?.vocative?.strongAvoid),
+      vocativeDirectRequest: Boolean(turnObservations?.vocative?.directRequest),
       vocativeUsed: primaryVocative?.exact || null,
       vocativeUsedClass: primaryVocative?.semanticClass || null,
       vocativeUsedCount: realizedVocatives.length,
-      vocativeOverride: Boolean(behaviorState?.vocative?.strongAvoid && realizedVocatives.length > 0),
+      vocativeOverride: Boolean(turnObservations?.vocative?.strongAvoid && realizedVocatives.length > 0),
       commitmentAction: appliedCommitment?.lastAction || mindTurn.mind?.commitmentAction || 'none',
       commitmentRequestedAction: mindTurn.mind?.commitmentAction || 'none',
       commitmentConflict: mindTurn.mind?.commitmentConflict || 'none',
@@ -636,9 +622,9 @@ export default async function handler(req, res) {
       futureCallbackCue: detectedFutureCallback?.temporalCue || activeFutureCallbacks[0]?.temporalCue || null,
       futureCallbackActive: activeFutureCallbacks.length,
       futureCallbackResolvedId: resolvedFutureCallback || null,
-      sceneClosureStrong: Boolean(behaviorState?.sceneClosure?.strong),
-      sceneClosureSoft: Boolean(behaviorState?.sceneClosure?.soft),
-      sceneClosureKind: behaviorState?.sceneClosure?.kind || 'none',
+      sceneClosureStrong: Boolean(turnObservations?.sceneClosure?.strong),
+      sceneClosureSoft: Boolean(turnObservations?.sceneClosure?.soft),
+      sceneClosureKind: turnObservations?.sceneClosure?.kind || 'none',
       sharedSymbolCandidateId: sharedSymbolCandidate?.id || null,
       sharedSymbolCandidateActivation: Number(sharedSymbolCandidate?.activation || 0),
       sharedSymbolCandidateDirectRecall: Boolean(sharedSymbolCandidate?.directRecall),
@@ -660,7 +646,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-v3.0.0-cognitive-dynamics-realization',
+        promptVersion: 'rin-v3.0.1-cognitive-dynamics-stabilization',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
@@ -682,11 +668,12 @@ export default async function handler(req, res) {
         semanticRetries: 0
       },
       perception: brain,
-      cognition: { ...compactKernelState(kernelState), behaviorState, driveState, intentTelemetry, sceneControl,
+      cognition: { ...compactKernelState(kernelState), observations:turnObservations, behaviorState:turnObservations, intentTelemetry, sceneControl,
         cognitiveDynamics: {schema:cognitiveSettled.schema,behavioralState:cognitiveSettled.behavioralState,
           state:{emotion:cognitiveSettled.nodes.anger,jealousy:cognitiveSettled.nodes.jealousy,trust:cognitiveSettled.nodes.trust,
             fatigue:cognitiveSettled.nodes.fatigue,attachment:cognitiveSettled.nodes.attachment},
           steps:cognitiveSettled.steps,converged:cognitiveSettled.converged,influences:cognitiveSettled.topInfluences,
+          evidence:cognitiveInputs.evidence,
           plan:turnPlan.trace,associations:sharedSymbolState.trace,
           plasticity:cognitiveExperience.changes,learnedWeights:cognitiveExperience.state.learnedWeights}},
       mind: mindTurn.mind,
