@@ -190,7 +190,9 @@ async function fetchRinWeather(location = null){
         desc:  w.weather || '',
         temp:  typeof w.temp === 'number' ? Math.round(w.temp) : (typeof w.main?.temp === 'number' ? Math.round(w.main.temp) : null),
         feels: typeof w.feels_like === 'number' ? Math.round(w.feels_like) : (typeof w.main?.feels_like === 'number' ? Math.round(w.main.feels_like) : null),
-        icon:  w.icon || null
+        icon:  w.icon || null,
+        wind:  typeof w.wind === 'number' ? w.wind : (typeof w.wind?.speed === 'number' ? w.wind.speed : null),
+        humidity: typeof w.humidity === 'number' ? w.humidity : (typeof w.main?.humidity === 'number' ? w.main.humidity : null)
       };
     }
     const d = w?.weather?.[0]?.description || w?.current?.weather?.[0]?.description || '';
@@ -200,7 +202,9 @@ async function fetchRinWeather(location = null){
       desc: d,
       temp: typeof t === 'number' ? Math.round(t) : null,
       feels: typeof f === 'number' ? Math.round(f) : null,
-      icon: w?.weather?.[0]?.icon || w?.current?.weather?.[0]?.icon || null
+      icon: w?.weather?.[0]?.icon || w?.current?.weather?.[0]?.icon || null,
+      wind: typeof w?.wind?.speed === 'number' ? w.wind.speed : (typeof w?.current?.wind_speed === 'number' ? w.current.wind_speed : null),
+      humidity: typeof w?.main?.humidity === 'number' ? w.main.humidity : (typeof w?.current?.humidity === 'number' ? w.current.humidity : null)
     };
   }catch{ return null; }
 }
@@ -2641,6 +2645,10 @@ async function refreshRinEnv({ refreshWeather = true } = {}) {
       if (weather) {
         env.weather = weather;
         env._weatherTs = Date.now();
+      } else if (!priorWeatherTs || Date.now() - priorWeatherTs >= Math.max(5, Number(schedule?.weatherGrounding?.refreshMaxAgeMinutes || 20)) * 60000) {
+        // An expired forecast is not evidence of present outdoor conditions.
+        env.weather = null;
+        env._weatherTs = 0;
       }
     }
     currentEnv = env;
