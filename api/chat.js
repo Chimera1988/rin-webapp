@@ -426,7 +426,7 @@ export default async function handler(req, res) {
     const explicitPromptCache = supportsExplicitPromptCache(MIND_MODEL);
     const promptCacheKey = explicitPromptCache ? buildMindCacheKey(prompt.stableSystem, MIND_MODEL, prompt.responseFormat) : null;
     let completion = {content:'',finishReason:'silence',usage:null,model:MIND_MODEL,requestAttempts:0};
-    if(turnPlan.responseRequired){
+    if(turnPlan.needsVoice){
       modelStartedAt = Date.now();
       completion = await openaiChat({
         model:MIND_MODEL,
@@ -441,7 +441,7 @@ export default async function handler(req, res) {
     }
     let modelFallback=false;
     let realization={segments:[]};
-    if(turnPlan.responseRequired){
+    if(turnPlan.needsVoice){
       try{
         if(!completion.content||completion.finishReason==='length')throw new Error('model_response_empty_or_truncated');
         realization=parseV3Realization(completion.content,turnPlan);
@@ -490,13 +490,12 @@ export default async function handler(req, res) {
       felt:`${cognitiveInputs.evidence.primaryEmotion||'спокойная'}; approach=${cognitiveSettled.behavioralState.approach}`,
       wants:plannedDecision.focus,restraint:turnPlan.constraints.depthCap,
       socialIntent:plannedDecision.act,
-      sceneMotif:plannedDecision.act==='natural_silence'?'farewell':
-        (cognitiveSettled.behavioralState.play>.55?'playful_tension':'direct_exchange'),
-      lifeDomain:turnPlan.life.domain,lifeMotif:turnPlan.life.motif,frameAlignment:'aligned',literalCorrection:turnObservations?.literalCorrection?.explicit?'explicit':'none',
-      referenceAnchor:null,sharedSymbolId:turnPlan.symbolId,sharedSymbolExpression:turnPlan.symbolExpression,
+      sceneMotif:turnPlan.sceneMotif,
+      lifeDomain:turnPlan.life.domain,lifeMotif:turnPlan.life.motif,frameAlignment:turnPlan.frameAlignment,literalCorrection:turnObservations?.literalCorrection?.explicit?'explicit':'none',
+      referenceAnchor:turnPlan.referenceAnchor,sharedSymbolId:turnPlan.symbolId,sharedSymbolExpression:turnPlan.symbolExpression,
       sharedSymbolReason:turnPlan.symbolId?'associative_cognitive_activation':null,
       contactStance:turnPlan.contactStance,selfStateDisclosure:turnPlan.selfStateDisclosure,selfStateDisclosureReason:'settled_cognition',
-      commitmentAction:turnPlan.commitment.action,commitmentConflict:'none',commitmentTargetId:null,
+      commitmentAction:turnPlan.commitment.action,commitmentConflict:turnPlan.commitment.action==='insist'?'mild':'none',commitmentTargetId:turnPlan.commitment.targetId||null,
       commitmentSubject:turnPlan.commitment.subject,
       commitmentOwner:turnPlan.commitment.owner,commitmentStrength:turnPlan.commitment.strength,
       commitmentReason:turnPlan.commitment.reason,confidence:95
@@ -646,7 +645,7 @@ export default async function handler(req, res) {
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-v3.0.1-cognitive-dynamics-stabilization',
+        promptVersion: 'rin-v3.0.2-functional-parity',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
