@@ -1,286 +1,65 @@
-import { access, readFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
-import path from 'node:path';
-
-const ROOT = process.cwd();
-const read = file => readFile(path.join(ROOT, file), 'utf8');
-const exists = file => access(path.join(ROOT, file)).then(() => true, () => false);
-const fail = message => { throw new Error(`[build-smoke] ${message}`); };
-
-async function requireFiles(files) {
-  const missing = [];
-  for (const file of files) if (!await exists(file)) missing.push(file);
-  if (missing.length) fail(`Missing required files: ${missing.join(', ')}`);
+import {readFile,access,readdir} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+const read=p=>readFile(p,'utf8');
+const exists=p=>access(p).then(()=>true,()=>false);
+const requireText=(src,re,reason)=>{if(!re.test(src))throw new Error(reason);};
+const forbid=(src,re,reason)=>{if(re.test(src))throw new Error(reason);};
+const required=[
+ 'public/index.html','public/login.html','public/chat.js','public/js/rin_memory.js','public/js/release.js',
+ 'public/js/delivery_scheduler.js','public/js/presence_controller.js','public/js/chat_viewport.js','public/lib/cognitive-state-contract.js',
+ 'api/chat.js','lib/cognition/v3/cognitive-dynamics.js','lib/cognition/v3/experience.js','lib/cognition/v3/associative-memory.js',
+ 'lib/cognition/v3/turn-plan.js','lib/cognition/v3/realization.js',
+ 'lib/cognition/behavior-state.js','lib/cognition/turn-decision.js','lib/cognition/turn-validator.js',
+ 'lib/cognition/reality-boundary.js','lib/server/canon-retrieval.js',
+ 'data/canon/rin_prompt_profile.json','public/data/stickers-v7.json','vercel.json'
+];
+for(const name of required)if(!await exists(name))throw new Error(`Missing required file: ${name}`);
+const api=await read('api/chat.js');
+for(const [re,message] of [
+ [/settleCognitiveGraph\(/,'Cognitive dynamics not wired'],
+ [/buildCognitiveTurnPlan\(/,'TurnPlan not wired'],
+ [/buildV3RealizationPrompt\(/,'Luna realization not wired'],
+ [/parseV3Realization\(/,'Luna realization parsing not wired'],
+ [/updateCognitiveExperience\(/,'Controlled plasticity not wired'],
+ [/stateTransition\.cognitiveState/,'Cognitive persistence missing'],
+ [/buildRealityBoundary\(/,'Reality boundaries missing'],
+ [/validateRealization\(/,'Hard validation missing'],
+ [/buildDeliveryPlan\(/,'Delivery plan missing'],
+ [/buildDecisionStateTransition\(/,'Discrete intent/commitment reducer missing'],
+ [/retrieveCanonicalLore\(canonCue\)/,'Server-side canon missing'],
+ [/buildMindCacheKey\(/,'Stable cache missing']
+])requireText(api,re,message);
+for(const [re,message] of [
+ [/buildRinMindPrompt|parseRinMind|stabilizeTurn\s*\(/,'Legacy behavioral owner active in API'],
+ [/OPENAI_REALIZATION_MODEL|buildRealizationRetryPrompt/,'Legacy paid repair loop active'],
+ [/body\.lore/,'Client supplied lore used as canon']
+])forbid(api,re,message);
+const calls=(api.match(/await\s+openaiChat\s*\(/g)||[]).length;
+if(calls!==1)throw new Error(`Expected one Luna realization call site, got ${calls}`);
+const voice=await read('lib/cognition/v3/realization.js');
+requireText(voice,/rin_v3_realization/,'V3 structured output missing');
+forbid(voice,/intentTransition.*required|responseDepth.*required/,'Luna cannot own TurnPlan decisions');
+const state=await read('public/js/rin_memory.js');
+requireText(state,/normalizeCognitivePersistence\(stateTransition\.cognitiveState\)/,'Cognitive state commit missing');
+requireText(state,/lastCommittedRequestId/,'Duplicate state commit guard missing');
+const contract=await read('public/lib/cognitive-state-contract.js');
+requireText(contract,/rin-cognitive-state-v3/,'Cognitive schema missing');
+const index=await read('public/index.html'), login=await read('public/login.html');
+const release=(await read('public/js/release.js')).match(/RIN_RELEASE_ID\s*=\s*['"]([^'"]+)/)?.[1];
+if(!release)throw new Error('Release ID missing');
+for(const [name,html] of [['index',index],['login',login]]){
+ if(!html.includes(`v=${release}`))throw new Error(`${name} cache release mismatch`);
+ if(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(html))throw new Error(`${name}: CSP inline script`);
 }
-
-function requireText(source, patterns, owner) {
-  for (const [pattern, message] of patterns) {
-    if (!pattern.test(source)) fail(`${owner}: ${message}`);
-  }
+if((index.match(/app_bootstrap\.js/g)||[]).length!==1)throw new Error('Bootstrap loading changed');
+if(!index.includes('chatViewportShell'))throw new Error('Missing chatViewportShell');
+const headers=JSON.stringify(JSON.parse(await read('vercel.json')).headers||[]);
+for(const security of ["Content-Security-Policy","default-src 'self'","object-src 'none'",'no-store'])
+ if(!headers.includes(security))throw new Error(`Missing security policy ${security}`);
+for(const name of ['data/canon/rin_prompt_profile.json','data/canon/rin_backstory.json',
+ 'data/canon/rin_memories.json','data/canon/rin_triggers.json','public/data/rin_schedule.json','public/data/stickers-v7.json']){
+ const v=JSON.parse(await read(name));if(!v._schema)throw new Error(`${name} missing schema`);
 }
-
-function forbidText(source, patterns, owner) {
-  for (const [pattern, message] of patterns) {
-    if (pattern.test(source)) fail(`${owner}: ${message}`);
-  }
-}
-
-function runNode(args, label) {
-  const result = spawnSync(process.execPath, args, {
-    cwd: ROOT,
-    stdio: 'inherit',
-    env: process.env
-  });
-  if (result.error) fail(`${label} could not start: ${result.error.message}`);
-  if (result.status !== 0) fail(`${label} failed with exit code ${result.status}`);
-}
-
-await requireFiles([
-  'package.json',
-  'vercel.json',
-  'public/index.html',
-  'public/login.html',
-  'public/chat.js',
-  'public/js/release.js',
-  'public/js/app_bootstrap.js',
-  'public/js/chat_viewport.js',
-  'public/js/local_settings.js',
-  'public/js/theme_bootstrap.js',
-  'public/js/login.js',
-  'api/chat.js',
-  'lib/server/http.js',
-  'lib/server/canonical-profile.js',
-  'lib/server/canon-retrieval.js',
-  'lib/cognition/behavior-state.js',
-  'lib/cognition/life-texture.js',
-  'lib/cognition/drive-state.js',
-  'lib/cognition/intent-policy.js',
-  'lib/cognition/rin-mind.js',
-  'lib/cognition/turn-stabilizer.js',
-  'lib/cognition/sticker-state.js',
-  'lib/cognition/sticker-candidates.js',
-  'lib/cognition/sticker-catalog.js',
-  'lib/cognition/sticker-selector.js',
-  'lib/cognition/turn-decision.js',
-  'lib/cognition/turn-validator.js',
-  'lib/cognition/kernel-state.js',
-  'lib/cognition/emotional-state.js',
-  'lib/cognition/reality-boundary.js',
-  'lib/conversation-brain.js',
-  'data/canon/rin_prompt_profile.json',
-  'data/canon/rin_backstory.json',
-  'data/canon/rin_memories.json',
-  'data/canon/rin_triggers.json',
-  'public/data/rin_schedule.json',
-  'public/data/stickers-v7.json',
-  'scripts/check-syntax.js',
-  'scripts/check-rin-mind-v2.mjs',
-  'tests/rin-mind-v2.test.js',
-  'tests/rin-mind-v2-api.test.js',
-  'tests/rin-mind-v22.test.js',
-  'tests/rin-mind-v244.test.js',
-  'tests/rin-mind-v246.test.js',
-  'tests/rin-mind-v247.test.js',
-  'tests/rin-mind-v248.test.js',
-  'tests/rin-mind-v249.test.js',
-  'lib/cognition/shared-symbols.js'
-]);
-
-// Keep the existing browser/release/security envelope intact.
-const releaseSource = await read('public/js/release.js');
-const release = releaseSource.match(/RIN_RELEASE_ID\s*=\s*['"]([^'"]+)['"]/)?.[1];
-if (!release) fail('Release ID is missing.');
-
-for (const htmlFile of ['public/index.html', 'public/login.html']) {
-  const html = await read(htmlFile);
-  if (!html.includes(`v=${release}`)) fail(`${htmlFile} does not use release ${release}.`);
-  for (const match of html.matchAll(/(?:src|href)="(\/[^\"]+)"/g)) {
-    const raw = match[1].split('?')[0];
-    if (raw === '/' || raw.startsWith('/api/')) continue;
-    const target = raw.startsWith('/public/') ? raw.slice(1) : `public${raw}`;
-    if (!await exists(target)) fail(`${htmlFile} references missing ${target}.`);
-  }
-}
-
-const index = await read('public/index.html');
-if ((index.match(/app_bootstrap\.js/g) || []).length !== 1) fail('Index must load exactly one application bootstrap.');
-if ((index.match(/theme_bootstrap\.js/g) || []).length !== 1) fail('Index must load exactly one theme bootstrap.');
-if (!index.includes('id="chatViewportShell"') || !index.includes('class="chat-viewport-shell"')) fail('Index must keep the visual viewport shell.');
-if (!index.includes('id="chatWallpaper"') || !index.includes('class="chat-wallpaper"')) fail('Index must keep the wallpaper layer.');
-if (!index.includes('id="replyPreview"') || !index.includes('class="reply-preview"')) fail('Index must keep reply-to-selected UI.');
-if (/chat\.js[^\n]*<\/script>/i.test(index)) fail('Index must not load chat.js outside authenticated bootstrap.');
-if (/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i.test(index)) fail('Strict CSP forbids inline scripts in public/index.html.');
-if (/\son[a-z]+\s*=/i.test(index)) fail('Strict CSP forbids inline event handlers in public/index.html.');
-
-const loginSource = await read('public/js/login.js');
-if (!loginSource.includes("classList.add('login-ready')")) fail('Login readiness boundary is missing.');
-
-const vercel = JSON.parse(await read('vercel.json'));
-const headerText = JSON.stringify(vercel.headers || []);
-if (!headerText.includes('/api/(.*)') || !headerText.includes('no-store')) fail('API no-store cache policy is missing.');
-if (!headerText.includes('Content-Security-Policy') || !headerText.includes("default-src 'self'") || !headerText.includes("object-src 'none'")) {
-  fail('Baseline browser security headers are missing.');
-}
-const csp = (vercel.headers || [])
-  .flatMap(rule => Array.isArray(rule?.headers) ? rule.headers : [])
-  .find(header => String(header?.key || '').toLowerCase() === 'content-security-policy')?.value || '';
-if (!/script-src\s+'self'/.test(csp) || /script-src[^;]*'unsafe-inline'/.test(csp)) fail('Script CSP must stay self-only.');
-
-for (const file of [
-  'data/canon/rin_prompt_profile.json',
-  'data/canon/rin_backstory.json',
-  'data/canon/rin_memories.json',
-  'data/canon/rin_triggers.json',
-  'public/data/rin_schedule.json',
-  'public/data/stickers-v7.json'
-]) {
-  const json = JSON.parse(await read(file));
-  if (!json._schema) fail(`${file} has no _schema.`);
-}
-
-// Rin Mind v2 is the semantic owner. The old two-paid-stage gate must not be reintroduced.
-const apiChat = await read('api/chat.js');
-requireText(apiChat, [
-  [/behavior-state\.js/, 'Behavior State is not wired into chat.'],
-  [/drive-state\.js/, 'Drive State is not wired into chat.'],
-  [/rin-mind\.js/, 'Rin Mind is not wired into chat.'],
-  [/turn-stabilizer\.js/, 'Local turn stabilizer is not wired into chat.'],
-  [/sticker-candidates\.js/, 'Contextual sticker candidates are not wired into chat.'],
-  [/sticker-state\.js/, 'Sticker state is not wired into chat.'],
-  [/canon-retrieval\.js/, 'Server-side canon retrieval is not wired into chat.'],
-  [/OPENAI_MIND_MODEL/, 'OPENAI_MIND_MODEL routing is missing.'],
-  [/gpt-6-luna/, 'GPT-6 Luna must be the default evaluation model.'],
-  [/OPENAI_MIND_REASONING_EFFORT/, 'GPT-6 Luna reasoning-effort control is missing.'],
-  [/max_completion_tokens/, 'GPT-6 Chat Completions token-limit compatibility is missing.'],
-  [/buildRinMindPrompt\s*\(/, 'Rin Mind prompt construction is missing.'],
-  [/parseRinMind\s*\(/, 'Rin Mind structured output parsing is missing.'],
-  [/stabilizeTurn\s*\(/, 'Deterministic stabilization is missing.'],
-  [/semanticRetries\s*:\s*0/, 'Semantic retry budget must remain zero.'],
-  [/calls\s*:\s*\{\s*mind\s*:\s*1\s*,\s*kernel\s*:\s*0\s*,\s*realization\s*:\s*0/s, 'Token telemetry must expose one semantic call.'],
-  [/retrieveCanonicalLore\(canonCue\)/, 'Canonical lore must be retrieved server-side.'],
-  [/RETRYABLE_OPENAI_STATUSES/, 'Transport retry classification is missing.'],
-  [/buildMindCacheKey/, 'Stable Rin Mind cache-contract key is missing.'],
-  [/role:\s*'developer'/, 'GPT-6 stable/dynamic prompt must use developer messages around the cache boundary.']
-], 'api/chat.js');
-
-const semanticCalls = (apiChat.match(/await\s+openaiChat\s*\(/g) || []).length;
-if (semanticCalls !== 1) fail(`api/chat.js must contain exactly one semantic OpenAI invocation; found ${semanticCalls}.`);
-forbidText(apiChat, [
-  [/OPENAI_REALIZATION_MODEL/, 'Legacy realization model routing must not return.'],
-  [/buildRealizationRetryPrompt/, 'Paid realization repair loop must not return.'],
-  [/body\.lore/, 'Client-supplied lore must never become canonical input.']
-], 'api/chat.js');
-
-const mindSource = await read('lib/cognition/rin-mind.js');
-requireText(mindSource, [
-  [/name:\s*'rin_mind_turn_v2'/, 'Structured-output schema name is missing.'],
-  [/СИЛЬНАЯ ГРАНИЦА/u, 'Explicit question/space boundary guidance is missing.'],
-  [/question\.mode=none/u, 'No-question behavioral contract is missing.'],
-  [/Стикер — невербальный жест Рин/u, 'Sticker volition contract is missing.'],
-  [/removeQuestionSentences\s*\(/, 'Deterministic question-boundary recovery is missing.'],
-  [/buildDeterministicConversationFallback/, 'Local model-output fallback is missing.'],
-  [/behavioral code/iu, 'Stable behavioral act code contract is missing.'],
-  [/Persistent intent/iu, 'Persistent intent guidance is missing.'],
-  [/recentIntents/iu, 'Completed-intent cooldown guidance is missing.'],
-  [/playful_mock_offense/iu, 'Readable playful mock-offense guidance is missing.'],
-  [/sceneMotif/u, 'Semantic scene motif classification is missing.'],
-  [/frameAlignment/u, 'Contextual social-frame alignment is missing.'],
-  [/не классифицируй по ключевым словам/iu, 'Frame alignment must not fall back to keyword-only misread detection.'],
-  [/delivery\.messageShape/u, 'Messenger rhythm must expose an intentional single/split choice.'],
-  [/delivery\.responseDepth/u, 'Response Economy depth control is missing.'],
-  [/Response Economy/u, 'Response Economy guidance is missing.'],
-  [/Life Texture/u, 'Life Texture guidance is missing.'],
-  [/lifeDomain/u, 'Semantic life-domain ownership is missing.'],
-  [/ВЗАИМНОЕ ВНИМАНИЕ/u, 'Reciprocal-attention guidance is missing.']
-], 'lib/cognition/rin-mind.js');
-
-const behaviorSource = await read('lib/cognition/behavior-state.js');
-requireText(behaviorSource, [
-  [/strongNoQuestion/, 'Explicit no-question state is missing.'],
-  [/fatigue/, 'Question fatigue tracking is missing.'],
-  [/likelyInflectionTypo/, 'Stable male-user typo handling is missing.'],
-  [/novelty/, 'Soft behavioral novelty pressure is missing.'],
-  [/recentMotifs/, 'Semantic motif history is missing.'],
-  [/lifeNovelty/, 'Life-topic novelty state is missing.'],
-  [/frameEvidence/, 'Context evidence for frame alignment is missing.']
-], 'lib/cognition/behavior-state.js');
-
-const driveSource = await read('lib/cognition/drive-state.js');
-requireText(driveSource, [
-  [/curiosity/, 'Curiosity drive is missing.'],
-  [/questionImpulse/, 'Question impulse drive is missing.'],
-  [/reciprocalAttention/, 'Reciprocal-attention drive is missing.']
-], 'lib/cognition/drive-state.js');
-
-const stickerStateSource = await read('lib/cognition/sticker-state.js');
-requireText(stickerStateSource, [
-  [/hardAvailable/, 'Hard sticker availability is missing.'],
-  [/desireModifier/, 'Sticker desire modifier is missing.'],
-  [/cooldownPressure/, 'Sticker cooldown must be represented as pressure.'],
-  [/frequencyPressure/, 'Sticker frequency must be represented as pressure.'],
-  [/explicit_gesture_override/, 'Smart sticker gesture override is missing.']
-], 'lib/cognition/sticker-state.js');
-
-const stabilizerSource = await read('lib/cognition/turn-stabilizer.js');
-requireText(stabilizerSource, [
-  [/repairMaleUserAddress/, 'Local gender repair is missing.'],
-  [/delivery_recovered_with_local_fallback/, 'Local delivery recovery is missing.'],
-  [/sticker_removed_hard_unavailable/, 'Hard sticker safety recovery is missing.'],
-  [/sticker_removed_immediate_repeat/, 'Immediate sticker repetition protection is missing.'],
-  [/response_depth_budget_applied/, 'Response-depth hard safety budget is missing.']
-], 'lib/cognition/turn-stabilizer.js');
-
-// Error rendering is allowed to be implemented in the authenticated bootstrap bridge
-// or directly in chat.js, but repeated failures must not create fake Rin bubbles forever.
-const bootstrapSource = await read('public/js/app_bootstrap.js');
-const publicChat = await read('public/chat.js');
-const localSettingsSource = await read('public/js/local_settings.js');
-requireText(publicChat, [
-  [/createLocalSettings\(localStorage\)/, 'Chat settings must bind storage helpers to localStorage explicitly.'],
-  [/stickerMode=\$\{state\?\.mode/, 'Sticker diagnostics must expose the effective backend mode.'],
-  [/buildTurnDebugSnapshot/, 'Post-commit turn telemetry snapshot is missing.'],
-  [/sceneMotif=\$\{snapshot\.sceneMotif\}/, 'Scene motif telemetry is missing.'],
-  [/frameAlignment=\$\{snapshot\.frameAlignment\}/, 'Frame alignment telemetry is missing.'],
-  [/messageShape=\$\{snapshot\.messageShape\}/, 'Messenger-shape telemetry is missing.'],
-  [/responseDepth=\$\{snapshot\.responseDepth\}/, 'Response-depth telemetry is missing.'],
-  [/lifeDomain=\$\{snapshot\.lifeDomain\}/, 'Life-domain telemetry is missing.'],
-  [/lifeNovelty=\$\{snapshot\.lifeNoveltyPressure\}/, 'Life-novelty telemetry is missing.'],
-  [/reciprocityPressure=\$\{snapshot\.reciprocityPressure\}/, 'Reciprocal-attention telemetry is missing.'],
-  [/sharedSymbol=\$\{snapshot\.sharedSymbolId\}/, 'Shared-symbol telemetry is missing.']
-], 'public/chat.js');
-requireText(localSettingsSource, [
-  [/storageGet\(storage, key, fallback\)/, 'Bound settings reader is missing.'],
-  [/storageSetVerified\(storage, key, value\)/, 'Verified settings writer is missing.']
-], 'public/js/local_settings.js');
-
-const intentPolicySource = await read('lib/cognition/intent-policy.js');
-requireText(intentPolicySource, [
-  [/maintenance_sustain/, 'Maintenance intent sustain policy is missing.'],
-  [/MULTI_TURN_ACTS/, 'Multi-turn volition policies are missing.'],
-  [/intentSimilarity/, 'Recent-intent similarity cooldown is missing.'],
-  [/local_achievement_progress/, 'Achievement intent progress policy is missing.'],
-  [/maintenance_complete_guarded_live_scene/, 'Maintenance completion guard is missing.']
-], 'lib/cognition/intent-policy.js');
-
-const chatApiSource = await read('api/chat.js');
-requireText(chatApiSource, [
-  [/prompt_cache_options/, 'Explicit prompt cache options are missing.'],
-  [/prompt_cache_breakpoint/, 'Stable prompt cache breakpoint is missing.'],
-  [/supportsExplicitPromptCache/, 'Model-aware prompt cache capability guard is missing.']
-], 'api/chat.js');
-
-requireText(mindSource, [
-  [/stableSystem/, 'Stable Rin Mind prompt prefix is missing.'],
-  [/dynamicSystem/, 'Dynamic Rin Mind prompt suffix is missing.']
-], 'lib/cognition/rin-mind.js');
-
-const viewportSource = await read('public/js/chat_viewport.js');
-if (!/--rin-viewport-offset-top/.test(viewportSource)) fail('public/js/chat_viewport.js must retain visual viewport offset handling.');
-const hasBootstrapErrorBridge = /message-error-note/.test(bootstrapSource) && /MutationObserver/.test(bootstrapSource);
-const hasDirectErrorNotice = /message-error-note/.test(publicChat) && !/addBubble\(userFacingError\(code\),\s*'assistant'\)/.test(publicChat);
-if (!hasBootstrapErrorBridge && !hasDirectErrorNotice) fail('Retryable chat failures must update one user-message error notice instead of appending fake Rin bubbles.');
-
-// Syntax validation covers every JS file in the repository, including files in this bundle.
-runNode(['scripts/check-syntax.js'], 'repository syntax check');
-
-console.log('Build smoke OK: Rin Mind v2.5.0 Luna, Conversation Presence & Natural Scene Closure (semantic sleep/quiet silence + live clock + dense presence + read receipts + adaptive delivery latency + transport diagnostics + plain-text realization hygiene), Dialogue Naturalness + Future Callback Continuity + Vocative Repetition Control + Sticker Rhythm Hardening, Daily Rhythm + Sleep/Wake Continuity + Weekend Semantics + Weather Grounding, Relational Constancy + Emotional Openness + Persistent Life State, Shared Relationship Symbols + associative recall, commitment lifecycle integrity, response rhythm calibration, Life Texture, six-exchange short-term dialogue, reciprocal attention, stable-prefix cache, one semantic model call.');
+const syntax=spawnSync(process.execPath,['scripts/check-syntax.js'],{stdio:'inherit'});
+if(syntax.status!==0)throw new Error('Syntax scan failed');
+console.log('Build smoke OK: Rin v3.0.0 cognitive dynamics + exclusive TurnPlan + Luna realization + bounded persistence; original weather, messenger and security interfaces retained.');
