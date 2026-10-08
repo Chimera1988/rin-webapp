@@ -108,14 +108,16 @@ export function dayProfileForDate(dateKey, policy = {}) {
 
 export function classifyWeather(weather = null) {
   const desc = clean(weather?.desc, 120).toLowerCase();
-  const temp = Number(weather?.temp);
-  if (!desc && !Number.isFinite(temp)) return { kind: 'unknown', outdoor: 'unknown', reason: null };
-  if (/(гроза|шторм|ураган|ливень|сильн[^ ]*\s+дожд|thunder|storm|heavy rain)/iu.test(desc)) {
-    return { kind: 'severe', outdoor: 'avoid', reason: desc || 'непогода' };
+  const temp = weather?.temp == null ? null : Number(weather.temp);
+  const wind = weather?.wind == null ? null : Number(weather.wind);
+  if (!desc && !Number.isFinite(temp) && !Number.isFinite(wind)) return { kind: 'unknown', outdoor: 'unknown', reason: null };
+  if (/(гроза|шторм|ураган|ливень|сильн[^ ]*\s+дожд|thunder|storm|heavy rain)/iu.test(desc) || (Number.isFinite(wind) && wind >= 18)) {
+    return { kind: 'severe', outdoor: 'avoid', reason: Number.isFinite(wind) && wind >= 18 ? `${Math.round(wind)} м/с` : (desc || 'непогода') };
   }
   if (/(дожд|морос|снег|метел|rain|drizzle|snow)/iu.test(desc)) {
     return { kind: 'precipitation', outdoor: 'adapt', reason: desc || 'осадки' };
   }
+  if (Number.isFinite(wind) && wind >= 10) return { kind: 'windy', outdoor: 'adapt', reason: `${Math.round(wind)} м/с` };
   if (Number.isFinite(temp) && temp >= 32) return { kind: 'hot', outdoor: 'adapt', reason: `${Math.round(temp)}°C` };
   if (Number.isFinite(temp) && temp <= 0) return { kind: 'cold', outdoor: 'adapt', reason: `${Math.round(temp)}°C` };
   return { kind: 'mild', outdoor: 'normal', reason: desc || (Number.isFinite(temp) ? `${Math.round(temp)}°C` : null) };
