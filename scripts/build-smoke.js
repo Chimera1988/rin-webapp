@@ -62,4 +62,4 @@ for(const name of ['data/canon/rin_prompt_profile.json','data/canon/rin_backstor
 }
 const syntax=spawnSync(process.execPath,['scripts/check-syntax.js'],{stdio:'inherit'});
 if(syntax.status!==0)throw new Error('Syntax scan failed');
-console.log('Build smoke OK: Rin v3.0.1 cognitive dynamics stabilization + exclusive TurnPlan + Luna realization + bounded persistence; original weather, messenger and security interfaces retained.');
+console.log('Build smoke OK: Rin v3.0.2 functionally restored cognitive dynamics + exclusive TurnPlan + Luna realization + bounded persistence; original weather, messenger and security interfaces retained.');
