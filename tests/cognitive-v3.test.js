@@ -16,7 +16,7 @@ const world=(overrides={})=>({userText:'Привет)',scene:{type:'everyday'},c
   relationship:{closeness:84,trust:82},mood:{affection:75},...overrides});
 const settle=(values={},saved=null)=>settleCognitiveGraph({inputs:{values:{...baseline,...values}},saved});
 const plan=(graph,overrides={})=>buildCognitiveTurnPlan({settled:graph,kernelState:world(overrides),
-  behaviorState:overrides.behaviorState||{},stickerState:{available:false}});
+  observations:overrides.behaviorState||{},stickerState:{available:false}});
 
 test('Rin 3 graph has valid unique typed edges and no unbounded coefficients',()=>{
   const ids=new Set(COGNITIVE_EDGES.map(e=>e.id));
@@ -72,7 +72,7 @@ test('closure allows true silence and quiet presence without breaking relationsh
   assert.equal(closure.strong,true);
   const graph=settle({sceneClosure:1,quietNeed:.9,fatigue:.84});
   const result=buildCognitiveTurnPlan({settled:{...graph,evidence:{...graph.evidence,userQuestion:false,distress:false}},
-    kernelState:world({userText:'Я рядом)',conversationState:'ending'}),behaviorState:{sceneClosure:closure},stickerState:{available:false}});
+    kernelState:world({userText:'Я рядом)',conversationState:'ending'}),observations:{sceneClosure:closure},stickerState:{available:false}});
   assert.equal(result.responseRequired,false);
   assert.equal(result.decision.delivery.mode,'silence');
   assert.equal(result.decision.delivery.segments.length,0);
@@ -81,21 +81,21 @@ test('closure allows true silence and quiet presence without breaking relationsh
 test('explicit question defeats scene closure silence without resetting emotional attachment',()=>{
   const graph=settle({sceneClosure:1,questionCue:1,quietNeed:.9});
   const result=buildCognitiveTurnPlan({settled:{...graph,evidence:{userQuestion:true}},
-    kernelState:world({userText:'Ты спишь?',perception:{signals:['direct_question_present']}}),behaviorState:{sceneClosure:{strong:true}},stickerState:{available:false}});
+    kernelState:world({userText:'Ты спишь?',perception:{signals:['direct_question_present']}}),observations:{sceneClosure:{strong:true}},stickerState:{available:false}});
   assert.equal(result.responseRequired,true);
   assert.equal(result.decision.delivery.segments.length,1);
 });
 test('emotional repair obligation defeats silence',()=>{
   const graph=settle({sceneClosure:1,needSupport:1,distressCue:1});
   const result=buildCognitiveTurnPlan({settled:{...graph,evidence:{distress:true}},
-    kernelState:world({userText:'Мне сейчас плохо',perception:{signals:['user_seeks_emotional_presence']}}),behaviorState:{sceneClosure:{strong:true}},stickerState:{available:false}});
+    kernelState:world({userText:'Мне сейчас плохо',perception:{signals:['user_seeks_emotional_presence']}}),observations:{sceneClosure:{strong:true}},stickerState:{available:false}});
   assert.equal(result.responseRequired,true);
   assert.equal(result.decision.act,'supportive_presence');
 });
 test('silence does not terminate persistent maintenance intent',()=>{
   const graph=settle({sceneClosure:1,quietNeed:1});
   const result=buildCognitiveTurnPlan({settled:graph,kernelState:world({activeIntent:{status:'active',kind:'maintenance',goal:'сохранять игровую динамику'}}),
-    behaviorState:{sceneClosure:{strong:true}},stickerState:{available:false}});
+    observations:{sceneClosure:{strong:true}},stickerState:{available:false}});
   assert.equal(result.decision.intentTransition.operation,'preserve');
 });
 test('physiological short cap outranks style expansion without changing personality',()=>{
@@ -107,13 +107,13 @@ test('physiological short cap outranks style expansion without changing personal
 test('explicit long answer can receive extended response despite tiredness',()=>{
   const graph=settle({energy:.15,fatigue:.9});
   const result=buildCognitiveTurnPlan({settled:graph,kernelState:world({innerLife:{energy:18,sleepPhase:'waking'}}),
-    behaviorState:{},stickerState:{available:false},longRequested:true});
+    observations:{},stickerState:{available:false},longRequested:true});
   assert.equal(result.decision.delivery.responseDepth,'extended');
 });
 test('no question boundary does not destroy curiosity',()=>{
   const graph=settle({curiosity:1,boundaryCue:1});
   const result=buildCognitiveTurnPlan({settled:graph,kernelState:world(),
-    behaviorState:{question:{strongNoQuestion:true}},stickerState:{available:false}});
+    observations:{question:{strongNoQuestion:true}},stickerState:{available:false}});
   assert.equal(result.decision.question.mode,'none');
   assert.ok(graph.nodes.curiosity>.9);
 });
