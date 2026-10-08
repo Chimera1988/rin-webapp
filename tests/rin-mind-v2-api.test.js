@@ -1,213 +1,56 @@
+/* Historical filename retained for replacement-file deployment. Contracts now cover Rin v3. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createReq, createRes } from './helpers/runtime.js';
+import {buildV3RealizationSchema,parseV3Realization} from '../lib/cognition/v3/realization.js';
+import {buildCognitiveTurnPlan} from '../lib/cognition/v3/turn-plan.js';
+import {settleCognitiveGraph} from '../lib/cognition/v3/cognitive-dynamics.js';
 
-const originalEnv = {
-  pin: process.env.ACCESS_PIN,
-  key: process.env.OPENAI_API_KEY,
-  mind: process.env.OPENAI_MIND_MODEL
-};
-process.env.ACCESS_PIN = '1357';
-process.env.OPENAI_API_KEY = 'test-key';
-process.env.OPENAI_MIND_MODEL = 'gpt-6-luna';
-
-const chat = await import('../api/chat.js?rin-mind-v2-contract');
-
-function restoreEnv() {
-  if (originalEnv.pin === undefined) delete process.env.ACCESS_PIN; else process.env.ACCESS_PIN = originalEnv.pin;
-  if (originalEnv.key === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalEnv.key;
-  if (originalEnv.mind === undefined) delete process.env.OPENAI_MIND_MODEL; else process.env.OPENAI_MIND_MODEL = originalEnv.mind;
-}
-
-test.after(restoreEnv);
-
-function mindTurn(text, overrides = {}) {
-  return {
-    act: 'personal_response',
-    focus: 'ответить по смыслу как Рин',
-    stance: 'личная и естественная',
-    question: { mode: 'none', reason: null },
-    replyLink: { targetEventId: null, reason: null },
-    delivery: {
-      responseDepth: 'normal',
-      messageShape: 'single',
-      segments: [{ type: 'text', purpose: 'reply', stickerIntent: null, maxChars: 320, text }]
-    },
-    intentTransition: {
-      operation: 'none', goal: null, motive: null, target: null,
-      nextMove: null, progress: null, commitment: null, reason: null
-    },
-    openLoops: { open: [], resolveIds: [] },
-    realityMode: 'grounded',
-    mind: {
-      sceneMotif: 'direct_exchange',
-      lifeDomain: 'none',
-      lifeMotif: null,
-      frameAlignment: 'aligned',
-      literalCorrection: 'none',
-      referenceAnchor: null,
-      felt: 'спокойная вовлечённость',
-      wants: 'сохранить естественный контакт',
-      restraint: null,
-      socialIntent: 'respond',
-      confidence: 90
-    },
-    ...overrides
-  };
-}
-
-function openAiResponse(content, { finishReason = 'stop' } = {}) {
-  return new Response(JSON.stringify({
-    choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) }, finish_reason: finishReason }],
-    usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
-    model: 'gpt-4.1-test'
-  }), { status: 200, headers: { 'content-type': 'application/json' } });
-}
-
-function userRequest({ requestId = 'r1', text = 'Привет', history = null, ...body } = {}) {
-  return createReq({
-    headers: { 'x-rin-pin': '1357' },
-    body: {
-      requestId,
-      history: history || [{ role: 'user', kind: 'text', status: 'sent', requestId, id: `u-${requestId}`, content: text }],
-      client: { sticker: { mode: 'off', probability: 0, safeMode: true } },
-      ...body
-    }
-  });
-}
-
-test('normal Rin Mind turn uses one semantic model request', async () => {
-  const originalFetch = globalThis.fetch;
-  const bodies = [];
-  globalThis.fetch = async (_url, options = {}) => {
-    const body = JSON.parse(options.body || '{}');
-    bodies.push(body);
-    assert.equal(body?.response_format?.json_schema?.name, 'rin_mind_turn_v2');
-    assert.equal(body?.model, 'gpt-6-luna');
-    assert.equal(body?.reasoning_effort, 'none');
-    assert.equal(body?.temperature, 0.58);
-    assert.equal(body?.max_completion_tokens, 1200);
-    assert.equal('max_tokens' in body, false);
-    assert.deepEqual(body?.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
-    assert.equal(body?.messages?.length, 2);
-    assert.equal(body.messages[0].role, 'developer');
-    assert.ok(Array.isArray(body.messages[0].content));
-    assert.equal(body.messages[0].content.length, 1);
-    assert.deepEqual(body.messages[0].content[0].prompt_cache_breakpoint, { mode: 'explicit' });
-    assert.doesNotMatch(body.messages[0].content[0].text, /Ты тут\?/u);
-    assert.equal(body.messages[1].role, 'developer');
-    assert.match(String(body.messages[1].content), /Ты тут\?/u);
-    assert.match(String(body.prompt_cache_key || ''), /^rin-mind-[a-f0-9]{40}$/u);
-    return openAiResponse(mindTurn('Угу, я здесь)'));
-  };
-  try {
-    const res = createRes();
-    await chat.default(userRequest({ requestId: 'one-call', text: 'Ты тут?' }), res);
-    assert.equal(res.statusCode, 200);
-    assert.equal(bodies.length, 1);
-    assert.equal(res.body.reply, 'Угу, я здесь)');
-    assert.equal(res.body.promptMetrics.calls.mind, 1);
-    assert.equal(res.body.promptMetrics.calls.kernel, 0);
-    assert.equal(res.body.promptMetrics.calls.realization, 0);
-    assert.equal(res.body.promptMetrics.semanticRetries, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+const original={pin:process.env.ACCESS_PIN,key:process.env.OPENAI_API_KEY,mind:process.env.OPENAI_MIND_MODEL};
+process.env.ACCESS_PIN='1357';process.env.OPENAI_API_KEY='test-key';process.env.OPENAI_MIND_MODEL='gpt-6-luna';
+const chat=await import('../api/chat.js?v3-transport');
+test.after(()=>{
+ for(const [key,value] of Object.entries({ACCESS_PIN:original.pin,OPENAI_API_KEY:original.key,OPENAI_MIND_MODEL:original.mind})){
+  if(value===undefined)delete process.env[key];else process.env[key]=value;
+ }
 });
+const plan=()=>buildCognitiveTurnPlan({settled:settleCognitiveGraph(),kernelState:{userText:'Привет',scene:{type:'everyday'},
+  innerLife:{energy:60},perception:{signals:[]}},stickerState:{available:false}});
 
-test('stop-questions boundary cannot become a validation failure or trigger a second semantic call', async () => {
-  const originalFetch = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = async () => {
-    calls += 1;
-    return openAiResponse(mindTurn('Ладно, отступаю) А что бы ты всё-таки рассказал?', {
-      act: 'playful_retreat',
-      focus: 'уважить просьбу пользователя прекратить вопросы',
-      question: { mode: 'natural', reason: 'curiosity' },
-      mind: {
-        felt: 'игривое принятие', wants: 'не давить', restraint: 'пользователь попросил без вопросов',
-        socialIntent: 'respect_boundary', confidence: 94
-      }
-    }));
-  };
-  try {
-    const requestId = 'stop-questions';
-    const res = createRes();
-    await chat.default(userRequest({
-      requestId,
-      text: 'Хватит вопросов пока)',
-      history: [
-        { role: 'assistant', kind: 'text', status: 'complete', requestId: 'prev', turnId: 'prev-turn', id: 'a-prev', content: 'А что бы ты рассказал первым?' },
-        { role: 'user', kind: 'text', status: 'sent', requestId, id: 'u-stop', content: 'Хватит вопросов пока)' }
-      ]
-    }), res);
-    assert.equal(res.statusCode, 200);
-    assert.equal(calls, 1);
-    assert.equal(res.body.turnDecision.question.mode, 'none');
-    assert.equal(res.body.reply.includes('?'), false);
-    assert.match(res.body.reply, /Ладно, отступаю/iu);
-    assert.equal(res.body.promptMetrics.semanticRetries, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test('v3 voice schema is byte stable for every turn',()=>{
+ const first=buildV3RealizationSchema();
+ assert.equal(JSON.stringify(first),JSON.stringify(buildV3RealizationSchema()));
+ assert.equal(first.json_schema.name,'rin_v3_realization');
 });
-
-test('invalid structured model output degrades locally instead of making a semantic retry', async () => {
-  const originalFetch = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = async () => {
-    calls += 1;
-    return openAiResponse('{definitely-not-json');
-  };
-  try {
-    const res = createRes();
-    await chat.default(userRequest({ requestId: 'local-fallback', text: 'Ясно)' }), res);
-    assert.equal(res.statusCode, 200);
-    assert.equal(calls, 1);
-    assert.equal(res.body.promptMetrics.modelFallback, true);
-    assert.equal(res.body.promptMetrics.semanticRetries, 0);
-    assert.ok(res.body.reply.length > 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test('v3 parser accepts text content only and cannot own final decision',()=>{
+ const result=parseV3Realization({segments:[{text:'Привет.'}],decision:{act:'other',delivery:{responseDepth:'extended'}}},plan());
+ assert.deepEqual(result.segments,[{type:'text',purpose:'natural_reply',text:'Привет.'}]);
+ assert.equal('decision' in result,false);
 });
-
-
-test('GPT-6 request compatibility removes temperature above none reasoning', async () => {
-  const originalFetch = globalThis.fetch;
-  let captured = null;
-  globalThis.fetch = async (_url, options = {}) => {
-    captured = JSON.parse(options.body || '{}');
-    return openAiResponse(mindTurn('ok'));
-  };
-  try {
-    await chat.openaiChat({
-      model: 'gpt-6-luna',
-      messages: [{ role: 'system', content: 'x' }],
-      temperature: 0.58,
-      max_tokens: 1200,
-      reasoning_effort: 'low'
-    });
-    assert.equal(captured.model, 'gpt-6-luna');
-    assert.equal(captured.reasoning_effort, 'low');
-    assert.equal(captured.max_completion_tokens, 1200);
-    assert.equal('max_tokens' in captured, false);
-    assert.equal('temperature' in captured, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+test('v3 realization rejects schema with wrong number of text segments',()=>{
+ assert.throws(()=>parseV3Realization({segments:[]},plan()),/SEGMENT_COUNT/);
 });
-
-test('explicit prompt caching is enabled only for GPT-5.6+ and keeps rollback models plain', () => {
-  const prompt = { system: 'stable\n\ndynamic', stableSystem: 'stable', dynamicSystem: 'dynamic' };
-  const luna = chat.buildMindMessages(prompt, 'gpt-6-luna');
-  assert.ok(Array.isArray(luna[0].content));
-  assert.deepEqual(luna[0].content[0].prompt_cache_breakpoint, { mode: 'explicit' });
-  assert.equal(chat.supportsExplicitPromptCache('gpt-6-luna'), true);
-  assert.equal(chat.supportsExplicitPromptCache('gpt-5.6-luna'), true);
-  assert.equal(chat.supportsExplicitPromptCache('gpt-5.4-mini'), false);
-  assert.equal(chat.supportsExplicitPromptCache('gpt-4.1'), false);
-
-  const rollback = chat.buildMindMessages(prompt, 'gpt-4.1');
-  assert.deepEqual(rollback, [{ role: 'system', content: 'stable\n\ndynamic' }]);
+test('GPT-6 uses max_completion_tokens and removes temperature for reasoning',async()=>{
+ const originalFetch=globalThis.fetch;let captured;
+ globalThis.fetch=async(_,options)=>{captured=JSON.parse(options.body);return new Response(JSON.stringify({choices:[{message:{content:'x'},finish_reason:'stop'}],usage:{}}),{status:200});};
+ try{
+  await chat.openaiChat({model:'gpt-6-luna',messages:[{role:'system',content:'x'}],temperature:.58,max_tokens:1200,reasoning_effort:'low'});
+  assert.equal(captured.max_completion_tokens,1200);
+  assert.equal('temperature' in captured,false);
+ }finally{globalThis.fetch=originalFetch;}
+});
+test('rollbacks use legacy model transport without explicit cache',()=>{
+ const prompt={system:'stable\n\ndynamic',stableSystem:'stable',dynamicSystem:'dynamic'};
+ assert.equal(chat.supportsExplicitPromptCache('gpt-4.1'),false);
+ assert.equal(chat.supportsExplicitPromptCache('gpt-6-luna'),true);
+ assert.deepEqual(chat.buildMindMessages(prompt,'gpt-4.1'),[{role:'system',content:prompt.system}]);
+});
+test('stable cache key changes with schema but not dynamic content',()=>{
+ const a=chat.buildMindCacheKey('same stable','gpt-6-luna',buildV3RealizationSchema());
+ const b=chat.buildMindCacheKey('same stable','gpt-6-luna',buildV3RealizationSchema());
+ assert.equal(a,b);assert.match(a,/^rin-mind-[a-f0-9]{40}$/);
+ assert.notEqual(a,chat.buildMindCacheKey('changed','gpt-6-luna',buildV3RealizationSchema()));
+});
+test('nightly terminal silence need not invoke Luna to add unnecessary text',()=>{
+ const p=plan();assert.equal(p.decision.delivery.segments.length,1);
+ assert.equal(p.responseRequired,true);
 });

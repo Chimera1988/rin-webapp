@@ -101,11 +101,12 @@ test('decision validator enforces protocol without choosing a replacement behavi
   assert.equal('replacementDecision' in farewellActivation, false);
 });
 
-test('active chat runtime uses Rin Mind as the single semantic decision owner', async () => {
+test('active chat runtime uses cognitive TurnPlan as the single behavioral owner', async () => {
   const source = await readFile(new URL('../api/chat.js', import.meta.url), 'utf8');
-  assert.match(source, /rin-mind\.js/);
-  assert.match(source, /buildRinMindPrompt/);
-  assert.match(source, /parseRinMind/);
+  assert.match(source, /v3\/cognitive-dynamics\.js/);
+  assert.match(source, /buildCognitiveTurnPlan/);
+  assert.match(source, /parseV3Realization/);
+  assert.doesNotMatch(source, /buildRinMindPrompt|parseRinMind/);
   assert.match(source, /const MIND_MODEL = .*gpt-6-luna/);
   assert.match(source, /OPENAI_MIND_REASONING_EFFORT/);
   assert.match(source, /OPENAI_MIND_MODEL/);

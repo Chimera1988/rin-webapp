@@ -55,7 +55,7 @@ test('legacy top-level open loops migrate once into canonical ConversationState 
     ]
   }));
   let diary = await memory.loadDiary();
-  assert.equal(diary._schema, 9);
+  assert.equal(diary._schema, 10);
   assert.equal('openLoops' in diary, false);
   assert.deepEqual(diary.conversationState.openLoops.map(item => item.id), ['loop-a','loop-b']);
   await memory.commitTurnState({ requestId:'resolve-loop-a', now:5000, stateTransition:{ resolvedLoopIds:['loop-a'] } });
@@ -67,7 +67,7 @@ test('legacy top-level open loops migrate once into canonical ConversationState 
 test('corrupted memory falls back to a valid schema and quota failures are explicit', async () => {
   storage.setItem('rin-diary-v1', '{broken');
   const recovered = await memory.loadDiary();
-  assert.equal(recovered._schema, 9);
+  assert.equal(recovered._schema, 10);
   assert.deepEqual(recovered.events, []);
 
   const normalStorage = globalThis.localStorage;
