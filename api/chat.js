@@ -16,6 +16,7 @@ import { repairMaleUserAddress, stripMessengerAsteriskMarkup } from '../lib/cogn
 import { inspectIntentLifecycle } from '../lib/cognition/intent-policy.js';
 import { mapCognitiveInputs, settleCognitiveGraph } from '../lib/cognition/v3/cognitive-dynamics.js';
 import { buildCognitiveTurnPlan } from '../lib/cognition/v3/turn-plan.js';
+import { groundCurrentWeather } from '../lib/cognition/v3/weather-grounding.js';
 import { buildV3RealizationPrompt, parseV3Realization, v3FallbackRealization, unauthorizedSpeechAct, validateV3LifeRealization } from '../lib/cognition/v3/realization.js';
 import { detectExperienceEvidence, updateCognitiveExperience } from '../lib/cognition/v3/experience.js';
 import {
@@ -405,6 +406,8 @@ export default async function handler(req, res) {
       conversationState,
       stickerState
     });
+    // Observed API weather is safe to use only when its timestamp is current.
+    kernelState.environment = groundCurrentWeather(kernelState.environment, env);
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
     const sharedSymbolState = activateAssociations({
       profile,memory,kernelState,saved:memory?.cognitiveState
