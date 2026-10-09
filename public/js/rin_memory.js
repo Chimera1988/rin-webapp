@@ -8,7 +8,6 @@ import {
 import { beliefSlot, normalizeBelief } from '../lib/epistemic-contract.js';
 import { normalizeRinIntent } from '../lib/intent-contract.js';
 import { normalizeInnerLife } from '../lib/inner-life-contract.js';
-import { normalizeCognitivePersistence } from '../lib/cognitive-state-contract.js';
 import { contentKey } from '../lib/chat-contract.js';
 import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
 import { activityPeriod, resolveDailyRhythm } from './daily_rhythm.js';
@@ -18,7 +17,7 @@ import { activityPeriod, resolveDailyRhythm } from './daily_rhythm.js';
 
 const LS_PROFILE_KEY = 'rin-profile-v1';
 const LS_DIARY_KEY = 'rin-diary-v1';
-const DIARY_SCHEMA_VERSION = 10;
+const DIARY_SCHEMA_VERSION = 9;
 
 
 
@@ -183,7 +182,6 @@ function emptyDiary() {
     summaries: [],
     processedMemoryJobs: [],
     conversationState: defaultConversationState(),
-    cognitiveState: normalizeCognitivePersistence(),
     _updated_at: Date.now()
   };
 }
@@ -382,7 +380,6 @@ function normalizeDiary(input = {}) {
         .filter(Boolean)
     )].slice(-80),
     conversationState,
-    cognitiveState: normalizeCognitivePersistence(source.cognitiveState),
     _updated_at: finiteNumber(source._updated_at, now)
   };
 }
@@ -878,18 +875,13 @@ export async function commitTurnState({
     diary.relationship = relationship;
 
     diary.conversationState = mergeTransitionState(currentState, stateTransition, wantedRequest, now, { relationship, mood });
-    if (stateTransition?.cognitiveState?.schema === 'rin-cognitive-state-v3') {
-      const incoming = normalizeCognitivePersistence(stateTransition.cognitiveState);
-      if (incoming.revision > diary.cognitiveState.revision) diary.cognitiveState = incoming;
-    }
     return {
       applied: true,
       duplicate: false,
       conversationState: clone(diary.conversationState),
       mood: clone(diary.mood),
       relationship: clone(diary.relationship),
-      innerLife: clone(diary.innerLife),
-      cognitiveState: clone(diary.cognitiveState)
+      innerLife: clone(diary.innerLife)
     };
   });
 }
