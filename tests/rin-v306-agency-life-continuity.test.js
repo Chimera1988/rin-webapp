@@ -138,7 +138,7 @@ test('a self-chosen achievement intent advances on engagement and closes on a ge
   const unrelated=make('А какая сегодня погода?',{activeIntent:intent,signals:['direct_question_present']}).plan;
   assert.equal(unrelated.decision.intentTransition.operation,'preserve');
   const switched=make('Кстати, давай сменим тему. Какая погода?',{activeIntent:intent,signals:['direct_question_present']}).plan;
-  assert.equal(switched.decision.intentTransition.operation,'complete');
+  assert.equal(switched.decision.intentTransition.operation,'cancel');
 });
 
 test('a passing playful word without sustained reciprocal play does not manufacture a maintenance intent',()=>{

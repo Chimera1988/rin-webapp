@@ -24,15 +24,15 @@ test('production excludes old affective/behavior/drive action writers, not merel
   assert.doesNotMatch(plan,/behaviorState/);
 });
 
-test('affective observations do not execute the old relationship/mood progression',()=>{
+test('affective observations restore deterministic relationship/mood progression without a second action owner',()=>{
   const memory={relationship:{trust:72,closeness:75,comfort:72,playfulness:55,attraction:70},
     mood:{affection:68,energy:61},conversationState:{revision:9,emotionalState:{}}};
   const before=JSON.stringify(memory);
   const observed=observeAffectiveTurn({userText:'Я тебя люблю 🤗',memory,brain:{activeScene:{type:'romance'}}});
   assert.equal(JSON.stringify(memory),before);
   assert.equal(observed.relationshipState.trust,memory.relationship.trust);
-  assert.equal(observed.relationshipState.closeness,memory.relationship.closeness);
-  assert.equal(observed.moodState.affection,memory.mood.affection);
+  assert.ok(observed.relationshipState.closeness>memory.relationship.closeness);
+  assert.ok(observed.moodState.affection>memory.mood.affection);
   assert.equal(observed.emotionalState.primary.type,'tenderness');
 });
 

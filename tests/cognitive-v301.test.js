@@ -57,7 +57,7 @@ test('legacy achievement no longer remains open after horizon',()=>{
   const k=kernel('Почему бы и нет)',{activeIntent:{status:'active',kind:'achievement',goal:'сохранять взаимную близость',
     scene:'everyday',turnCount:13,maxTurns:10,progress:.08}});
   const result=plan(k);
-  assert.equal(result.decision.intentTransition.operation,'complete');
+  assert.equal(result.decision.intentTransition.operation,'cancel');
   assert.equal(result.decision.intentTransition.reason,'achievement_horizon_reached');
 });
 test('ongoing relational goal advances by observed dialogue, not every turn',()=>{
