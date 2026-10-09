@@ -383,7 +383,7 @@ export default async function handler(req, res) {
     const brain = trigger ? buildProactiveBrain({ trigger, memory }) : analyzeConversation({ userText: userTurn, history: fullHistory, conversationState });
     const canonCue = trigger ? [trigger.type, trigger.reason].filter(Boolean).join(' ') : userTurn;
     const lore = await retrieveCanonicalLore(canonCue);
-    // ONE emotion observation path; legacy relationship/mood writers are NOT run.
+    // One affective state pathway restores v2.5 relationship/mood accumulation; TurnPlan remains the sole behavioral action owner.
     const affectiveTurn = observeAffectiveTurn({userText:userTurn,memory,brain});
     const stickerState = await buildStickerState({
       history: fullHistory,
@@ -456,15 +456,25 @@ export default async function handler(req, res) {
     }
     // Content-only conformance: no code downstream can reselect the behavioral action.
     const plannedDecision=turnPlan.decision;
+    let questionSanitized=false;
     const cleanRealization = original => ({segments:(original?.segments||[]).map(segment=>{
       let text=repairMaleUserAddress(stripMessengerAsteriskMarkup(String(segment.text||'')));
       if(plannedDecision.question.mode==='none' && /\?/u.test(text)){
+        questionSanitized=true;
         const without=text.replace(/[.!…)»]\s*[^.!?]*\?/gu,'').replace(/^[^.!?]*\?/u,'').replace(/\s+/g,' ').trim();
         text=without||v3FallbackRealization(turnPlan,kernelState).segments[0]?.text||'Мм.';
       }
       return {...segment,text};
     })});
     realization=cleanRealization(realization);
+    // Track content sanitization separately from JSON/model fallback.
+    // A required question is a binding obligation of an accepted scene.
+    if(plannedDecision.question.mode==='required' &&
+      !realization.segments.some(s=>/\?/u.test(s.text||''))){
+      modelFallback=true;
+      realization=v3FallbackRealization(turnPlan,kernelState);
+    }
+    const questionWasSanitized=questionSanitized;
     const decisionValidation=advisoryDecisionValidation(plannedDecision,{
       conversationState,client:body.client||{},activeIntent:kernelState.activeIntent,
       stickerState:kernelState.stickerState,
@@ -484,7 +494,9 @@ export default async function handler(req, res) {
         segments:(turnPlan.decision.delivery.segments||[]).filter(s=>s.type==='text').map((s,i)=>({
           text:['reopened_completed_work','unconfirmed_new_work'].includes(unsupportedLife)?
             (i===0?'Ты прав, я уже сказала, что убрала бумаги. Больше не буду их возвращать на стол.':'Теперь могу просто побыть рядом.'):
-            (i===0?'Пока нет, ещё не выбралась на прогулку. Но хочется немного пройтись.':'Пока только строила планы, а не выбиралась в город.'),purpose:s.purpose
+            unsupportedLife==='unconfirmed_completed_meal'?
+              (i===0?'Я пока только собиралась поесть, так что говорить «ужин съеден» рано.':'Сначала надо действительно поужинать.'):
+              (i===0?'Пока нет, ещё не выбралась на прогулку. Но хочется немного пройтись.':'Пока только строила планы, а не выбиралась в город.'),purpose:s.purpose
         }))
       }:v3FallbackRealization(turnPlan,kernelState));
       realizationValidation=advisoryRealizationValidation(realization,{
@@ -669,6 +681,8 @@ export default async function handler(req, res) {
         calls: { mind: 0, kernel: 0, realization: turnPlan.responseRequired ? 1 : 0, transportAttempts: completion.requestAttempts || 0 },
         historyItems: history.length,
         modelFallback,
+        questionSanitized:questionWasSanitized,
+        gameTurnDue:Boolean(turnObservations?.sceneContracts?.game?.rinQuestionDue),
         semanticRetries: 0
       },
       perception: brain,
