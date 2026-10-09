@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { analyzeConversation } from '../lib/conversation-brain.js';
-import { observeAffectiveTurn } from '../lib/cognition/emotional-state.js';
+import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState, compactKernelState } from '../lib/cognition/kernel-state.js';
 import { buildDecisionStateTransition, normalizeTurnDecision } from '../lib/cognition/turn-decision.js';
 import { validateRealization, validateTurnDecisionConstraints } from '../lib/cognition/turn-validator.js';
@@ -8,17 +8,17 @@ import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
 import { buildStickerState } from '../lib/cognition/sticker-state.js';
 import { buildStickerCandidates } from '../lib/cognition/sticker-candidates.js';
-import { extractVocativeAddresses, inspectMotifNovelty, inspectSceneClosure } from '../lib/cognition/behavior-state.js';
-import { observeTurn } from '../lib/cognition/v3/turn-observations.js';
-import { activateAssociations } from '../lib/cognition/v3/associative-memory.js';
+import { buildBehaviorState, extractVocativeAddresses, inspectMotifNovelty, inspectSceneClosure } from '../lib/cognition/behavior-state.js';
+import { inspectSharedSymbols } from '../lib/cognition/shared-symbols.js';
+import { buildDriveState } from '../lib/cognition/drive-state.js';
 import { inspectLifeNovelty } from '../lib/cognition/life-texture.js';
-import { repairMaleUserAddress, stripMessengerAsteriskMarkup } from '../lib/cognition/turn-stabilizer.js';
+import { stabilizeTurn } from '../lib/cognition/turn-stabilizer.js';
 import { inspectIntentLifecycle } from '../lib/cognition/intent-policy.js';
-import { mapCognitiveInputs, settleCognitiveGraph } from '../lib/cognition/v3/cognitive-dynamics.js';
-import { buildCognitiveTurnPlan } from '../lib/cognition/v3/turn-plan.js';
-import { groundCurrentWeather } from '../lib/cognition/v3/weather-grounding.js';
-import { buildV3RealizationPrompt, parseV3Realization, v3FallbackRealization, unauthorizedSpeechAct, validateV3LifeRealization } from '../lib/cognition/v3/realization.js';
-import { detectExperienceEvidence, updateCognitiveExperience } from '../lib/cognition/v3/experience.js';
+import {
+  buildDeterministicConversationFallback,
+  buildRinMindPrompt,
+  parseRinMind
+} from '../lib/cognition/rin-mind.js';
 import {
   currentUserTurn,
   isExplicitFarewell,
@@ -262,6 +262,54 @@ function usageOrZero(usage = null) {
   };
 }
 
+function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
+  const text = buildDeterministicConversationFallback({ behaviorState, userText });
+  const decision = normalizeTurnDecision({
+    act: behaviorState?.question?.strongNoQuestion ? 'respect_user_boundary' : 'minimal_acknowledgment',
+    focus: behaviorState?.question?.strongNoQuestion
+      ? 'уважить просьбу пользователя не задавать вопросы'
+      : 'сохранить устойчивый контакт без технической ошибки',
+    stance: 'короткая, спокойная, личная',
+    question: { mode: 'none', reason: null },
+    replyLink: { targetEventId: null, reason: null },
+    delivery: { responseDepth: 'short', messageShape: 'single', segments: [{ type: 'text', purpose: 'fallback', stickerIntent: null, maxChars: 320 }] },
+    intentTransition: { operation: 'none', goal: null, motive: null, target: null, nextMove: null, progress: null, commitment: null, reason: null },
+    openLoops: { open: [], resolveIds: [] },
+    realityMode: 'grounded'
+  }, { source: 'deterministic_fallback' });
+  return {
+    mind: {
+      felt: 'сохраняет контакт после технически неиспользуемого model output',
+      wants: 'ответить без повторного платного inference',
+      restraint: 'не выдавать внутреннюю ошибку пользователю',
+      socialIntent: 'stable_fallback',
+      sceneMotif: 'direct_exchange',
+      lifeDomain: 'none',
+      lifeMotif: null,
+      frameAlignment: 'aligned',
+      literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : 'none',
+      referenceAnchor: null,
+      sharedSymbolId: null,
+      sharedSymbolExpression: 'none',
+      sharedSymbolReason: null,
+      contactStance: 'open',
+      selfStateDisclosure: 'none',
+      selfStateDisclosureReason: null,
+      commitmentAction: 'none',
+      commitmentConflict: 'none',
+      commitmentTargetId: null,
+      commitmentSubject: null,
+      commitmentOwner: 'none',
+      commitmentStrength: 0,
+      commitmentReason: null,
+      confidence: 100
+    },
+    decision,
+    realization: { segments: [{ type: 'text', purpose: 'fallback', text }] },
+    fallback: true
+  };
+}
+
 async function decisionResourceWarnings(decision = null) {
   const warnings = [];
   for (const segment of Array.isArray(decision?.delivery?.segments) ? decision.delivery.segments : []) {
@@ -293,6 +341,12 @@ function advisoryDecisionValidation(decision = null, context = {}, resourceWarni
     hardWarnings,
     softWarnings
   };
+}
+
+function fallbackOnHardDecision({ mindTurn, validation, userText, behaviorState }) {
+  if (!validation?.hardWarnings?.length) return mindTurn;
+  // Hard delivery/resource mismatch is recovered locally instead of making another LLM call.
+  return makeFallbackMindTurn({ userText, behaviorState });
 }
 
 function advisoryRealizationValidation(realization = null, context = {}) {
@@ -383,16 +437,28 @@ export default async function handler(req, res) {
     const brain = trigger ? buildProactiveBrain({ trigger, memory }) : analyzeConversation({ userText: userTurn, history: fullHistory, conversationState });
     const canonCue = trigger ? [trigger.type, trigger.reason].filter(Boolean).join(' ') : userTurn;
     const lore = await retrieveCanonicalLore(canonCue);
-    // One affective state pathway restores v2.5 relationship/mood accumulation; TurnPlan remains the sole behavioral action owner.
-    const affectiveTurn = observeAffectiveTurn({userText:userTurn,memory,brain});
+    const affectiveTurn = buildAffectiveTurn({ userText: userTurn, history: fullHistory, memory, brain });
     const stickerState = await buildStickerState({
       history: fullHistory,
       preference: body?.client?.sticker || null,
       scene: brain?.activeScene?.type || 'everyday',
       userText: userTurn
     });
-    // No legacy behavior-state action computation. Read-only scene/boundary telemetry.
-    const turnObservations=observeTurn({userText:userTurn,history:fullHistory,brain,memory});
+    const priorRecentActs = memory?.conversationState?.dialogueState?.recentActs || [];
+    const priorRecentMotifs = memory?.conversationState?.dialogueState?.recentMotifs || [];
+    const priorRecentLifeBeats = memory?.conversationState?.dialogueState?.recentLifeBeats || [];
+    const priorRecentResponseDepths = memory?.conversationState?.dialogueState?.recentResponseDepths || [];
+    const priorRecentMessageShapes = memory?.conversationState?.dialogueState?.recentMessageShapes || [];
+    const behaviorState = buildBehaviorState({
+      userText: userTurn,
+      history: fullHistory,
+      brain,
+      recentActs: priorRecentActs,
+      recentMotifs: priorRecentMotifs,
+      recentLifeBeats: priorRecentLifeBeats,
+      recentResponseDepths: priorRecentResponseDepths,
+      recentMessageShapes: priorRecentMessageShapes
+    });
     const kernelState = buildKernelState({
       requestId,
       userText: userTurn,
@@ -406,138 +472,176 @@ export default async function handler(req, res) {
       conversationState,
       stickerState
     });
-    // Observed API weather is safe to use only when its timestamp is current.
-    kernelState.environment = groundCurrentWeather(kernelState.environment, env);
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
-    const sharedSymbolState = activateAssociations({
-      profile,memory,kernelState,saved:memory?.cognitiveState
+    const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
+    const sharedSymbolState = inspectSharedSymbols({
+      profile,
+      memory,
+      userText: userTurn,
+      history: fullHistory,
+      brain,
+      affectiveTurn,
+      dialogueState: kernelState.dialogueState,
+      activeIntent: kernelState.activeIntent
     });
     const stickerCandidates = stickerState.available === true
       ? buildStickerCandidates({ userText: userTurn, state: kernelState, brain, affectiveTurn, limit: 12 })
       : [];
-    // Rin 3: all domain observations enter one recurrent cognitive graph.
-    // Luna receives only a resolved TurnPlan and produces LANGUAGE, not decisions.
-    const cognitiveInputs = mapCognitiveInputs({kernelState,observations:turnObservations,sharedSymbolState});
-    const cognitiveSettled = settleCognitiveGraph({inputs:cognitiveInputs,saved:memory?.cognitiveState});
-    const turnPlan = buildCognitiveTurnPlan({
-      settled:cognitiveSettled,kernelState,observations:turnObservations,stickerState,stickerCandidates,
-      sharedSymbolState,longRequested:isLong,trigger
+    const mindState = { ...kernelState, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates };
+    const prompt = buildRinMindPrompt({
+      profile,
+      state: mindState,
+      client: { ...(body.client || {}), longRequested: isLong },
+      trigger
     });
-    const prompt = buildV3RealizationPrompt({
-      profile,kernelState,plan:turnPlan,sharedSymbolState,realityBoundary,lore,longRequested:isLong,trigger
-    });
+
     const explicitPromptCache = supportsExplicitPromptCache(MIND_MODEL);
     const promptCacheKey = explicitPromptCache ? buildMindCacheKey(prompt.stableSystem, MIND_MODEL, prompt.responseFormat) : null;
-    let completion = {content:'',finishReason:'silence',usage:null,model:MIND_MODEL,requestAttempts:0};
-    if(turnPlan.needsVoice){
-      modelStartedAt = Date.now();
-      completion = await openaiChat({
-        model:MIND_MODEL,
-        messages:buildMindMessages(prompt,MIND_MODEL),
-        response_format:prompt.responseFormat,
-        reasoning_effort:MIND_REASONING_EFFORT,
-        prompt_cache_options:explicitPromptCache?{mode:'explicit',ttl:'30m'}:null,
-        prompt_cache_key:promptCacheKey,
-        ...(isLong?LONG_MIND_PARAMS:MIND_PARAMS)
-      });
-      modelDurationMs = Date.now() - modelStartedAt;
-    }
-    let modelFallback=false;
-    let realization={segments:[]};
-    if(turnPlan.needsVoice){
-      try{
-        if(!completion.content||completion.finishReason==='length')throw new Error('model_response_empty_or_truncated');
-        realization=parseV3Realization(completion.content,turnPlan);
-      }catch(error){
-        modelFallback=true;
-        console.warn('Rin v3 Luna realization unusable; local realization used', {requestId,error:error?.message});
-        realization=v3FallbackRealization(turnPlan,kernelState);
-      }
-    }
-    // Content-only conformance: no code downstream can reselect the behavioral action.
-    const plannedDecision=turnPlan.decision;
-    let questionSanitized=false;
-    const cleanRealization = original => ({segments:(original?.segments||[]).map(segment=>{
-      let text=repairMaleUserAddress(stripMessengerAsteriskMarkup(String(segment.text||'')));
-      if(plannedDecision.question.mode==='none' && /\?/u.test(text)){
-        questionSanitized=true;
-        const without=text.replace(/[.!…)»]\s*[^.!?]*\?/gu,'').replace(/^[^.!?]*\?/u,'').replace(/\s+/g,' ').trim();
-        text=without||v3FallbackRealization(turnPlan,kernelState).segments[0]?.text||'Мм.';
-      }
-      return {...segment,text};
-    })});
-    realization=cleanRealization(realization);
-    // Track content sanitization separately from JSON/model fallback.
-    // A required question is a binding obligation of an accepted scene.
-    if(plannedDecision.question.mode==='required' &&
-      !realization.segments.some(s=>/\?/u.test(s.text||''))){
-      modelFallback=true;
-      realization=v3FallbackRealization(turnPlan,kernelState);
-    }
-    const questionWasSanitized=questionSanitized;
-    const decisionValidation=advisoryDecisionValidation(plannedDecision,{
-      conversationState,client:body.client||{},activeIntent:kernelState.activeIntent,
-      stickerState:kernelState.stickerState,
-      visualReplyCandidates:kernelState.visualReplyCandidates,
-      reciprocity:null
-    },await decisionResourceWarnings(plannedDecision));
-    let realizationValidation=advisoryRealizationValidation(realization,{
-      decision:plannedDecision,realityBoundary,recentHistory:kernelState?.recentHistory||[],currentUserText:userTurn
+    modelStartedAt = Date.now();
+    const completion = await openaiChat({
+      model: MIND_MODEL,
+      messages: buildMindMessages(prompt, MIND_MODEL),
+      response_format: prompt.responseFormat,
+      reasoning_effort: MIND_REASONING_EFFORT,
+      prompt_cache_options: explicitPromptCache ? { mode: 'explicit', ttl: '30m' } : null,
+      prompt_cache_key: promptCacheKey,
+      ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
     });
-    const unauthorizedAct=unauthorizedSpeechAct(realization,turnPlan);
-    const unsupportedLife=validateV3LifeRealization(realization,turnPlan.life);
-    if(unauthorizedAct)realizationValidation.hardWarnings.push(unauthorizedAct);
-    if(unsupportedLife)realizationValidation.hardWarnings.push(unsupportedLife);
-    if(realizationValidation.hardWarnings?.length){
-      modelFallback=true;
-      realization=cleanRealization(unsupportedLife?{
-        segments:(turnPlan.decision.delivery.segments||[]).filter(s=>s.type==='text').map((s,i)=>({
-          text:['reopened_completed_work','unconfirmed_new_work'].includes(unsupportedLife)?
-            (i===0?'Ты прав, я уже сказала, что убрала бумаги. Больше не буду их возвращать на стол.':'Теперь могу просто побыть рядом.'):
-            unsupportedLife==='unconfirmed_completed_meal'?
-              (i===0?'Я пока только собиралась поесть, так что говорить «ужин съеден» рано.':'Сначала надо действительно поужинать.'):
-              (i===0?'Пока нет, ещё не выбралась на прогулку. Но хочется немного пройтись.':'Пока только строила планы, а не выбиралась в город.'),purpose:s.purpose
-        }))
-      }:v3FallbackRealization(turnPlan,kernelState));
-      realizationValidation=advisoryRealizationValidation(realization,{
-        decision:plannedDecision,realityBoundary,recentHistory:kernelState?.recentHistory||[],currentUserText:userTurn
-      });
+    modelDurationMs = Date.now() - modelStartedAt;
+
+    let mindTurn;
+    let modelFallback = false;
+    if (completion.finishReason === 'length' || !completion.content) {
+      mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+      modelFallback = true;
+    } else {
+      try {
+        mindTurn = parseRinMind(completion.content, { behaviorState, sharedSymbolState });
+      } catch (error) {
+        console.warn('Rin Mind structured output unusable; deterministic fallback used', {
+          requestId,
+          error: error?.message || String(error)
+        });
+        mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+        modelFallback = true;
+      }
     }
-    const mind={
-      felt:`${cognitiveInputs.evidence.primaryEmotion||'спокойная'}; approach=${cognitiveSettled.behavioralState.approach}`,
-      wants:plannedDecision.focus,restraint:turnPlan.constraints.depthCap,
-      socialIntent:plannedDecision.act,
-      sceneMotif:turnPlan.sceneMotif,
-      lifeDomain:turnPlan.life.domain,lifeMotif:turnPlan.life.motif,frameAlignment:turnPlan.frameAlignment,literalCorrection:turnObservations?.literalCorrection?.explicit?'explicit':'none',
-      referenceAnchor:turnPlan.referenceAnchor,sharedSymbolId:turnPlan.symbolId,sharedSymbolExpression:turnPlan.symbolExpression,
-      sharedSymbolReason:turnPlan.symbolId?'associative_cognitive_activation':null,
-      contactStance:turnPlan.contactStance,selfStateDisclosure:turnPlan.selfStateDisclosure,selfStateDisclosureReason:'settled_cognition',
-      commitmentAction:turnPlan.commitment.action,commitmentConflict:turnPlan.commitment.action==='insist'?'mild':'none',commitmentTargetId:turnPlan.commitment.targetId||null,
-      commitmentSubject:turnPlan.commitment.subject,
-      commitmentOwner:turnPlan.commitment.owner,commitmentStrength:turnPlan.commitment.strength,
-      commitmentReason:turnPlan.commitment.reason,confidence:95
+
+    behaviorState.frameAlignment = mindTurn.mind?.frameAlignment || 'aligned';
+    behaviorState.sceneMotif = mindTurn.mind?.sceneMotif || 'direct_exchange';
+    behaviorState.literalCorrection = {
+      ...(behaviorState.literalCorrection || {}),
+      model: behaviorState?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none')
     };
-    const mindTurn={mind,decision:plannedDecision,realization};
-    turnObservations.frameAlignment=mind.frameAlignment;
-    turnObservations.sceneMotif=mind.sceneMotif;
-    const deliveryPlan=await buildDeliveryPlan({
-      requestId,decision:plannedDecision,realization,scene:kernelState.scene,stickerState:kernelState.stickerState,mind
+
+    const stabilized = stabilizeTurn({
+      decision: mindTurn.decision,
+      realization: mindTurn.realization,
+      activeIntent: kernelState.activeIntent,
+      recentIntents: kernelState.recentIntents,
+      revision: kernelState.revision,
+      recentActs: kernelState.dialogueState?.recentActs || [],
+      conversationState,
+      stickerState: kernelState.stickerState,
+      visualReplyCandidates: kernelState.visualReplyCandidates,
+      behaviorState,
+      driveState,
+      scene: kernelState.scene,
+      fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn }),
+      longRequested: isLong
     });
-    if(!deliveryPlan.segments.length&&deliveryPlan.mode!=='silence'){
-      modelFallback=true;
-      const fallback=cleanRealization(v3FallbackRealization(turnPlan,kernelState));
-      deliveryPlan.segments=[{id:`rin-turn-${requestId}-fallback`,segmentIndex:0,purpose:'fallback',type:'text',text:fallback.segments[0]?.text||'Мм.'}];
-      deliveryPlan.mode='single_text';deliveryPlan.fallbackText=deliveryPlan.segments[0].text;
+    mindTurn.decision = stabilized.decision;
+    mindTurn.realization = stabilized.realization;
+
+    let resourceWarnings = await decisionResourceWarnings(mindTurn.decision);
+    let decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
+      conversationState,
+      client: body.client || {},
+      activeIntent: kernelState.activeIntent,
+      stickerState: kernelState.stickerState,
+      visualReplyCandidates: kernelState.visualReplyCandidates,
+      reciprocity: kernelState.reciprocity
+    }, resourceWarnings);
+
+    mindTurn = fallbackOnHardDecision({
+      mindTurn,
+      validation: decisionValidation,
+      userText: userTurn,
+      behaviorState
+    });
+    if (decisionValidation.hardWarnings.length) {
+      modelFallback = true;
+      resourceWarnings = [];
+      decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
+        conversationState,
+        client: body.client || {},
+        activeIntent: kernelState.activeIntent,
+        stickerState: kernelState.stickerState,
+        visualReplyCandidates: kernelState.visualReplyCandidates,
+        reciprocity: kernelState.reciprocity
+      }, []);
     }
-    const stateTransition=buildDecisionStateTransition({
-      kernelState,affectiveTurn,decision:plannedDecision,mind,userText:userTurn
+
+    let realizationValidation = advisoryRealizationValidation(mindTurn.realization, {
+      decision: mindTurn.decision,
+      realityBoundary,
+      recentHistory: kernelState?.recentHistory || [],
+      currentUserText: kernelState?.userText || ''
     });
-    const feedback=detectExperienceEvidence(userTurn,fullHistory);
-    const cognitiveExperience=updateCognitiveExperience({
-      previous:memory?.cognitiveState,settled:cognitiveSettled,plan:turnPlan,
-      evidence:feedback,requestId
+
+    // Truly hard realization violations (metadata leak, unsupported reality claim, etc.)
+    // are replaced locally. No second model call, no user-visible validation error.
+    if (realizationValidation.hardWarnings?.length) {
+      mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+      modelFallback = true;
+      decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
+        conversationState,
+        client: body.client || {},
+        activeIntent: kernelState.activeIntent,
+        stickerState: kernelState.stickerState,
+        visualReplyCandidates: kernelState.visualReplyCandidates,
+        reciprocity: kernelState.reciprocity
+      }, []);
+      realizationValidation = advisoryRealizationValidation(mindTurn.realization, {
+        decision: mindTurn.decision,
+        realityBoundary,
+        recentHistory: kernelState?.recentHistory || [],
+        currentUserText: kernelState?.userText || ''
+      });
+    }
+
+    const deliveryPlan = await buildDeliveryPlan({
+      requestId,
+      decision: mindTurn.decision,
+      realization: mindTurn.realization,
+      scene: kernelState.scene,
+      stickerState: kernelState.stickerState,
+      mind: mindTurn.mind
     });
-    stateTransition.cognitiveState=cognitiveExperience.state;
+
+    // A sticker-only render may theoretically disappear if a catalog asset changed between
+    // schema construction and delivery. Recover as text rather than returning a 502.
+    if (!deliveryPlan.segments.length && mindTurn.decision.delivery.mode !== 'silence') {
+      mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
+      modelFallback = true;
+      deliveryPlan.segments = [{
+        id: `rin-turn-${normalize(requestId, 80)}-fallback`,
+        segmentIndex: 0,
+        purpose: 'fallback',
+        type: 'text',
+        text: mindTurn.realization.segments[0].text
+      }];
+      deliveryPlan.mode = 'single_text';
+      deliveryPlan.fallbackText = mindTurn.realization.segments[0].text;
+    }
+
+    const stateTransition = buildDecisionStateTransition({
+      kernelState,
+      affectiveTurn,
+      decision: mindTurn.decision,
+      mind: mindTurn.mind,
+      userText: userTurn
+    });
     const visualReply = visualReplyFromDecision(mindTurn.decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
     const realizedVocatives = extractVocativeAddresses(reply);
@@ -579,7 +683,7 @@ export default async function handler(req, res) {
       motifRepeat: motifTelemetry.streak || 0,
       motifAppearances: motifTelemetry.appearances || 0,
       motifPressure: motifTelemetry.pressure || 0,
-      literalCorrection: turnObservations?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none'),
+      literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none'),
       referenceAnchor: mindTurn.mind?.referenceAnchor || null,
       lifeDomain: mindTurn.mind?.lifeDomain || 'none',
       lifeMotif: currentLifeMotif,
@@ -606,25 +710,25 @@ export default async function handler(req, res) {
       quietPresencePreferred: Boolean(kernelState?.relationalConstancy?.quietPresencePreferred),
       disclosureOpportunity: Boolean(kernelState?.relationalConstancy?.disclosureOpportunity),
       responseDepth: mindTurn.decision?.delivery?.responseDepth || 'normal',
-      responseShortLock: Number(turnObservations?.responseRhythm?.shortLockPressure || 0),
-      responseSingleLock: Number(turnObservations?.responseRhythm?.singleLockPressure || 0),
-      vocativePressure: Number(turnObservations?.vocative?.pressure || 0),
-      vocativeRawPressure: Number(turnObservations?.vocative?.rawPressure || 0),
-      vocativeRecentTurns: Number(turnObservations?.vocative?.recentVocativeTurns || 0),
-      vocativeRecent6: Number(turnObservations?.vocative?.recent6 || 0),
-      vocativeStreak: Number(turnObservations?.vocative?.streak || 0),
-      vocativeTurnsSinceAny: Number(turnObservations?.vocative?.turnsSinceAny || 0),
-      vocativeLastExact: turnObservations?.vocative?.lastExact || null,
-      vocativeLastClass: turnObservations?.vocative?.lastClass || null,
-      vocativeExactGapRemaining: Number(turnObservations?.vocative?.exactGapRemaining || 0),
-      vocativeClassGapRemaining: Number(turnObservations?.vocative?.classGapRemaining || 0),
-      vocativeAnyGapRemaining: Number(turnObservations?.vocative?.anyGapRemaining || 0),
-      vocativeStrongAvoid: Boolean(turnObservations?.vocative?.strongAvoid),
-      vocativeDirectRequest: Boolean(turnObservations?.vocative?.directRequest),
+      responseShortLock: Number(behaviorState?.responseRhythm?.shortLockPressure || 0),
+      responseSingleLock: Number(behaviorState?.responseRhythm?.singleLockPressure || 0),
+      vocativePressure: Number(behaviorState?.vocative?.pressure || 0),
+      vocativeRawPressure: Number(behaviorState?.vocative?.rawPressure || 0),
+      vocativeRecentTurns: Number(behaviorState?.vocative?.recentVocativeTurns || 0),
+      vocativeRecent6: Number(behaviorState?.vocative?.recent6 || 0),
+      vocativeStreak: Number(behaviorState?.vocative?.streak || 0),
+      vocativeTurnsSinceAny: Number(behaviorState?.vocative?.turnsSinceAny || 0),
+      vocativeLastExact: behaviorState?.vocative?.lastExact || null,
+      vocativeLastClass: behaviorState?.vocative?.lastClass || null,
+      vocativeExactGapRemaining: Number(behaviorState?.vocative?.exactGapRemaining || 0),
+      vocativeClassGapRemaining: Number(behaviorState?.vocative?.classGapRemaining || 0),
+      vocativeAnyGapRemaining: Number(behaviorState?.vocative?.anyGapRemaining || 0),
+      vocativeStrongAvoid: Boolean(behaviorState?.vocative?.strongAvoid),
+      vocativeDirectRequest: Boolean(behaviorState?.vocative?.directRequest),
       vocativeUsed: primaryVocative?.exact || null,
       vocativeUsedClass: primaryVocative?.semanticClass || null,
       vocativeUsedCount: realizedVocatives.length,
-      vocativeOverride: Boolean(turnObservations?.vocative?.strongAvoid && realizedVocatives.length > 0),
+      vocativeOverride: Boolean(behaviorState?.vocative?.strongAvoid && realizedVocatives.length > 0),
       commitmentAction: appliedCommitment?.lastAction || mindTurn.mind?.commitmentAction || 'none',
       commitmentRequestedAction: mindTurn.mind?.commitmentAction || 'none',
       commitmentConflict: mindTurn.mind?.commitmentConflict || 'none',
@@ -638,9 +742,9 @@ export default async function handler(req, res) {
       futureCallbackCue: detectedFutureCallback?.temporalCue || activeFutureCallbacks[0]?.temporalCue || null,
       futureCallbackActive: activeFutureCallbacks.length,
       futureCallbackResolvedId: resolvedFutureCallback || null,
-      sceneClosureStrong: Boolean(turnObservations?.sceneClosure?.strong),
-      sceneClosureSoft: Boolean(turnObservations?.sceneClosure?.soft),
-      sceneClosureKind: turnObservations?.sceneClosure?.kind || 'none',
+      sceneClosureStrong: Boolean(behaviorState?.sceneClosure?.strong),
+      sceneClosureSoft: Boolean(behaviorState?.sceneClosure?.soft),
+      sceneClosureKind: behaviorState?.sceneClosure?.kind || 'none',
       sharedSymbolCandidateId: sharedSymbolCandidate?.id || null,
       sharedSymbolCandidateActivation: Number(sharedSymbolCandidate?.activation || 0),
       sharedSymbolCandidateDirectRecall: Boolean(sharedSymbolCandidate?.directRecall),
@@ -657,12 +761,12 @@ export default async function handler(req, res) {
       finishReason: 'stop',
       model: {
         mind: completion.model || MIND_MODEL,
-        kernel: 'rin-cognitive-dynamics-v3',
-        realization: 'gpt-6-luna-voice-v3'
+        kernel: 'integrated-in-rin-mind-v2',
+        realization: 'integrated-in-rin-mind-v2'
       },
       long: isLong,
       promptMetrics: {
-        promptVersion: 'rin-v3.0.2-functional-parity',
+        promptVersion: 'rin-mind-v2.5.0-conversation-presence-natural-closure-latency',
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,
@@ -678,22 +782,13 @@ export default async function handler(req, res) {
         shortTermExchanges: Number(prompt?.shortTermMetrics?.exchanges || 0),
         shortTermSpeakerTurns: Number(prompt?.shortTermMetrics?.speakerTurns || 0),
         shortTermChars: Number(prompt?.shortTermMetrics?.chars || 0),
-        calls: { mind: 0, kernel: 0, realization: turnPlan.responseRequired ? 1 : 0, transportAttempts: completion.requestAttempts || 0 },
+        calls: { mind: 1, kernel: 0, realization: 0, transportAttempts: completion.requestAttempts || 1 },
         historyItems: history.length,
         modelFallback,
-        questionSanitized:questionWasSanitized,
-        gameTurnDue:Boolean(turnObservations?.sceneContracts?.game?.rinQuestionDue),
         semanticRetries: 0
       },
       perception: brain,
-      cognition: { ...compactKernelState(kernelState), observations:turnObservations, behaviorState:turnObservations, intentTelemetry, sceneControl,
-        cognitiveDynamics: {schema:cognitiveSettled.schema,behavioralState:cognitiveSettled.behavioralState,
-          state:{emotion:cognitiveSettled.nodes.anger,jealousy:cognitiveSettled.nodes.jealousy,trust:cognitiveSettled.nodes.trust,
-            fatigue:cognitiveSettled.nodes.fatigue,attachment:cognitiveSettled.nodes.attachment},
-          steps:cognitiveSettled.steps,converged:cognitiveSettled.converged,influences:cognitiveSettled.topInfluences,
-          evidence:cognitiveInputs.evidence,
-          plan:turnPlan.trace,associations:sharedSymbolState.trace,
-          plasticity:cognitiveExperience.changes,learnedWeights:cognitiveExperience.state.learnedWeights}},
+      cognition: { ...compactKernelState(kernelState), behaviorState, driveState, intentTelemetry, sceneControl },
       mind: mindTurn.mind,
       turnDecision: mindTurn.decision,
       visualReply,
@@ -701,10 +796,10 @@ export default async function handler(req, res) {
       validation: {
         decision: decisionValidation,
         realization: realizationValidation,
-        stabilization: [],
-        policy: 'v3 turn-plan authoritative; Luna text-only; no semantic retries'
+        stabilization: stabilized.warnings,
+        policy: 'hard-block-only; soft warnings are advisory; no semantic LLM retries'
       },
-      fastPath: turnPlan.responseRequired===false,
+      fastPath: false,
       deliveryPlan,
       stateTransition,
       trigger
