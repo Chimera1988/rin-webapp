@@ -45,7 +45,7 @@ test('v2.4.6 structured contract exposes life texture and response depth without
 test('life texture palette is broad and explicitly avoids turning it into a topic checklist', () => {
   const card = lifeTextureCard();
   assert.ok(LIFE_DOMAINS.length >= 20);
-  assert.match(card, /Канадзава и город/iu);
+  assert.match(card, /Вологда \(нынешний город\)/iu);
   assert.match(card, /маленькая радость/iu);
   assert.match(card, /НЕ список обязательных тем/iu);
   assert.match(card, /одной конкретной детали/iu);

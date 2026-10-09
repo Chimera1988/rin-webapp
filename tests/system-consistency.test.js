@@ -16,7 +16,7 @@ test('public schedule is one validated source for initiative, timezone, location
   const schedule = normalizeScheduleConfig(raw);
   const policy = resolveInitiationPolicy(schedule);
   assert.equal(schedule.schema, 'rin-schedule-v3');
-  assert.equal(schedule.timezone, 'Asia/Tokyo');
+  assert.equal(schedule.timezone, 'Europe/Moscow');
   assert.deepEqual(schedule.windows.map(item => item.id), ['morning', 'day_ping', 'evening']);
   assert.deepEqual(schedule.windows.map(item => item.probability), [0.55, 0.28, 0.5]);
   assert.equal(schedule.probabilitySemantics, 'one_draw_per_window_when_eligible');
@@ -28,8 +28,8 @@ test('public schedule is one validated source for initiative, timezone, location
   assert.equal(policy.innerLife.weeklyRhythm.profiles.sunday.workDefault, false);
   assert.equal(policy.innerLife.sleep.targetSleepMinutes, 450);
   assert.equal(policy.innerLife.weatherGrounding.enabled, true);
-  assert.equal(policy.location.lat, 36.5613);
-  assert.equal(policy.location.lon, 136.6562);
+  assert.equal(policy.location.lat, 59.2239);
+  assert.equal(policy.location.lon, 39.8840);
 });
 
 test('client profile overrides expose only fields that the server actually consumes', async () => {
