@@ -64,13 +64,13 @@ test('Perception describes evidence and never prescribes Rin action', async () =
   assert.match(state, /user_handed_initiative/);
 });
 
-test('Rin Cognitive TurnPlan is the sole behavioral decision owner in the chat API', async () => {
+test('Rin Mind is the sole semantic decision owner in the chat API', async () => {
   const api = await read('api/chat.js');
-  assert.match(api, /cognitive-dynamics\.js/);
+  assert.match(api, /rin-mind\.js/);
   assert.match(api, /buildKernelState/);
-  assert.match(api, /buildCognitiveTurnPlan/);
-  assert.match(api, /parseV3Realization/);
-  assert.doesNotMatch(api, /buildRinMindPrompt|parseRinMind|stabilizeTurn\s*\(/);
+  assert.match(api, /buildRinMindPrompt/);
+  assert.match(api, /parseRinMind/);
+  assert.match(api, /stabilizeTurn/);
   assert.doesNotMatch(api, /buildKernelPrompt|parseKernelDecision|realizeDecision|OPENAI_REALIZATION_MODEL/);
   assert.doesNotMatch(api, /responsePlan|coreDecision|conversationBrain|compatibilityResponsePlan/);
   assert.match(api, /isStickerIntentResolvable/);

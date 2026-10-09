@@ -36,10 +36,25 @@ function structuredFetch({ decide, realize, memory } = {}) {
   return async (_url, options = {}) => {
     const payload = JSON.parse(options.body || '{}');
     const schema = payload?.response_format?.json_schema?.name;
-    if (schema === 'rin_v3_realization') {
-      if(typeof decide === 'function')decide(payload);
-      const selected=typeof realize === 'function'?realize(payload):realize||realization('Угу.');
-      return oa({segments:selected.segments.map(x=>({text:x.text}))});
+    if (schema === 'rin_mind_turn_v2') {
+      const selectedDecision = typeof decide === 'function' ? decide(payload) : decide || decision();
+      const selectedRealization = typeof realize === 'function' ? realize(payload) : realize || realization('Угу.');
+      const texts = Array.isArray(selectedRealization?.segments) ? selectedRealization.segments : [];
+      let textIndex = 0;
+      const segments = (selectedDecision?.delivery?.segments || []).map(segment => ({
+        ...segment,
+        text: segment?.type === 'text' ? String(texts[textIndex++]?.text || 'Угу.') : null
+      }));
+      return oa({
+        ...selectedDecision,
+        delivery: { responseDepth: selectedDecision?.delivery?.responseDepth || 'normal', messageShape: selectedDecision?.delivery?.messageShape || (segments.filter(item => item?.type === 'text').length >= 2 ? 'split' : 'single'), segments },
+        mind: {
+          sceneMotif: 'direct_exchange', lifeDomain: 'none', lifeMotif: null,
+          frameAlignment: 'aligned', literalCorrection: 'none', referenceAnchor: null,
+          felt: 'спокойная вовлечённость', wants: 'ответить естественно', restraint: null,
+          socialIntent: 'respond', confidence: 88
+        }
+      });
     }
     if (payload?.response_format?.type === 'json_object') return oa(memory || { facts: [], events: [], sharedMoments: [] });
     throw new Error(`unexpected integration fetch: ${schema || payload?.response_format?.type || 'unknown'}`);
@@ -64,7 +79,7 @@ test('aggregated rapid messages share one request and stay ordered at the end of
   assert.deepEqual(completed, ['u1,u2','u3']);
 });
 
-test('login → Rin 3 voice → durable memory extraction → next voice request carries remembered fact', async () => {
+test('login → Rin Mind chat → durable memory extraction → next Rin Mind request carries remembered fact', async () => {
   const original = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY, fetch: globalThis.fetch, storage: globalThis.localStorage };
   process.env.ACCESS_PIN = '9999'; process.env.OPENAI_API_KEY = 'integration-key';
   const login = (await import('../api/login.js?kernel-integration')).default;
