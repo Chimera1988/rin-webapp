@@ -482,7 +482,9 @@ export default async function handler(req, res) {
       modelFallback=true;
       realization=cleanRealization(unsupportedLife?{
         segments:(turnPlan.decision.delivery.segments||[]).filter(s=>s.type==='text').map((s,i)=>({
-          text:i===0?'Пока нет, ещё не выбралась на прогулку. Но хочется немного пройтись.':'Пока только строила планы, а не выбиралась в город.',purpose:s.purpose
+          text:['reopened_completed_work','unconfirmed_new_work'].includes(unsupportedLife)?
+            (i===0?'Ты прав, я уже сказала, что убрала бумаги. Больше не буду их возвращать на стол.':'Теперь могу просто побыть рядом.'):
+            (i===0?'Пока нет, ещё не выбралась на прогулку. Но хочется немного пройтись.':'Пока только строила планы, а не выбиралась в город.'),purpose:s.purpose
         }))
       }:v3FallbackRealization(turnPlan,kernelState));
       realizationValidation=advisoryRealizationValidation(realization,{
