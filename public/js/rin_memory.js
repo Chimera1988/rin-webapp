@@ -748,6 +748,29 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
   return normalizeInnerLife(current);
 }
 
+/** Project an unacknowledged background response for the next server initiative.
+ * The local diary remains authoritative and applies the same transition on delivery.
+ */
+export function projectBackgroundTransition(memoryInput = {}, transition = null, requestId = '', now = Date.now()) {
+  const memory = clone(memoryInput);
+  if (!transition || typeof transition !== 'object' || memory.conversationState?.lastCommittedRequestId === requestId) return memory;
+  const mood = transition.moodState && typeof transition.moodState === 'object'
+    ? { ...(memory.mood || {}), ...transition.moodState, lastInteractionAt:now }
+    : (memory.mood || {});
+  const relationship = transition.relationshipState && typeof transition.relationshipState === 'object'
+    ? normalizeRelationshipState({...(memory.relationship||{}),...transition.relationshipState,sharedMoments:memory.relationship?.sharedMoments || [],lastInteractionAt:now},now)
+    : (memory.relationship || {});
+  memory.mood = mood;
+  memory.relationship = relationship;
+  memory.conversationState = mergeTransitionState(memory.conversationState || {},transition,requestId,now,{relationship,mood});
+  return memory;
+}
+
+/** Pure progression for server-side scheduled initiatives; does not access localStorage. */
+export function advanceInnerLifeForBackground(current = {}, env = {}, now = Date.now(), policy = {}, context = {}) {
+  return clone(computeInnerLife(current, env, '', now, policy, context));
+}
+
 export async function prepareInnerLife(env = {}, userText = '', now = Date.now(), policy = {}) {
   if (now && typeof now === 'object' && !Array.isArray(now)) {
     policy = now;
