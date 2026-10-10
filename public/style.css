@@ -390,13 +390,13 @@ body.chat-app {
   backdrop-filter: blur(22px) saturate(1.15);
 }
 
-/* iOS standalone PWA: visualViewport already ends above the system home area.
-   Avoid allocating that same bottom safe area twice under the chat composer.
-   Preserve a small visual gap; do not affect the top header or settings. */
+/* iOS standalone PWA: visualViewport already excludes the system home area.
+   Center the input and send button with equal vertical padding, without
+   changing the regular browser layout or the settings screen. */
 @supports (-webkit-touch-callout: none) {
   @media (display-mode: standalone) and (pointer: coarse) {
     .chat-viewport-shell .composer {
-      padding-bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) - 16px));
+      padding-bottom: 10px;
     }
   }
 }
