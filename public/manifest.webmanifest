@@ -1,15 +1,31 @@
 {
-  "id":"/",
-  "name":"Рин Акихара",
-  "short_name":"Рин",
-  "description":"Личный диалог с Рин",
-  "start_url":"/",
-  "scope":"/",
-  "display":"standalone",
-  "background_color":"#090b10",
-  "theme_color":"#090b10",
-  "icons":[
-    {"src":"/icons/rin-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-    {"src":"/icons/rin-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  "id": "/",
+  "name": "Рин Акихара",
+  "short_name": "Рин",
+  "description": "Личный диалог с Рин",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#090b10",
+  "theme_color": "#090b10",
+  "icons": [
+    {
+      "src": "/icons/rin-kitsune-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/rin-kitsune-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/rin-kitsune-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

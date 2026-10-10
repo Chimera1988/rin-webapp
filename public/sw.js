@@ -12,7 +12,7 @@ self.addEventListener('push', event => {
       return;
     }
     await self.registration.showNotification(payload.test ? 'Проверка уведомлений Rin' : 'Рин Акихара', {
-      body:payload.test ? 'Подключение работает. Это тест, не сообщение Рин.' : 'Рин написала тебе сообщение',icon:'/icons/rin-192.png',badge:'/icons/rin-192.png',tag:`rin-${String(payload.id||'message').slice(0,80)}`,
+      body:payload.test ? 'Подключение работает. Это тест, не сообщение Рин.' : 'Рин написала тебе сообщение',icon:'/icons/rin-kitsune-192.png',badge:'/icons/rin-kitsune-192.png',tag:`rin-${String(payload.id||'message').slice(0,80)}`,
       data:{url:'/',id:String(payload.id||'').slice(0,80)}
     });
   })());
