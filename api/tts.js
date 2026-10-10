@@ -3,7 +3,7 @@ import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin 
 const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
 // Temporary voice comparison: pin the selected Voice Design voice for this test.
 // After the test, restore the environment-based configuration if needed.
-const VOICE_ID = 'DVPkntDpTzVmeJMlAI7a';
+const VOICE_ID = 'CtE8XlupyJQIq6Bru1R3';
 const MODEL_ID = 'eleven_v4';
 const MAX_CHARS = 180;
 
