@@ -1671,6 +1671,8 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
   };
   btn.addEventListener('click', () => {
     if (audio.paused){
+      // A voice message remains replayable until the page is closed.
+      if (audio.ended) audio.currentTime = 0;
       audio.play().then(()=>{
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
         wrap.classList.add('playing');
@@ -1684,7 +1686,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
   audio.onended=()=>{
     btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
     wrap.classList.remove('playing');
-    try{ URL.revokeObjectURL(audioUrl); }catch{}
   };
   act.addEventListener('click', () => {
     act.remove();
