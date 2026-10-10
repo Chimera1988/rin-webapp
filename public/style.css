@@ -1631,3 +1631,10 @@ body.settings-open {
 .settings-range-block.is-disabled-control input {
   cursor: default;
 }
+
+/* Backup import/export uses existing settings visual language. */
+.settings-backup-button { display: inline-grid; place-items: center; margin-top: 10px; width: 100%; min-height: 44px; box-sizing: border-box; }
+.settings-backup-button:disabled { opacity: .55; cursor: wait; }
+.settings-backup-status { color: var(--settings-muted); font-size: 12px; line-height: 1.5; margin: 12px 0 0; overflow-wrap: anywhere; }
+
+.settings-backup-button[hidden] { display: none !important; }

@@ -10,10 +10,10 @@
   <link rel="apple-touch-icon" href="/avatar.jpg" />
 
   <!-- Тема применяется до CSS/отрисовки внешним CSP-совместимым bootstrap. -->
-  <script src="/js/theme_bootstrap.js?v=2026-10-09-rin-mind-v2.5.1-vologda-work-assignment"></script>
+  <script src="/js/theme_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-backup-transfer"></script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-10-09-rin-mind-v2.5.1-vologda-work-assignment" />
+  <link rel="stylesheet" href="/style.css?v=2026-10-10-rin-mind-v2.5.1-vologda-backup-transfer" />
 </head>
 <body class="chat-app">
 
@@ -342,6 +342,23 @@
           <span></span>
         </div>
         <p class="settings-intro">Управление локальной перепиской и персональными настройками.</p>
+        <h3 class="settings-group-title">Резервная копия</h3>
+        <div class="settings-detail-card">
+          <div class="settings-control-row">
+            <div><strong>Сохранить историю Rin</strong><small>Сообщения, дневник, текущее состояние, настройки и обои. PIN входа не включается.</small></div>
+          </div>
+          <button id="backupExport" class="settings-action settings-backup-button" type="button">Создать резервную копию</button>
+          <a id="backupDownload" class="settings-action settings-backup-button" href="#" download hidden>Скачать готовый файл</a>
+          <div class="settings-divider"></div>
+          <div class="settings-control-row">
+            <div><strong>Восстановить историю</strong><small>Выбери файл, сохранённый в Safari. Текущие локальные данные PWA будут заменены после подтверждения.</small></div>
+          </div>
+          <label class="settings-action settings-file-action settings-backup-button" for="backupImport">Выбрать файл копии
+            <input id="backupImport" type="file" accept=".json,application/json" />
+          </label>
+          <p id="backupStatus" class="settings-backup-status" role="status" aria-live="polite">Для переноса: сначала создай копию в Safari, затем открой её через PWA.</p>
+        </div>
+        <h3 class="settings-group-title">Сброс</h3>
         <div class="settings-detail-card">
           <div class="settings-control-row">
             <div><strong>Сбросить данные</strong><small>Удалить историю, память, профиль, настройки, счётчики инициатив, стикеров и локальные кэши на этом устройстве. PIN входа останется сохранён</small></div>
@@ -387,7 +404,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-10-09-rin-mind-v2.5.1-vologda-work-assignment"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-backup-transfer"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

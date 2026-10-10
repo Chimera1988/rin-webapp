@@ -25,6 +25,7 @@ import { createPresenceController } from './js/presence_controller.js';
 import { createHumanDeliveryScheduler, createInputAggregator } from './js/delivery_scheduler.js';
 import { createChatViewportController } from './js/chat_viewport.js';
 import { createWallpaperStore } from './js/wallpaper_store.js';
+import { createBackup, parseBackup, restoreBackup, MAX_BACKUP_IMPORT_BYTES } from './js/data_backup.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -929,6 +930,72 @@ if (voiceRate){
   };
 }
 syncVoiceSettings();
+
+/* — Архив: безопасный перенос Safari → установленное PWA — */
+const backupExportButton = document.getElementById('backupExport');
+const backupDownloadLink = document.getElementById('backupDownload');
+let backupDownloadUrl = '';
+const backupImportInput = document.getElementById('backupImport');
+const backupStatus = document.getElementById('backupStatus');
+let backupBusy = false;
+function setBackupStatus(message) {
+  if (backupStatus) backupStatus.textContent = message;
+}
+function setBackupBusy(value) {
+  backupBusy = Boolean(value);
+  if (backupExportButton) backupExportButton.disabled = backupBusy;
+  if (backupImportInput) backupImportInput.disabled = backupBusy;
+}
+if (backupExportButton) {
+  backupExportButton.addEventListener('click', async () => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    try {
+      const backup = await createBackup({ storage: localStorage, wallpaperStore });
+      const url = URL.createObjectURL(new Blob([backup.json], { type: 'application/json;charset=utf-8' }));
+      if (backupDownloadUrl) URL.revokeObjectURL(backupDownloadUrl);
+      backupDownloadUrl = url;
+      if (backupDownloadLink) {
+        backupDownloadLink.href = url;
+        backupDownloadLink.download = backup.filename;
+        backupDownloadLink.hidden = false;
+      }
+      // iOS may require a second, direct tap to save an asynchronously prepared file.
+      setBackupStatus(`Копия подготовлена: ${backup.summary.messages} сообщений. Нажми «Скачать готовый файл» и сохрани его в «Файлы» на iPhone.`);
+    } catch (error) {
+      dbg(`backup export failed: ${error?.message || 'unknown'}`);
+      setBackupStatus('Не удалось создать копию. Проверь доступность хранилища и повтори.');
+    } finally { setBackupBusy(false); }
+  });
+}
+if (backupImportInput) {
+  backupImportInput.addEventListener('change', async () => {
+    const file = backupImportInput.files?.[0];
+    if (!file || backupBusy) return;
+    setBackupBusy(true);
+    try {
+      if (file.size > MAX_BACKUP_IMPORT_BYTES) throw new Error('BACKUP_SIZE_INVALID');
+      const backup = await parseBackup(await file.text());
+      const summary = backup.summary;
+      const date = new Date(backup.createdAt).toLocaleString('ru-RU');
+      if (!confirm(`Восстановить резервную копию от ${date}?\n\nСообщений: ${summary.messages}\nЗаписей хранилища: ${summary.keys}\nОбои: ${summary.wallpaper ? 'есть' : 'нет'}\n\nТекущая переписка и память на ЭТОМ устройстве будут заменены. PIN входа не меняется.`)) {
+        setBackupStatus('Восстановление отменено. Данные не изменены.');
+        return;
+      }
+      await restoreBackup(backup, { storage: localStorage, wallpaperStore });
+      setBackupStatus('Данные восстановлены. Перезагрузка приложения…');
+      window.location.reload();
+    } catch (error) {
+      dbg(`backup restore failed: ${error?.message || 'unknown'}`);
+      setBackupStatus(error?.message === 'BACKUP_ROLLBACK_FAILED'
+        ? 'Ошибка восстановления и отката. Не закрывай приложение; сохрани журнал и резервный файл.'
+        : 'Не удалось восстановить данные. Файл повреждён, несовместим или недостаточно места.');
+    } finally {
+      backupImportInput.value = '';
+      setBackupBusy(false);
+    }
+  });
+}
 
 /* — Сброс — */
 if (resetApp){
