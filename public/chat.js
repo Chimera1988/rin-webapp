@@ -26,6 +26,7 @@ import { createHumanDeliveryScheduler, createInputAggregator } from './js/delive
 import { createChatViewportController } from './js/chat_viewport.js';
 import { createWallpaperStore } from './js/wallpaper_store.js';
 import { createBackup, parseBackup, restoreBackup, MAX_BACKUP_IMPORT_BYTES } from './js/data_backup.js';
+import { createPushController } from './js/push_client.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -678,6 +679,80 @@ function saveHistory(h){
   const ok = saveChatHistory(h, localStorage);
   if (!ok) dbg('history save failed: storage quota or unavailable');
   return ok;
+}
+
+/* === Web Push: minimal background context, local memory remains authoritative === */
+let pushController = null;
+async function pushSnapshot() {
+  if (activeRequests > 0 || hasBlockingTurn(history)) return null;
+  await memoryJobRunner.drain();
+  const [memory,activeProfile] = await Promise.all([buildMemoryPayload(),ensureActiveProfile()]);
+  if (!memory || !activeProfile) return null;
+  return {
+    history: toApiHistory(history).slice(-35), memory, profile: activeProfile,
+    env: currentEnv || {}, sticker: stickerClientPreferences(),
+    initiation: (() => {try {return JSON.parse(localStorage.getItem('rin-init-state-v2') || '{}');} catch {return {};}})()
+  };
+}
+async function acceptBackgroundDelivery(pending) {
+  if (!pending?.id || !pending?.requestId || !pending?.deliveryPlan) return false;
+  if (activeRequests > 0 || hasBlockingTurn(history)) return false;
+  // Retry-safe: a lost acknowledgement must not create the message or evolve state twice.
+  if (history.some(message=>message.requestId===pending.requestId && message.role==='assistant' && message.status==='complete')) {
+    return history.filter(message=>message.requestId===pending.requestId && message.role==='assistant').every(message=>message.status==='complete');
+  }
+  const sinceGeneration = history.some(message=> message?.role==='user' && Number(message.ts || 0) > Number(pending.sourceLastTs || 0));
+  const prepared = await prepareAssistantDelivery({data:{deliveryPlan:pending.deliveryPlan},requestId:pending.requestId,userText:''});
+  if (prepared.type === 'silence') return false;
+  // Commit the actual text first, then the cognitive transition, then render.
+  // Restore the original server timestamp rather than the time the PWA was opened.
+  for (const [index,segment] of (prepared.segments || []).entries()) {if(segment.message)segment.message.ts=Number(pending.createdAt || Date.now()) + index;}
+  if (!persistPreparedDelivery(prepared)) return false;
+  const memoryModule = await ensureMemoryReady();
+  try {
+    if (!sinceGeneration) {
+      const schedule = await ensureRuntimeSchedule();
+      await refreshRinEnv({refreshWeather:false});
+      const freshInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {},'',schedule?.innerLife||{});
+      await commitSuccessfulTurnState({memoryModule,requestId:pending.requestId,data:{stateTransition:pending.stateTransition,turnDecision:null},preparedInnerLife:freshInnerLife || pending.innerLife});
+    } else dbg('background message arrived after newer user interaction; stale stateTransition intentionally skipped');
+    await deliverCommittedAssistantTurn(prepared);
+    if (!initiationState.recordAttempt(pending.dateKey,pending.windowId)) dbg('background initiation attempt sync failed');
+    if (!initiationState.recordSent(pending.dateKey)) dbg('background initiation counter sync failed');
+    dbg(`background delivery committed: request=${pending.requestId}; id=${pending.id}`);
+    return true;
+  } catch(error) {dbg(`background delivery local commit failed: ${error?.message||error}`);return false;}
+}
+function refreshPushButtons() {
+  const connected = Boolean(pushController?.isEnabled());
+  const on = document.getElementById('pushEnable');
+  const off = document.getElementById('pushDisable');
+  const test = document.getElementById('pushTest');
+  if (on) on.disabled=connected;
+  if (off) off.disabled=!connected;
+  if (test) test.disabled=!connected;
+}
+async function initPushController() {
+  pushController = createPushController({
+    getSnapshot:pushSnapshot,acceptDelivery:acceptBackgroundDelivery,
+    log:value=>dbg(value),
+    onStatus:message=>{const el=document.getElementById('pushStatus');if(el)el.textContent=message;refreshPushButtons();}
+  });
+  const enable=document.getElementById('pushEnable');
+  const disable=document.getElementById('pushDisable');
+  const testButton=document.getElementById('pushTest');
+  enable?.addEventListener('click',()=>{void pushController.enableFromClick().finally(refreshPushButtons);});
+  disable?.addEventListener('click',()=>{void pushController.disable().finally(refreshPushButtons);});
+  testButton?.addEventListener('click',()=>{void pushController.test();});
+  navigator.serviceWorker?.addEventListener?.('message',event=>{if(event.data?.type==='rin-push-delivery')void pushController.pull();});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void pushController.pull().then(()=>pushController.sync());});
+  window.addEventListener('online',()=>{void pushController.pull().then(()=>pushController.sync());});
+  await pushController.initialize();
+  refreshPushButtons();
+  setInterval(()=>{void pushController.pull().then(()=>pushController.sync());},65_000);
+}
+function queuePushSnapshotSync() {
+  if (pushController?.isEnabled()) void pushController.sync();
 }
 
 /* === UI: SETTINGS === */
@@ -1699,12 +1774,13 @@ export const RIN_CHAT_READY = new Promise(resolve => { resolveChatReady = resolv
   await resumePendingAssistantDeliveries();
   resolveChatReady?.(true);
   resolveChatReady = null;
+  await initPushController();
   if (!history.length) await greet();
 
   setInterval(refreshRinEnv, WEATHER_REFRESH_MS);
   if (initiationPolicy) {
-    setInterval(() => { void tryInitiateBySchedule(); }, initiationPolicy.pollIntervalMs);
-    void tryInitiateBySchedule();
+    setInterval(() => { if (!pushController?.isEnabled()) void tryInitiateBySchedule(); }, initiationPolicy.pollIntervalMs);
+    if (!pushController?.isEnabled()) void tryInitiateBySchedule();
   }
 })();
 
@@ -2301,10 +2377,12 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
   } finally {
     activeRequests = Math.max(0, activeRequests - 1);
     finishPresence();
+    queuePushSnapshotSync();
   }
 }
 
 async function tryInitiateBySchedule() {
+  if (pushController?.isEnabled()) return false;
   if (!canAutoInitiate({ history, greetingActive, activeRequests })) return false;
   const schedule = await ensureRuntimeSchedule();
   const policy = resolveInitiationPolicy(schedule);
@@ -2657,6 +2735,7 @@ async function processUserBatch(messageIds = []) {
   } finally {
     activeRequests = Math.max(0, activeRequests - 1);
     finishPresence();
+    queuePushSnapshotSync();
   }
 }
 

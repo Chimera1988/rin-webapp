@@ -7,13 +7,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="icon" href="/favicon.ico" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#090b10" />
   <link rel="apple-touch-icon" href="/avatar.jpg" />
 
   <!-- Тема применяется до CSS/отрисовки внешним CSP-совместимым bootstrap. -->
-  <script src="/js/theme_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-backup-transfer"></script>
+  <script src="/js/theme_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-web-push"></script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-10-10-rin-mind-v2.5.1-vologda-backup-transfer" />
+  <link rel="stylesheet" href="/style.css?v=2026-10-10-rin-mind-v2.5.1-vologda-web-push" />
 </head>
 <body class="chat-app">
 
@@ -155,6 +157,13 @@
             <span class="settings-chevron">›</span>
           </button>
 
+          <button class="settings-menu-item" type="button" data-settings-target="notifications">
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9zM10 21h4"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Уведомления</strong><small>Самостоятельные сообщения Рин на iPhone</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
           <button class="settings-menu-item" type="button" data-settings-target="debug">
             <span class="settings-icon">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h8M9 4l1 3m5-3-1 3M7 11H4m16 0h-3M7 16H4m16 0h-3M8 8v8a4 4 0 0 0 8 0V8z"/></svg>
@@ -315,6 +324,26 @@
         </div>
       </section>
 
+      <section class="settings-page" data-settings-page="notifications">
+        <div class="settings__head settings__head--sub">
+          <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+          <div class="settings__title">Уведомления</div>
+          <span></span>
+        </div>
+        <p class="settings-intro">Рин сможет самостоятельно написать, даже когда приложение закрыто.</p>
+        <div class="settings-detail-card">
+          <div class="settings-control-row"><div><strong>Push-уведомления</strong><small>Для iPhone нужно открыть Рин через иконку на экране «Домой» и разрешить уведомления.</small></div></div>
+          <div class="settings-divider"></div>
+          <div class="settings-push-actions">
+            <button id="pushEnable" class="settings-action settings-backup-button" type="button">Включить уведомления</button>
+            <button id="pushDisable" class="settings-action settings-backup-button" type="button">Отключить уведомления</button>
+            <button id="pushTest" class="settings-action settings-backup-button" type="button">Проверить уведомление</button>
+          </div>
+          <p id="pushStatus" class="settings-backup-status" role="status" aria-live="polite">Подключение пока не выполнено.</p>
+          <p class="settings-backup-status">Уведомление не раскрывает личный текст на экране блокировки. Сообщение появится в чате после синхронизации.</p>
+        </div>
+      </section>
+
       <section class="settings-page" data-settings-page="debug">
         <div class="settings__head settings__head--sub">
           <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
@@ -404,7 +433,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-backup-transfer"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-web-push"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>
