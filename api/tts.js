@@ -2,7 +2,7 @@ import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin 
 
 const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
 const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'NxfO5zydfqwpYnWQJ7jJ';
-const MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
+const MODEL_ID = 'eleven_v4';
 const MAX_CHARS = 180;
 
 export default async function handler(req, res) {
