@@ -74,6 +74,28 @@
           "value": "public, max-age=86400, stale-while-revalidate=604800"
         }
       ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        }
+      ]
     }
   ],
   "rewrites": [
@@ -90,6 +112,10 @@
       "destination": "/public/login.html"
     },
     {
+      "source": "/manifest.webmanifest",
+      "destination": "/public/manifest.webmanifest"
+    },
+    {
       "source": "/login.html",
       "destination": "/public/login.html"
     },
@@ -100,6 +126,20 @@
     {
       "source": "/stickers/(.*)",
       "destination": "/public/stickers/$1"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/push-cron-morning",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/push-cron-day",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/push-cron-evening",
+      "schedule": "30 17 * * *"
     }
   ]
 }

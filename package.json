@@ -10,5 +10,9 @@
     "check": "npm run check:node && npm run e2e:browser",
     "e2e:browser": "node scripts/browser-e2e.js",
     "check:node": "npm run syntax && npm run validate && npm test && npm run build"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.36.0",
+    "web-push": "^3.6.7"
   }
 }
