@@ -1,0 +1,11 @@
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
+const { publicKey, privateKey } = generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+const pub = publicKey.export({format:'jwk'});
+const priv = privateKey.export({format:'jwk'});
+const b64 = value=>Buffer.from(value,'base64url');
+console.log('Add these to Vercel Project Settings > Environment Variables (Production only). Do not commit/share the values.');
+console.log('RIN_PUSH_VAPID_PUBLIC='+Buffer.concat([Buffer.from([4]),b64(pub.x),b64(pub.y)]).toString('base64url'));
+console.log('RIN_PUSH_VAPID_PRIVATE='+priv.d);
+console.log('RIN_PUSH_DATA_KEY='+randomBytes(32).toString('base64url'));
+console.log('CRON_SECRET='+randomBytes(32).toString('base64url'));
+console.log('RIN_PUSH_VAPID_SUBJECT=https://rin-webapp-t4vi.vercel.app');
