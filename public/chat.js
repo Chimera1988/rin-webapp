@@ -702,7 +702,7 @@ async function acceptBackgroundDelivery(pending) {
     return history.filter(message=>message.requestId===pending.requestId && message.role==='assistant').every(message=>message.status==='complete');
   }
   const sinceGeneration = history.some(message=> message?.role==='user' && Number(message.ts || 0) > Number(pending.sourceLastTs || 0));
-  const prepared = await prepareAssistantDelivery({data:{deliveryPlan:pending.deliveryPlan},requestId:pending.requestId,userText:''});
+  const prepared = await prepareAssistantDelivery({data:{deliveryPlan:pending.deliveryPlan, stateTransition:pending.stateTransition},requestId:pending.requestId,userText:''});
   if (prepared.type === 'silence') return false;
   // Commit the actual text first, then the cognitive transition, then render.
   // Restore the original server timestamp rather than the time the PWA was opened.
@@ -1803,12 +1803,24 @@ function shouldVoiceFor(text) {
   return Boolean(normalized && normalized.length <= 180);
 }
 
-async function getTTSUrl(text) {
+// The voice is expressive only when Rin already has a clear emotional state.
+// Never infer voice tags from user text and never insert the tags into chat history.
+function ttsEmotionFromTurn(data = null) {
+  const primary = data?.stateTransition?.emotionalState?.primary
+    || data?.affectiveTurn?.emotionalState?.primary
+    || data?.cognition?.emotion?.primary;
+  const type = String(primary?.type || '').trim().toLowerCase();
+  const intensity = Number(primary?.intensity);
+  if (!type || !Number.isFinite(intensity) || intensity < 35) return null;
+  return { type, intensity: Math.max(0, Math.min(100, intensity)) };
+}
+
+async function getTTSUrl(text, data = null) {
   try {
     const response = await fetchWithTimeout('/api/tts', {
       method: 'POST',
       headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, emotion: ttsEmotionFromTurn(data) })
     }, 25_000);
     if (response.status === 401) return null;
     if (!response.ok) return null;
@@ -1934,7 +1946,7 @@ async function prepareAssistantDelivery({ data, requestId, userText = '' } = {})
         error.code = 'EMPTY_MODEL_RESPONSE';
         throw error;
       }
-      const audioUrl = shouldVoiceFor(text) ? await getTTSUrl(text) : null;
+      const audioUrl = shouldVoiceFor(text) ? await getTTSUrl(text, data) : null;
       const message = createChatMessage({
         id: segmentId,
         role: 'assistant',
