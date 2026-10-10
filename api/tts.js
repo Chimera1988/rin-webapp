@@ -5,6 +5,42 @@ const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'NxfO5zydfqwpYnWQJ7jJ';
 const MODEL_ID = 'eleven_v4';
 const MAX_CHARS = 180;
 
+// Eleven v4 interprets short audio tags as delivery guidance. The mapping is
+// intentionally small, and no vocal sound effects (laughs/sighs) are forced.
+const EMOTION_TAGS = Object.freeze({
+  playfulness: '[mischievously]',
+  playful_irritation: '[mischievously]',
+  tenderness: '[softly]',
+  warmth: '[softly]',
+  shyness: '[shyly]',
+  joy: '[happy]',
+  excitement: '[excited]',
+  sadness: '[sad]',
+  hurt: '[sad]',
+  disappointment: '[sad]',
+  concern: '[concerned]',
+  curiosity: '[curious]',
+  interest: '[curious]',
+  relief: '[relieved]',
+  gratitude: '[warmly]'
+});
+
+export function buildTtsInput(text, emotion = null) {
+  // The caller normally sends at most 180 characters. Also enforce the
+  // free-credit budget for direct API calls without splitting a sentence for a tag.
+  const clean = String(text || '').trim();
+  const spoken = clean.length > MAX_CHARS ? clean.slice(0, MAX_CHARS) : clean;
+  const type = String(emotion?.type || '').trim().toLowerCase();
+  const intensity = Number(emotion?.intensity);
+  const tag = Object.prototype.hasOwnProperty.call(EMOTION_TAGS, type) ? EMOTION_TAGS[type] : null;
+
+  // Short or weakly emotional messages are voiced naturally, without prompting.
+  if (!tag || !Number.isFinite(intensity) || intensity < 35 || spoken.length < 24) return spoken;
+  // Never cut spoken content to make room for a style tag.
+  if (tag.length + 1 + spoken.length > MAX_CHARS) return spoken;
+  return `${tag} ${spoken}`;
+}
+
 export default async function handler(req, res) {
   try {
     if (!requireMethod(req, res, 'POST')) return;
@@ -14,7 +50,7 @@ export default async function handler(req, res) {
 
     const cleanText = typeof body.text === 'string' ? body.text.trim() : '';
     if (!cleanText) return res.status(400).json({ error: 'Text is required', code: 'INVALID_TEXT' });
-    const ttsInput = cleanText.length > MAX_CHARS ? `${cleanText.slice(0, MAX_CHARS)}…` : cleanText;
+    const ttsInput = buildTtsInput(cleanText, body.emotion);
 
     const upstream = await fetchWithTimeout(
       `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(VOICE_ID)}`,
