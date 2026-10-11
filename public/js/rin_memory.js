@@ -990,15 +990,18 @@ export async function applyMemoryExtraction(extracted = {}, { jobId = '', now = 
       if (!path.startsWith('user.') || !value || (Number.isFinite(confidence) && confidence < 0.75)) continue;
       const parts = path.split('.').map(item => item.trim()).filter(Boolean);
       let cursor = diary.facts;
+      let updated = false;
       for (let index = 0; index < parts.length; index += 1) {
         const part = parts[index];
-        if (index === parts.length - 1) cursor[part] = value;
+        if (index === parts.length - 1) {
+          if (cursor[part] !== value) { cursor[part] = value; updated = true; }
+        }
         else {
           if (!cursor[part] || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])) cursor[part] = {};
           cursor = cursor[part];
         }
       }
-      savedFactPaths.push(path);
+      if (updated) savedFactPaths.push(path);
     }
 
     let eventCount = 0;

@@ -1,1 +1,1 @@
-export const RIN_RELEASE_ID = '2026-10-11-rin-mind-v2.5.1-debug-delta1';
+export const RIN_RELEASE_ID = '2026-10-12-rin-mind-v2.6.0-behavioral-consistency';
