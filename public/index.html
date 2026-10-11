@@ -12,10 +12,10 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/rin-kitsune-180.png" />
 
   <!-- Тема применяется до CSS/отрисовки внешним CSP-совместимым bootstrap. -->
-  <script src="/js/theme_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-web-push"></script>
+  <script src="/js/theme_bootstrap.js?v=2026-10-11-rin-mind-v2.5.1-debug-delta1"></script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-10-10-rin-mind-v2.5.1-vologda-web-push" />
+  <link rel="stylesheet" href="/style.css?v=2026-10-11-rin-mind-v2.5.1-debug-delta1" />
 </head>
 <body class="chat-app">
 
@@ -350,16 +350,21 @@
           <div class="settings__title">Отладка</div>
           <span></span>
         </div>
-        <p class="settings-intro">Логи стикеров и служебная информация приложения.</p>
+        <p class="settings-intro">Компактная диагностика без потери полей. Формат Δ1: S — состояние, R — ответ, ~ — только изменившиеся поля. Кнопка полного лога возвращает исходные записи.</p>
         <div class="settings-detail-card">
           <label class="settings-control-row">
-            <div><strong>Показывать лог</strong><small>Записывать решения системы стикеров</small></div>
+            <div><strong>Показывать лог</strong><small>Хранить до 1000 последних событий в текущем сеансе</small></div>
             <span class="switch">
               <input id="debugToggle" type="checkbox" />
               <span></span>
             </span>
           </label>
           <div class="settings-divider"></div>
+          <div class="settings-push-actions">
+            <button id="debugCopyCompact" class="settings-action settings-backup-button" type="button">Скопировать компактный</button>
+            <button id="debugCopyFull" class="settings-action settings-backup-button" type="button">Скопировать полный</button>
+          </div>
+          <p id="debugCopyStatus" class="settings-backup-status" role="status" aria-live="polite"></p>
           <div id="debugLog" class="diary-log settings-debug-log"></div>
         </div>
       </section>
@@ -433,7 +438,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-10-10-rin-mind-v2.5.1-vologda-web-push"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-10-11-rin-mind-v2.5.1-debug-delta1"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

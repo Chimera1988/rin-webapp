@@ -27,6 +27,7 @@ import { createChatViewportController } from './js/chat_viewport.js';
 import { createWallpaperStore } from './js/wallpaper_store.js';
 import { createBackup, parseBackup, restoreBackup, MAX_BACKUP_IMPORT_BYTES } from './js/data_backup.js';
 import { createPushController } from './js/push_client.js';
+import { createDebugLogBuffer } from './js/debug_compact.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -115,6 +116,9 @@ const voiceRateCard = document.getElementById('voiceRateCard');
 /* Debug (в настройках) */
 const debugToggle   = document.getElementById('debugToggle');
 const debugLogEl    = document.getElementById('debugLog');
+const debugCopyCompact = document.getElementById('debugCopyCompact');
+const debugCopyFull = document.getElementById('debugCopyFull');
+const debugCopyStatus = document.getElementById('debugCopyStatus');
 
 /* === Окружение Рин (время/сезон/погода) === */
 const WEATHER_REFRESH_MS = 20 * 60 * 1000; // раз в 20 минут
@@ -207,29 +211,53 @@ async function fetchRinWeather(location = null){
   }catch{ return null; }
 }
 
-/* === Debug helpers (в панели настроек) === */
+/* === Debug helpers: reversible compact display; full records remain intact. === */
 let _debugOn = safeLocalGet(LS_DEBUG_ENABLED, DEFAULT_DEBUG_ENABLED ? '1' : '0') !== '0';
-function dbg(line){
+const debugBuffer = createDebugLogBuffer({limit: 1000});
+function renderDebugLog() {
+  if (!debugLogEl) return;
+  // Every visible 80-event slice is independently decodable (its own baselines).
+  const content = debugBuffer.count() ? debugBuffer.compact({last:80}) : '';
+  debugLogEl.replaceChildren();
+  if (content) {
+    const rows = document.createDocumentFragment();
+    for (const line of content.split('\n')) {
+      const div = document.createElement('div');
+      div.textContent = line;
+      rows.appendChild(div);
+    }
+    debugLogEl.appendChild(rows);
+  }
+  debugLogEl.scrollTop = debugLogEl.scrollHeight;
+}
+function dbg(line) {
   if (!_debugOn) return;
-  try{
-    if (!debugLogEl) return;
+  try {
     const time = new Date();
     const ts = `${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}:${String(time.getSeconds()).padStart(2,'0')}`;
-    const div = document.createElement('div');
-    div.innerText = `[${ts}] ${line}`;
-    debugLogEl.appendChild(div);
-    while (debugLogEl.childNodes.length > 80) debugLogEl.removeChild(debugLogEl.firstChild);
-    debugLogEl.scrollTop = debugLogEl.scrollHeight;
-  }catch{}
+    debugBuffer.push(line,ts);
+    renderDebugLog();
+  } catch {} // Debugging must never interrupt a chat turn.
 }
-
-/* Инициализация переключателя debug в панели */
-if (debugToggle){
+async function copyDebugLog(format) {
+  if (!debugBuffer.count()) {
+    if (debugCopyStatus) debugCopyStatus.textContent = 'Пока нет событий для копирования.';
+    return;
+  }
+  const output = format === 'full' ? debugBuffer.full() : debugBuffer.compact();
+  const success = await writeClipboardText(output);
+  if (debugCopyStatus) debugCopyStatus.textContent = success
+    ? `Скопировано событий: ${debugBuffer.count()}. ${format === 'full' ? 'Исходный лог.' : 'Компактный лог с возможностью восстановления.'}`
+    : 'Не удалось скопировать. Можно выделить и скопировать текст лога вручную.';
+}
+if (debugCopyCompact) debugCopyCompact.onclick = () => { void copyDebugLog('compact'); };
+if (debugCopyFull) debugCopyFull.onclick = () => { void copyDebugLog('full'); };
+if (debugToggle) {
   debugToggle.checked = _debugOn;
   debugToggle.onchange = () => {
     _debugOn = debugToggle.checked;
     safeLocalSet(LS_DEBUG_ENABLED, _debugOn ? '1' : '0');
-    if (!_debugOn && debugLogEl) debugLogEl.innerHTML='';
+    if (!_debugOn) { debugBuffer.clear(); renderDebugLog(); }
     dbg('debug enabled');
   };
 }
