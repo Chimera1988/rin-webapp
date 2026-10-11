@@ -13,21 +13,21 @@
       "from": "08:00",
       "to": "10:30",
       "pool": "morning",
-      "probability": 0.55
+      "probability": 1
     },
     {
       "id": "day_ping",
       "from": "13:00",
       "to": "16:30",
       "pool": "day",
-      "probability": 0.28
+      "probability": 1
     },
     {
       "id": "evening",
       "from": "19:30",
       "to": "22:30",
       "pool": "evening",
-      "probability": 0.5
+      "probability": 1
     }
   ],
   "probability_semantics": "one_draw_per_window_when_eligible",
