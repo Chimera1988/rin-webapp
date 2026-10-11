@@ -1634,7 +1634,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
   wave.className='voice-tg__wave';
   for (let i=0;i<18;i++){
     const bar=document.createElement('i');
-    bar.style.height = (8 + Math.round(Math.random()*18)) + 'px';
+    bar.style.height = (6 + Math.round(Math.random()*13)) + 'px';
     wave.appendChild(bar);
   }
   const act=document.createElement('button');
@@ -2135,9 +2135,11 @@ async function deliverCommittedAssistantTurn(prepared, { presenceTurn = null, sc
 
   let lastKind = null;
   let typingRow = null;
+  let activeSegmentIsVoice = false;
   const setPresence = mode => {
     if (mode === 'typing') {
-      presence.setTyping(presenceTurn);
+      if (activeSegmentIsVoice) presence.setRecording(presenceTurn);
+      else presence.setTyping(presenceTurn);
       typingRow = setTypingRow(typingRow, 'typing');
     } else {
       presence.setOnline(presenceTurn);
@@ -2147,6 +2149,7 @@ async function deliverCommittedAssistantTurn(prepared, { presenceTurn = null, sc
 
   for (let index = Math.max(0, startIndex); index < prepared.segments.length; index += 1) {
     const segment = prepared.segments[index];
+    activeSegmentIsVoice = Boolean(segment?.audioUrl);
     if (index > startIndex && scheduler) {
       const between = await scheduler.waitBetweenSegments({ nextSegment: segment, denseConversation, onPresence: setPresence, shouldCancel: () => false });
       if (timing) {
@@ -2237,9 +2240,10 @@ function stickerDebugSummary(data = null, committed = null) {
   return `; stickerMode=${state?.mode || '-'}; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerHard=${state?.hardAvailable === true ? 'yes' : 'no'}:${state?.hardReason || '-'}; stickerBudget=${budget}; stickerTurns=${state?.semanticAssistantTurns ?? '-'}; stickerGap=${state?.turnsSinceSticker ?? '-'}/${state?.requiredGapTurns ?? '-'}; stickerCooldown=${state?.cooldownRemainingTurns ?? '-'}; stickerGapOk=${state?.gapSatisfied === true ? 'yes' : 'no'}; stickerLastTurn=${String(state?.lastStickerTurnKey || '-').slice(-18)}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}${tokenSummary}`;
 }
 
-function updatePresenceForDelivery(presenceTurn, mode, typingRowRef) {
+function updatePresenceForDelivery(presenceTurn, mode, typingRowRef, recording = false) {
   if (mode === 'typing') {
-    presence.setTyping(presenceTurn);
+    if (recording) presence.setRecording(presenceTurn);
+    else presence.setTyping(presenceTurn);
     if (!typingRowRef.current?.isConnected) typingRowRef.current = addTyping();
     return;
   }
@@ -2309,7 +2313,8 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     typingRowRef.current = null;
     presence.finishTurn(presenceTurn);
   };
-  const onPresence = mode => updatePresenceForDelivery(presenceTurn, mode, typingRowRef);
+  let firstSegmentIsVoice = false;
+  const onPresence = mode => updatePresenceForDelivery(presenceTurn, mode, typingRowRef, firstSegmentIsVoice);
 
   try {
     await memoryJobRunner.drain();
@@ -2355,6 +2360,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     }
 
     preparedDelivery = await prepareAssistantDelivery({ data, requestId, userText: '' });
+    firstSegmentIsVoice = Boolean(preparedDelivery?.segments?.[0]?.audioUrl);
     if (inputEpoch !== epochAtStart) return false;
 
     const waitResult = preparedDelivery.type === 'silence'
@@ -2577,7 +2583,8 @@ async function processUserBatch(messageIds = []) {
     typingRowRef.current = null;
     presence.finishTurn(presenceTurn);
   };
-  const onPresence = mode => updatePresenceForDelivery(presenceTurn, mode, typingRowRef);
+  let firstSegmentIsVoice = false;
+  const onPresence = mode => updatePresenceForDelivery(presenceTurn, mode, typingRowRef, firstSegmentIsVoice);
 
   try {
     await memoryJobRunner.drain();
@@ -2655,6 +2662,7 @@ async function processUserBatch(messageIds = []) {
       requestId,
       userText: combinedUserText
     });
+    firstSegmentIsVoice = Boolean(preparedDelivery?.segments?.[0]?.audioUrl);
     if (inputEpoch !== epochAtStart) {
       requeueInterruptedBatch(ids);
       dbg(`prepared turn superseded before human delay: request=${requestId}`);
