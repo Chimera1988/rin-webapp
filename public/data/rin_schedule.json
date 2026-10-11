@@ -10,24 +10,24 @@
   "windows": [
     {
       "id": "morning",
-      "from": "08:00",
-      "to": "10:30",
+      "from": "10:00",
+      "to": "11:30",
       "pool": "morning",
       "probability": 1
     },
     {
       "id": "day_ping",
-      "from": "13:00",
+      "from": "15:00",
       "to": "16:30",
       "pool": "day",
-      "probability": 1
+      "probability": 0.28
     },
     {
       "id": "evening",
       "from": "19:30",
       "to": "22:30",
       "pool": "evening",
-      "probability": 1
+      "probability": 0.5
     }
   ],
   "probability_semantics": "one_draw_per_window_when_eligible",
