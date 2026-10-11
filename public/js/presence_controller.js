@@ -1,7 +1,8 @@
 export const PRESENCE_LABELS = Object.freeze({
   offline: 'не в сети',
   online: 'онлайн',
-  typing: 'печатает…'
+  typing: 'печатает…',
+  recording: 'записывает голосовое…'
 });
 
 const DEFAULT_ONLINE_AFTER_REPLY = [45_000, 100_000];
@@ -86,8 +87,8 @@ export function createPresenceController(options = {}) {
       if (!available()) setMode('offline');
       return false;
     }
-    if (nextMode === 'typing') {
-      setMode('typing');
+    if (nextMode === 'typing' || nextMode === 'recording') {
+      setMode(nextMode);
       if (!activeTurn.typingStarted) {
         activeTurn.typingStarted = true;
         activeTurn.onTyping?.();
@@ -114,7 +115,7 @@ export function createPresenceController(options = {}) {
   function syncAvailability() {
     clearIdle();
     if (!available()) { setMode('offline'); return; }
-    if (activeTurn) { setMode(mode === 'typing' ? 'typing' : 'online'); return; }
+    if (activeTurn) { setMode(mode === 'typing' || mode === 'recording' ? mode : 'online'); return; }
     // Возвращение сети или вкладки само по себе не делает Рин онлайн.
     setMode('offline');
   }
@@ -131,6 +132,7 @@ export function createPresenceController(options = {}) {
     beginTurn,
     setPhase,
     setTyping: turnId => setPhase(turnId, 'typing'),
+    setRecording: turnId => setPhase(turnId, 'recording'),
     setOnline: turnId => setPhase(turnId, 'online'),
     finishTurn,
     syncAvailability,
