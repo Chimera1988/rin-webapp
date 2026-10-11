@@ -131,11 +131,11 @@
   "crons": [
     {
       "path": "/api/push-cron-morning",
-      "schedule": "0 6 * * *"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/push-cron-day",
-      "schedule": "0 11 * * *"
+      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/push-cron-evening",
