@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { rinCalendarForPrompt } from '../lib/cognition/temporal-grounding.js';
+import { inspectExpressionNovelty } from '../lib/cognition/expression-novelty.js';
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState, compactKernelState } from '../lib/cognition/kernel-state.js';
@@ -37,6 +40,11 @@ const MIND_REASONING_EFFORT = process.env.OPENAI_MIND_REASONING_EFFORT
   || (MIND_MODEL === 'gpt-6-luna' ? 'none' : null);
 const MIND_PARAMS = { temperature: 0.58, max_tokens: 1200 };
 const LONG_MIND_PARAMS = { temperature: 0.58, max_tokens: 2200 };
+// Share the same weekly schedule as the PWA and cron worker; read once per deployment.
+const RIN_WEEKLY_RHYTHM = (() => {
+  try { return JSON.parse(readFileSync(new URL('../public/data/rin_schedule.json', import.meta.url), 'utf8')).weekly_rhythm || null; }
+  catch { return null; }
+})();
 
 const normalize = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -487,7 +495,13 @@ export default async function handler(req, res) {
     const stickerCandidates = stickerState.available === true
       ? buildStickerCandidates({ userText: userTurn, state: kernelState, brain, affectiveTurn, limit: 12 })
       : [];
-    const mindState = { ...kernelState, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates };
+    const calendarGrounding = rinCalendarForPrompt({
+      environment: kernelState.environment,
+      weeklyRhythm: RIN_WEEKLY_RHYTHM,
+      currentWorkMode: kernelState.innerLife?.workMode
+    });
+    const expressionNovelty = inspectExpressionNovelty(fullHistory);
+    const mindState = { ...kernelState, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates, calendarGrounding, expressionNovelty };
     const prompt = buildRinMindPrompt({
       profile,
       state: mindState,
