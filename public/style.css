@@ -873,6 +873,8 @@ body.chat-app {
   color: color-mix(in oklab, var(--text) 80%, transparent);
   border: 0;
   border-radius: 16px;
+  /* Use the standard bubble width cap instead of shrinking around the controls. */
+  width: 100%;
   padding: 8px 10px 7px;
   box-shadow: var(--shadow);
 }
@@ -909,6 +911,7 @@ body.chat-app {
   height: 21px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 3px;
   opacity: .95;
 }
