@@ -1,4 +1,6 @@
 import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
+import { preserveRinAudio } from '../lib/archive/media.js';
+import { validArchiveId } from '../lib/archive/core.js';
 
 const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
 // Temporary voice comparison: pin the selected Voice Design voice for this test.
@@ -74,6 +76,12 @@ export default async function handler(req, res) {
     }
 
     const buf = Buffer.from(await upstream.arrayBuffer());
+    let archived = false;
+    if (validArchiveId(body.messageId)) {
+      try { archived = await preserveRinAudio(body.messageId, buf); }
+      catch(error) { console.error('Voice archive save failed:', error?.message || error); }
+    }
+    res.setHeader('X-Rin-Audio-Archived', archived ? '1' : '0');
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).send(buf);
