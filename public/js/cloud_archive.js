@@ -1,4 +1,4 @@
-import { normalizeStoredHistory } from './chat_store.js';
+import { normalizeStoredMessage } from './chat_store.js';
 
 const BATCH=70;
 const RETRY_MS=15000;
@@ -7,6 +7,7 @@ const cleanBatch = messages => (Array.isArray(messages)?messages:[]).filter(m=>
   m?.id && GOOD_STATUS.has(m.status) && ['text','voice','sticker','silence'].includes(m.kind) &&
   (['user','assistant'].includes(m.role)));
 
+// No 140/40 trimming here: only saveChatHistory applies limits to the local cache.
 export function mergeArchiveHistory(local=[],remote=[]) {
   const ids=new Map();
   for(const message of remote) if (message?.id) ids.set(message.id,message);
@@ -15,7 +16,8 @@ export function mergeArchiveHistory(local=[],remote=[]) {
     ids.set(message.id,{...prior,...message,
       ...(prior?.media?.archived || message.media?.archived ? {media:{archived:true,type:'audio'}} : {})});
   }
-  return normalizeStoredHistory([...ids.values()].sort((a,b)=>Number(a.ts)-Number(b.ts)||String(a.id).localeCompare(String(b.id))));
+  return [...ids.values()].map(normalizeStoredMessage).filter(Boolean)
+    .sort((a,b)=>Number(a.ts)-Number(b.ts)||String(a.id).localeCompare(String(b.id)));
 }
 
 export function createCloudArchive({fetchFn=fetch,headers=()=>({}),log=()=>{},timer=setTimeout}={}) {
