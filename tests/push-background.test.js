@@ -60,6 +60,7 @@ test('cron generates one queued message, never rerolls, and stores only cipherte
     assert.equal(pending.notificationText,'Привет)');
     assert.equal(pending.id,createDeliveryId(pending.requestId));
     assert.equal(pending.stateTransition.moodState.energy,70);
+    assert.equal(pending.proactiveType,'scheduled');
     assert.ok(!String(redis.map.get(pushKey('pending'))).includes('Привет'));
     const second=await processPushOpportunity({redis,schedule,now,draw:()=>0,generate,notify});
     assert.equal(second.status,'not_eligible');
