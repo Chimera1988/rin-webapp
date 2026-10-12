@@ -1,3 +1,37 @@
 /* Archive pagination: unobtrusive control above messages. */
 .archive-load-earlier { display:block; align-self:center; margin:8px auto 16px; padding:8px 14px; border:1px solid rgba(160,160,180,.25); border-radius:18px; color:inherit; background:rgba(100,110,135,.13); font:inherit; font-size:12px; cursor:pointer; }
 .archive-load-earlier:disabled { opacity:.65; cursor:default; }
+/* Chronological calendar-day boundaries; neither messages nor memory records. */
+.rin-day-divider {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  align-self:stretch;
+  min-width:0;
+  margin:17px 14px 13px;
+  pointer-events:none;
+  color:rgba(245,232,241,.84);
+  font-size:12px;
+  line-height:1.4;
+  font-weight:500;
+  letter-spacing:.015em;
+}
+.rin-day-divider::before,.rin-day-divider::after {
+  content:"";
+  flex:1;
+  min-width:18px;
+  height:1px;
+  background:linear-gradient(90deg,transparent,rgba(213,177,200,.20));
+}
+.rin-day-divider::after { transform:rotate(180deg); }
+.rin-day-divider span {
+  display:inline-block;
+  padding:5px 13px;
+  border:1px solid rgba(213,177,200,.20);
+  border-radius:999px;
+  background:rgba(20,17,26,.62);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  white-space:nowrap;
+}

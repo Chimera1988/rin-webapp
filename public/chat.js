@@ -29,6 +29,7 @@ import { createBackup, parseBackup, restoreBackup, MAX_BACKUP_IMPORT_BYTES } fro
 import { createPushController } from './js/push_client.js';
 import { createDebugLogBuffer } from './js/debug_compact.js';
 import { createCloudArchive, mergeArchiveHistory } from './js/cloud_archive.js';
+import { chatDayLabel, localDayKey } from './js/chat_day_groups.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -720,44 +721,152 @@ function saveHistory(h){
   return ok;
 }
 
+// Cloud pages are scanned for genuinely missing rows. A pre-cloud sticker can be
+// older than recent text, so do not use the earliest local timestamp as the cursor:
+// there may be archived text *between* locally retained visual events.
 let archiveCursor=null;
 let archiveHasMore=false;
+let archivePendingPage=null;
 let archiveLoadButton=null;
 let archiveLoading=false;
+
+function renderedArchiveIds() {
+  return new Set([...chatEl.querySelectorAll('.message-row[data-message-id]')].map(row=>row.dataset.messageId));
+}
+function archiveDisplayable(message) {
+  return message && message.kind!=='silence' &&
+    !(message.role==='assistant' && ['text','voice'].includes(message.kind) && isInternalNonverbalMetaText(message.content));
+}
+async function discoverUnseenArchivedPage(){
+  const known=renderedArchiveIds();
+  archivePendingPage=null;
+  while(archiveHasMore && archiveCursor){
+    const page=await cloudArchive.page(archiveCursor);
+    if(!page) { archiveHasMore=false; return false; }
+    archiveCursor=page.cursor;
+    archiveHasMore=page.hasMore;
+    if(page.messages.some(m=>archiveDisplayable(m) && !known.has(m.id))){
+      archivePendingPage=page;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Insert a newly fetched archived message at its actual chronological location,
+// not necessarily at the top: old visual-only local history can span missing text.
+function placeArchivedRow(row, message){
+  const rows=[...chatEl.querySelectorAll('.message-row[data-message-id]')];
+  const ts=Number(message.ts);
+  const id=String(message.id);
+  const next=rows.find(other=>other!==row && (Number(other.dataset.messageTs)>ts ||
+    (Number(other.dataset.messageTs)===ts && String(other.dataset.messageId).localeCompare(id)>0)));
+  if(next) chatEl.insertBefore(row,next);
+  else chatEl.appendChild(row);
+}
+
 function addArchiveLoadButton(){
-  if (!archiveHasMore || archiveLoadButton) return;
+  if(!archivePendingPage || archiveLoadButton) return;
   const btn=document.createElement('button');
   btn.type='button';
   btn.className='archive-load-earlier';
-  btn.textContent='Показать более ранние сообщения';
-  btn.setAttribute('aria-label','Загрузить раннюю переписку из архива');
+  btn.textContent='Показать предыдущую часть архива';
+  btn.setAttribute('aria-label','Загрузить недостающие сообщения из облака');
   chatEl.prepend(btn);
   archiveLoadButton=btn;
-  btn.addEventListener('click', async()=>{
-    if (archiveLoading || !archiveHasMore || !archiveCursor) return;
+  btn.addEventListener('click',async()=>{
+    if(archiveLoading) return;
     archiveLoading=true;
     btn.disabled=true;
     btn.textContent='Загрузка архива…';
-    const previousTop=chatEl.scrollTop, previousHeight=chatEl.scrollHeight;
-    try {
-      const oldCursor=archiveCursor;
-      const page=await cloudArchive.page(oldCursor);
-      if (!page) return;
-      archiveCursor=page.cursor;
-      archiveHasMore=page.hasMore;
-      const known=new Set([...chatEl.querySelectorAll('.message-row[data-message-id]')].map(row=>row.dataset.messageId));
-      const earlier=page.messages.filter(m=>m?.id && !known.has(m.id));
-      const from=chatEl.children.length;
-      for(const message of earlier) await renderStoredMessage(message);
-      const added=[...chatEl.children].slice(from);
-      // Reverse insertBefore preserves chronological order above the existing messages.
-      for(const row of added.slice().reverse())chatEl.insertBefore(row,btn.nextSibling);
-      chatViewport.preserveScrollAfterPrepend({previousTop,previousHeight});
-      if (!archiveHasMore){btn.remove();archiveLoadButton=null;}
-    }catch(error){dbg(`archive older page failed: ${error?.message || error}`);}
-    finally{archiveLoading=false;if(archiveLoadButton){btn.disabled=false;btn.textContent='Показать более ранние сообщения';}}
+    if(!archivePendingPage){
+      try { if(!await discoverUnseenArchivedPage()) { btn.remove();archiveLoadButton=null;return; } }
+      catch(error){dbg(`archive paging retry failed: ${error?.message || error}`);btn.textContent='Повторить загрузку архива';return;}
+      finally {if(archiveLoadButton)btn.disabled=false;archiveLoading=false;}
+      // The user can explicitly tap again after the retry discovers an unseen page.
+      return;
+    }
+    // Anchor a specific visible row rather than preserving only total scrollHeight:
+    // a loaded page can fill chronological gaps between locally cached stickers.
+    const anchor=[...chatEl.querySelectorAll('.message-row[data-message-id]')]
+      .find(row=>row.getBoundingClientRect().bottom>chatEl.getBoundingClientRect().top);
+    const before=anchor?.getBoundingClientRect().top;
+    try{
+      const page=archivePendingPage;
+      archivePendingPage=null;
+      const known=renderedArchiveIds();
+      const added=[];
+      for(const message of page.messages){
+        if(!archiveDisplayable(message) || !message.id || known.has(message.id)) continue;
+        const row=await renderStoredMessage(message);
+        if(row){ placeArchivedRow(row,message); added.push(message);known.add(message.id); }
+      }
+      // Keep loaded records in RAM for replies, selection and copy; localStorage
+      // remains a bounded cache and does not overwrite the immutable cloud archive.
+      history=mergeArchiveHistory(history,page.messages);
+      refreshChatDayDividers();
+      if(anchor && before!==undefined) chatEl.scrollTop+=anchor.getBoundingClientRect().top-before;
+      btn.textContent=`Загружено сообщений: ${added.length}`;
+      if(await discoverUnseenArchivedPage()){
+        btn.textContent='Показать предыдущую часть архива';
+      }else{
+        btn.remove();archiveLoadButton=null;
+      }
+    }catch(error){
+      dbg(`archive older page failed: ${error?.message || error}`);
+      btn.textContent='Повторить загрузку архива';
+    }finally{
+      archiveLoading=false;
+      if(archiveLoadButton)btn.disabled=false;
+    }
   });
 }
+
+// Day boundaries are presentation only; no synthetic messages are added to
+// dialogue history, cognition, the database or the backup format.
+let dayRefreshPending=false;
+function refreshChatDayDividers(){
+  const wasNearBottom=chatViewport.isNearBottom();
+  const anchor=wasNearBottom?null:[...chatEl.querySelectorAll('.message-row[data-message-id]')]
+    .find(row=>row.getBoundingClientRect().bottom>chatEl.getBoundingClientRect().top);
+  const topBefore=anchor?.getBoundingClientRect().top;
+  for(const divider of chatEl.querySelectorAll('.rin-day-divider')) divider.remove();
+  let lastDay=null;
+  const now=Date.now();
+  for(const row of [...chatEl.querySelectorAll('.message-row[data-message-id]')]){
+    const day=localDayKey(row.dataset.messageTs);
+    if(!day || day===lastDay) continue;
+    const divider=document.createElement('div');
+    divider.className='rin-day-divider';
+    divider.setAttribute('role','separator');
+    divider.setAttribute('aria-label',chatDayLabel(row.dataset.messageTs,now));
+    const chip=document.createElement('span');
+    chip.textContent=chatDayLabel(row.dataset.messageTs,now);
+    divider.appendChild(chip);
+    row.before(divider);
+    lastDay=day;
+  }
+  if(wasNearBottom) chatViewport.requestScrollToBottom({force:true});
+  else if(anchor && topBefore!==undefined) chatEl.scrollTop+=anchor.getBoundingClientRect().top-topBefore;
+}
+function scheduleChatDayRefresh(){
+  if(dayRefreshPending) return;
+  dayRefreshPending=true;
+  queueMicrotask(()=>{dayRefreshPending=false;refreshChatDayDividers();});
+}
+const dayObserver=new MutationObserver(mutations=>{
+  if(mutations.some(m=>[...m.addedNodes,...m.removedNodes].some(n=>n.nodeType===1 && n.classList?.contains('message-row'))))
+    scheduleChatDayRefresh();
+});
+dayObserver.observe(chatEl,{childList:true});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleChatDayRefresh();});
+window.addEventListener('pageshow',()=>scheduleChatDayRefresh());
+function scheduleNextCalendarDayRefresh(){
+  const next=new Date();
+  next.setHours(24,0,0,150);
+  setTimeout(()=>{scheduleChatDayRefresh();scheduleNextCalendarDayRefresh();},Math.max(1000,next.getTime()-Date.now()));
+}
+scheduleNextCalendarDayRefresh();
 
 
 /* === Web Push: minimal background context, local memory remains authoritative === */
@@ -1581,6 +1690,7 @@ function attachReplyInteraction(row, bubble, message) {
 function decorateMessageRow(row, bubble, message, options = {}) {
   row.classList.add('message-row');
   if (message?.id || options.messageId) row.dataset.messageId = message?.id || options.messageId;
+  if (message?.ts && Number.isFinite(Number(message.ts))) row.dataset.messageTs=String(message.ts);
   if (message?.status || options.status) row.dataset.status = message?.status || options.status;
 
   const selectionIndicator = document.createElement('span');
@@ -1640,6 +1750,7 @@ function addBubble(text, who='assistant', ts=Date.now(), options={}){
   }
 
   row.appendChild(wrap);
+  row.dataset.messageTs=String(ts);
   decorateMessageRow(row, wrap, options.message || null, options);
   chatEl.appendChild(row);
   chatViewport.requestScrollToBottom({ force: options.forceScroll !== false });
@@ -1675,6 +1786,7 @@ function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now(), o
     const time = document.createElement('span'); time.className = 'bubble-time'; time.textContent = fmtTime(new Date(ts));
     bubble.appendChild(time);
     row.appendChild(bubble);
+    row.dataset.messageTs=String(ts);
     decorateMessageRow(row, bubble, options.message || null, options);
     chatEl.appendChild(row);
     image.onload = () => { row.classList.remove('sticker-loading'); chatViewport.requestScrollToBottom({ force: options.forceScroll !== false }); resolve(row); };
@@ -1734,6 +1846,7 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
   meta.append(dur, timeStamp);
   wrap.append(top, meta);
   row.appendChild(wrap);
+  row.dataset.messageTs=String(ts);
   decorateMessageRow(row, wrap, options.message || null, options);
   chatEl.appendChild(row);
   chatViewport.requestScrollToBottom({ force: options.forceScroll !== false });
@@ -1830,7 +1943,7 @@ async function renderStoredMessage(message) {
       forceScroll: false
     });
   }
-  if (message.kind === 'voice' && message.media?.archived) {
+  if (['voice','text'].includes(message.kind) && message.media?.archived) {
     return addVoiceBubble(null,message.content,message.role,message.ts,{message,forceScroll:false});
   }
   const prefix = message.kind === 'voice' ? '🎙️ ' : '';
@@ -1872,12 +1985,16 @@ export const RIN_CHAT_READY = new Promise(resolve => { resolveChatReady = resolv
     history=mergeArchiveHistory(history,firstArchivePage.messages);
     archiveCursor=firstArchivePage.cursor;
     archiveHasMore=firstArchivePage.hasMore;
-    saveChatHistory(history,localStorage); // preserve local copy even if network later fails
-    cloudArchive.enqueue(originalLocalHistory); // idempotent migration: only locally available messages
+    saveChatHistory(history,localStorage); // bounded local cache, not a full-history cutoff
+    cloudArchive.enqueue(originalLocalHistory); // idempotent migration
     dbg(`cloud archive ready; recent=${firstArchivePage.messages.length}; older=${archiveHasMore?'yes':'no'}`);
   }
   for (const message of history) await renderStoredMessage(message);
-  addArchiveLoadButton();
+  refreshChatDayDividers();
+  if(firstArchivePage){
+    try { if(await discoverUnseenArchivedPage()) addArchiveLoadButton(); }
+    catch(error){dbg(`archive paging probe deferred: ${error?.message || error}`);}
+  }
   chatViewport.requestScrollToBottom({ force: true });
   await resumePendingAssistantDeliveries();
   resolveChatReady?.(true);
