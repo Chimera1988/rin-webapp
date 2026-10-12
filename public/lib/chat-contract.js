@@ -92,6 +92,8 @@ export function normalizeChatMessage(value = {}, index = 0) {
     schemaVersion: CHAT_SCHEMA_VERSION,
     id: cleanInlineText(value.id, 100) || `legacy-${index}-${Number.isFinite(tsNumber) ? tsNumber : Date.now()}`,
     requestId: cleanInlineText(value.requestId, 100) || null,
+    ...(role === 'assistant' && ['greeting', 'scheduled', 'manual'].includes(value.proactiveType)
+      ? { proactiveType: value.proactiveType } : {}),
     turnId: cleanInlineText(value.turnId, 120) || null,
     deliveryId: cleanInlineText(value.deliveryId, 120) || null,
     segmentId: cleanInlineText(value.segmentId, 120) || null,
@@ -189,6 +191,7 @@ export function selectModelHistory(history = [], options = {}) {
   return selectTransportHistory(history, options).map(message => ({
     id: message.id,
     requestId: message.requestId,
+    ...(message.proactiveType ? { proactiveType: message.proactiveType } : {}),
     turnId: message.turnId,
     deliveryId: message.deliveryId,
     segmentId: message.segmentId,
