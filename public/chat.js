@@ -28,6 +28,7 @@ import { createWallpaperStore } from './js/wallpaper_store.js';
 import { createBackup, parseBackup, restoreBackup, MAX_BACKUP_IMPORT_BYTES } from './js/data_backup.js';
 import { createPushController } from './js/push_client.js';
 import { createDebugLogBuffer } from './js/debug_compact.js';
+import { createCloudArchive, mergeArchiveHistory } from './js/cloud_archive.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -711,11 +712,53 @@ const fmtTime = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digi
 function loadHistory(){
   return loadChatHistory(localStorage);
 }
+const cloudArchive=createCloudArchive({headers:()=>authenticatedHeaders(),log:line=>dbg(line)});
 function saveHistory(h){
   const ok = saveChatHistory(h, localStorage);
   if (!ok) dbg('history save failed: storage quota or unavailable');
+  if (ok) cloudArchive.enqueue(h);
   return ok;
 }
+
+let archiveCursor=null;
+let archiveHasMore=false;
+let archiveLoadButton=null;
+let archiveLoading=false;
+function addArchiveLoadButton(){
+  if (!archiveHasMore || archiveLoadButton) return;
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='archive-load-earlier';
+  btn.textContent='Показать более ранние сообщения';
+  btn.setAttribute('aria-label','Загрузить раннюю переписку из архива');
+  chatEl.prepend(btn);
+  archiveLoadButton=btn;
+  btn.addEventListener('click', async()=>{
+    if (archiveLoading || !archiveHasMore || !archiveCursor) return;
+    archiveLoading=true;
+    btn.disabled=true;
+    btn.textContent='Загрузка архива…';
+    const previousTop=chatEl.scrollTop, previousHeight=chatEl.scrollHeight;
+    try {
+      const oldCursor=archiveCursor;
+      const page=await cloudArchive.page(oldCursor);
+      if (!page) return;
+      archiveCursor=page.cursor;
+      archiveHasMore=page.hasMore;
+      const known=new Set([...chatEl.querySelectorAll('.message-row[data-message-id]')].map(row=>row.dataset.messageId));
+      const earlier=page.messages.filter(m=>m?.id && !known.has(m.id));
+      const from=chatEl.children.length;
+      for(const message of earlier) await renderStoredMessage(message);
+      const added=[...chatEl.children].slice(from);
+      // Reverse insertBefore preserves chronological order above the existing messages.
+      for(const row of added.slice().reverse())chatEl.insertBefore(row,btn.nextSibling);
+      chatViewport.preserveScrollAfterPrepend({previousTop,previousHeight});
+      if (!archiveHasMore){btn.remove();archiveLoadButton=null;}
+    }catch(error){dbg(`archive older page failed: ${error?.message || error}`);}
+    finally{archiveLoading=false;if(archiveLoadButton){btn.disabled=false;btn.textContent='Показать более ранние сообщения';}}
+  });
+}
+
 
 /* === Web Push: minimal background context, local memory remains authoritative === */
 let pushController = null;
@@ -1111,7 +1154,7 @@ if (backupImportInput) {
 /* — Сброс — */
 if (resetApp){
   resetApp.onclick=async()=>{
-    if (!confirm('Удалить локальную историю, память, профиль, настройки и кэш приложения на этом устройстве? PIN входа будет сохранён.')) return;
+    if (!confirm('Удалить ЛОКАЛЬНУЮ историю, память, профиль, настройки и кэш на этом устройстве?\n\nЕсли подключён облачный архив, он НЕ будет удалён и переписка может снова появиться после перезапуска. PIN входа будет сохранён.')) return;
     await wallpaperStore.remove();
     resetApplicationStorage(localStorage, { preservePin: true });
     try { loreLib?.resetLoreCache?.(); } catch {}
@@ -1695,7 +1738,8 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
   chatEl.appendChild(row);
   chatViewport.requestScrollToBottom({ force: options.forceScroll !== false });
 
-  const audio=new Audio(audioUrl);
+  const audio=new Audio(audioUrl || undefined);
+  let audioReady=Boolean(audioUrl);
   const secToMMSS = value => {
     const seconds=Math.max(0, Math.floor(value||0));
     return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
@@ -1705,8 +1749,21 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
     dur.textContent = secToMMSS(cur);
     wave.style.setProperty('--progress', `${(cur / Math.max(1, audio.duration || 1)) * 100}%`);
   };
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     if (audio.paused){
+      if (!audioReady && options.message?.media?.archived) {
+        btn.disabled=true;
+        try {
+          const response=await fetchWithTimeout(`/api/archive-media?id=${encodeURIComponent(options.message.id)}`,{
+            headers:authenticatedHeaders(),cache:'no-store'
+          },20000);
+          if (!response.ok) throw new Error(`audio_http_${response.status}`);
+          audio.src=URL.createObjectURL(await response.blob());
+          audioReady=true;
+        }catch(error){dbg(`archive voice playback unavailable: ${error?.message || error}`);}
+        finally{btn.disabled=false;}
+      }
+      if (!audioReady) return;
       // A voice message remains replayable until the page is closed.
       if (audio.ended) audio.currentTime = 0;
       audio.play().then(()=>{
@@ -1773,6 +1830,9 @@ async function renderStoredMessage(message) {
       forceScroll: false
     });
   }
+  if (message.kind === 'voice' && message.media?.archived) {
+    return addVoiceBubble(null,message.content,message.role,message.ts,{message,forceScroll:false});
+  }
   const prefix = message.kind === 'voice' ? '🎙️ ' : '';
   return addBubble(prefix + message.content, message.role, message.ts, {
     message,
@@ -1806,7 +1866,18 @@ export const RIN_CHAT_READY = new Promise(resolve => { resolveChatReady = resolv
 
   history = loadHistory();
   await reconcilePendingAssistantDeliveryCommitState();
+  const originalLocalHistory=history.slice();
+  const firstArchivePage=await cloudArchive.start();
+  if (firstArchivePage) {
+    history=mergeArchiveHistory(history,firstArchivePage.messages);
+    archiveCursor=firstArchivePage.cursor;
+    archiveHasMore=firstArchivePage.hasMore;
+    saveChatHistory(history,localStorage); // preserve local copy even if network later fails
+    cloudArchive.enqueue(originalLocalHistory); // idempotent migration: only locally available messages
+    dbg(`cloud archive ready; recent=${firstArchivePage.messages.length}; older=${archiveHasMore?'yes':'no'}`);
+  }
   for (const message of history) await renderStoredMessage(message);
+  addArchiveLoadButton();
   chatViewport.requestScrollToBottom({ force: true });
   await resumePendingAssistantDeliveries();
   resolveChatReady?.(true);
@@ -1852,16 +1923,18 @@ function ttsEmotionFromTurn(data = null) {
   return { type, intensity: Math.max(0, Math.min(100, intensity)) };
 }
 
-async function getTTSUrl(text, data = null) {
+async function getTTSUrl(text, data = null, messageId = '') {
   try {
     const response = await fetchWithTimeout('/api/tts', {
       method: 'POST',
       headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ text, emotion: ttsEmotionFromTurn(data) })
+      body: JSON.stringify({ text, emotion: ttsEmotionFromTurn(data), messageId })
     }, 25_000);
     if (response.status === 401) return null;
     if (!response.ok) return null;
-    return URL.createObjectURL(await response.blob());
+    const archived=response.headers.get('X-Rin-Audio-Archived')==='1';
+    if (!archived && cloudArchive.isEnabled()) dbg(`voice generated but not archived: ${messageId}`);
+    return {url:URL.createObjectURL(await response.blob()),archived};
   } catch {
     return null;
   }
@@ -1984,13 +2057,15 @@ async function prepareAssistantDelivery({ data, requestId, userText = '', proact
         error.code = 'EMPTY_MODEL_RESPONSE';
         throw error;
       }
-      const audioUrl = shouldVoiceFor(text) ? await getTTSUrl(text, data) : null;
+      const audioData = shouldVoiceFor(text) ? await getTTSUrl(text, data, segmentId) : null;
+      const audioUrl=audioData?.url || null;
       const message = createChatMessage({
         id: segmentId,
         role: 'assistant',
         kind: 'text',
         status: 'pending',
         content: text,
+        ...(audioData?.archived ? {media:{archived:true,type:'audio'}} : {}),
         requestId,
       proactiveType,
         turnId,

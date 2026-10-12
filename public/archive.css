@@ -1,0 +1,3 @@
+/* Archive pagination: unobtrusive control above messages. */
+.archive-load-earlier { display:block; align-self:center; margin:8px auto 16px; padding:8px 14px; border:1px solid rgba(160,160,180,.25); border-radius:18px; color:inherit; background:rgba(100,110,135,.13); font:inherit; font-size:12px; cursor:pointer; }
+.archive-load-earlier:disabled { opacity:.65; cursor:default; }
