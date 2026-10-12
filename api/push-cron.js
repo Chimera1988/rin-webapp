@@ -49,7 +49,7 @@ export async function processPushOpportunity({redis, schedule, now = Date.now(),
   const segments = response?.deliveryPlan?.segments || [];
   if (!segments.length || !segments.some(s=>s.type==='text' || s.type==='sticker')) return {status:'no_segments'};
   if ((await readProtected(redis,'snapshot'))?.updatedAt !== snapshot.updatedAt || JSON.stringify(deliveryQueue(await readProtected(redis,'pending')).map(d=>d.id)) !== JSON.stringify(pending.map(d=>d.id))) return {status:'stale_after_generate'};
-  const delivery = {id:createDeliveryId(requestId),requestId,createdAt:now,sourceLastTs:Math.max(0,...modelSnapshot.history.map(m=>Number(m?.ts||0))), stateTransition:response.stateTransition||null,innerLife:currentMemory.innerLife||null,deliveryPlan:response.deliveryPlan,reply:response.reply||'',notificationText:pushNotificationText(response),dateKey:opp.dateKey,windowId:opp.windowId};
+  const delivery = {id:createDeliveryId(requestId),requestId,proactiveType:'scheduled',createdAt:now,sourceLastTs:Math.max(0,...modelSnapshot.history.map(m=>Number(m?.ts||0))), stateTransition:response.stateTransition||null,innerLife:currentMemory.innerLife||null,deliveryPlan:response.deliveryPlan,reply:response.reply||'',notificationText:pushNotificationText(response),dateKey:opp.dateKey,windowId:opp.windowId};
   await writeProtected(redis,'pending',[...pending,delivery],DELIVERY_TTL_SECONDS);
   const latest = await readProtected(redis,'attempts') || {};
   await writeProtected(redis,'attempts',nextAttemptState({...latest,[opp.dateKey]:{...latest[opp.dateKey],sent:latest[opp.dateKey]?.sent||0,windows:(latest[opp.dateKey]?.windows||[]).filter(w=>w!==opp.windowId)}},opp,true));

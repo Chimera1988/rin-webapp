@@ -501,7 +501,7 @@ export default async function handler(req, res) {
       currentWorkMode: kernelState.innerLife?.workMode
     });
     const expressionNovelty = inspectExpressionNovelty(fullHistory);
-    const mindState = { ...kernelState, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates, calendarGrounding, expressionNovelty };
+    const mindState = { ...kernelState, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates, calendarGrounding, expressionNovelty, proactiveHandoff: brain.proactiveHandoff };
     const prompt = buildRinMindPrompt({
       profile,
       state: mindState,
@@ -694,6 +694,7 @@ export default async function handler(req, res) {
     const sceneControl = {
       sceneMotif: mindTurn.mind?.sceneMotif || 'direct_exchange',
       frameAlignment: mindTurn.mind?.frameAlignment || 'aligned',
+      proactiveHandoff: brain.proactiveHandoff ? `${brain.proactiveHandoff.source}:${brain.proactiveHandoff.type}:${brain.proactiveHandoff.mode}` : '-',
       motifRepeat: motifTelemetry.streak || 0,
       motifAppearances: motifTelemetry.appearances || 0,
       motifPressure: motifTelemetry.pressure || 0,
