@@ -69,6 +69,13 @@ export function createChatViewportController({
     chat.scrollTop = chat.scrollHeight;
   };
 
+  // Archive pagination only: prepend older nodes without jumping away from the visible message.
+  const preserveScrollAfterPrepend = ({previousTop=0,previousHeight=0}={}) => {
+    if (destroyed) return;
+    cancelScheduledScroll();
+    chat.scrollTop=Math.max(0,previousTop + (chat.scrollHeight - previousHeight));
+  };
+
   const requestScrollToBottom = ({ force = true } = {}) => {
     if (destroyed || (!force && !isNearChatBottom(chat, bottomThreshold))) return false;
 
@@ -150,6 +157,7 @@ export function createChatViewportController({
   return {
     syncViewport,
     requestScrollToBottom,
+    preserveScrollAfterPrepend,
     isNearBottom: () => isNearChatBottom(chat, bottomThreshold),
     destroy() {
       if (destroyed) return;
