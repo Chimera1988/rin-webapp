@@ -11,6 +11,7 @@ import { normalizeInnerLife } from '../lib/inner-life-contract.js';
 import { contentKey } from '../lib/chat-contract.js';
 import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
 import { activityPeriod, resolveDailyRhythm } from './daily_rhythm.js';
+import { normalizeRelationalIntegrity } from '../lib/relational-integrity.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
 // Канонический prompt-профиль загружается сервером; клиент хранит только пользовательские overrides и runtime-state.
@@ -124,6 +125,7 @@ function defaultConversationState() {
     beliefs: [],
     openLoops: [],
     emotionalState: normalizeEmotionalState({}),
+    relationalIntegrity: normalizeRelationalIntegrity(),
     rinIntent: null,
     recentIntents: [],
     lastCommittedRequestId: null,
@@ -163,6 +165,7 @@ function normalizeConversationState(value = {}, legacyTrace = null, context = {}
     beliefs,
     openLoops: loops,
     emotionalState,
+    relationalIntegrity: normalizeRelationalIntegrity(source.relationalIntegrity),
     rinIntent: rawIntent && ['active', 'suspended'].includes(rawIntent.status) ? rawIntent : null,
     recentIntents: history.slice(-8),
     lastCommittedRequestId: cleanText(source.lastCommittedRequestId, 120) || null,
@@ -854,6 +857,7 @@ function mergeTransitionState(currentInput = {}, transition = null, requestId = 
     beliefs: beliefs.slice(-48),
     openLoops: [...loops.values()].filter(item => !['resolved', 'cancelled', 'stale'].includes(item?.status)).slice(-24),
     emotionalState,
+    relationalIntegrity: transition.relationalIntegrity ? normalizeRelationalIntegrity(transition.relationalIntegrity) : current.relationalIntegrity,
     rinIntent,
     recentIntents,
     lastCommittedRequestId: requestId || null,
