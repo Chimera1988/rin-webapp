@@ -105,7 +105,7 @@ export function normalizeChatMessage(value = {}, index = 0) {
     status,
     content,
     ts: Number.isFinite(tsNumber) ? tsNumber : Date.now(),
-    ...(kind === 'voice' && value.media?.archived === true ? {media:{archived:true,type:'audio'}} : {}),
+    ...(['text','voice'].includes(kind) && value.media?.archived === true ? {media:{archived:true,type:'audio'}} : {}),
     ...(role === 'user' && Number.isFinite(readAtNumber) && readAtNumber > 0 ? {
       receipt: { readAt: readAtNumber }
     } : {}),
