@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@upstash/redis": "^1.36.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "@neondatabase/serverless": "^1.0.0",
+    "@vercel/blob": "^2.3.0"
   }
 }
