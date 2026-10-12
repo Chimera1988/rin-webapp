@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { rinCalendarForPrompt } from '../lib/cognition/temporal-grounding.js';
 import { inspectExpressionNovelty } from '../lib/cognition/expression-novelty.js';
+import { disallowedBoundaryUse, integrateRinRepairChoice } from '../lib/cognition/relational-integrity.js';
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState, compactKernelState } from '../lib/cognition/kernel-state.js';
@@ -567,6 +568,18 @@ export default async function handler(req, res) {
     mindTurn.decision = stabilized.decision;
     mindTurn.realization = stabilized.realization;
 
+    // A repair intent must not declare victory while the affected person has not confirmed repair.
+    const ruptureOpen = kernelState.relationalIntegrity?.rupture && kernelState.relationalIntegrity.rupture.phase !== 'resolved';
+    const repairingGoal = kernelState.activeIntent?.target === 'relationship_repair';
+    if (ruptureOpen && repairingGoal && conversationState !== 'ending'
+        && mindTurn.decision?.intentTransition?.operation === 'complete') {
+      mindTurn.decision.intentTransition.operation = 'advance';
+      mindTurn.decision.intentTransition.phase = 'advancing';
+      mindTurn.decision.intentTransition.progress = Math.min(0.75, Number(mindTurn.decision.intentTransition.progress) || 0.5);
+      mindTurn.decision.intentTransition.reason = 'repair_not_confirmed';
+    }
+
+
     let resourceWarnings = await decisionResourceWarnings(mindTurn.decision);
     let decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
       conversationState,
@@ -624,6 +637,14 @@ export default async function handler(req, res) {
       });
     }
 
+    // Enforce a clearly rejected user-directed nickname even if the model repeats it.
+    // Only rewrite the offending generated beat; explanations/apologies can quote the term.
+    for (const segment of mindTurn.realization?.segments || []) {
+      if (segment.type !== 'text') continue;
+      const forbidden = disallowedBoundaryUse(segment.text, kernelState.relationalIntegrity);
+      if (forbidden) segment.text = 'Я помню, что это обращение тебе неприятно. Не буду повторять его. Мне важнее говорить с тобой бережно.';
+    }
+
     const deliveryPlan = await buildDeliveryPlan({
       requestId,
       decision: mindTurn.decision,
@@ -656,6 +677,13 @@ export default async function handler(req, res) {
       mind: mindTurn.mind,
       userText: userTurn
     });
+    const plannedReply = (deliveryPlan.segments || []).filter(item=>item.type==='text').map(item=>item.text).join(' ');
+    stateTransition.relationalIntegrity = integrateRinRepairChoice(kernelState.relationalIntegrity, plannedReply);
+    if (stateTransition.relationalIntegrity?.rupture?.phase === 'resolved'
+        && stateTransition.relationalIntegrity.rupture.affected === 'rin'
+        && stateTransition.relationshipState?.recentDynamic) {
+      stateTransition.relationshipState.recentDynamic.repairPending = false;
+    }
     const visualReply = visualReplyFromDecision(mindTurn.decision, group);
     const reply = deliveryPlan.segments.filter(item => item.type === 'text').map(item => item.text).join('\n\n');
     const realizedVocatives = extractVocativeAddresses(reply);
@@ -701,6 +729,10 @@ export default async function handler(req, res) {
       literalCorrection: behaviorState?.literalCorrection?.explicit ? 'explicit' : (mindTurn.mind?.literalCorrection || 'none'),
       referenceAnchor: mindTurn.mind?.referenceAnchor || null,
       temporalGapMinutes: kernelState.temporalContinuity?.gapMinutes ?? null,
+      relationalRupturePhase: kernelState.relationalIntegrity?.rupture?.phase || 'none',
+      relationalRuptureAffected: kernelState.relationalIntegrity?.rupture?.affected || 'none',
+      relationalPressure: kernelState.relationalIntegrity?.pressure?.signal || 'none',
+      relationalBoundaries: (kernelState.relationalIntegrity?.boundaries || []).filter(x=>x.status==='active').length,
       temporalResumed: Boolean(kernelState.temporalContinuity?.resumed),
       temporalPeriodShift: kernelState.temporalContinuity?.periodShift || 'none',
       lifeDomain: mindTurn.mind?.lifeDomain || 'none',
