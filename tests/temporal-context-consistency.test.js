@@ -112,7 +112,7 @@ test('v2.6 temporal: old scene evidence weakens across hours, without deleting h
 test('v2.6 temporal: kernel forwards timestamps and records server-side elapsed time',()=>{
   const now=time('2026-10-12T15:06:00');
   const h=[...morning, {...afternoon,ts:now,requestId:'u-new',status:'sent'}];
-  const kernel=buildKernelState({requestId:'u-new',userText:afternoon.content,history:h,memory:{conversationState:{revision:0,openLoops:[]}},env:{rinTz:'Europe/Moscow'}});
+  const kernel=buildKernelState({requestId:'u-new',userText:afternoon.content,history:h,memory:{conversationState:{revision:0,openLoops:[]}},env:{rinTz:'Europe/Moscow'},now});
   assert.equal(kernel.recentHistory[0].ts,morning[0].ts);
   assert.equal(kernel.temporalContinuity.lastLocal,'2026-10-12 10:11');
   assert.equal(kernel.temporalContinuity.periodShift,'morning->afternoon');
