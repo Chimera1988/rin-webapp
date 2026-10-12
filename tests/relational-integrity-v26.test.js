@@ -113,7 +113,7 @@ test('kernel state and durable transition carry the same relational integrity on
 test('release and debug markers include the new relational consistency state',()=>{
   const release=readFileSync(new URL('../public/js/release.js',import.meta.url),'utf8');
   const chat=readFileSync(new URL('../public/chat.js',import.meta.url),'utf8');
-  assert.match(release,/cloud-archive-foundation/u);
+  assert.match(release,/chronological-day-archive/u);
   assert.match(chat,/relPressure=/u);
   assert.match(chat,/relBoundaries=/u);
 });
