@@ -33,7 +33,7 @@ function sevenExchangeHistory() {
   return history;
 }
 
-test('kernel keeps enough event metadata for six full exchanges even with split Rin messages', () => {
+test('kernel keeps enough event metadata for ten full exchanges even with split Rin messages', () => {
   const state = buildKernelState({
     requestId: 'r8',
     userText: 'текущий пользовательский ход',
@@ -48,14 +48,14 @@ test('kernel keeps enough event metadata for six full exchanges even with split 
   assert.ok(split.every(item => item.requestId === 'r7'));
 });
 
-test('short-term dialogue is six previous exchanges, not four rendered events', () => {
+test('short-term dialogue retains available previous exchanges up to ten, not four rendered events', () => {
   const dialogue = buildShortTermDialogue({
     requestId: 'r8',
     userText: 'текущий пользовательский ход',
     recentHistory: sevenExchangeHistory()
   });
-  assert.equal(dialogue.length, 6);
-  assert.equal(dialogue[0].user.messages[0].content, 'пользователь 2');
+  assert.equal(dialogue.length, 7);
+  assert.equal(dialogue[0].user.messages[0].content, 'пользователь 1');
   assert.equal(dialogue.at(-1).user.messages[0].content, 'пользователь 7');
   assert.deepEqual(dialogue.at(-1).rin.messages.map(item => item.content), [
     'Рин 7, первый пузырь',
@@ -67,14 +67,14 @@ test('short-term dialogue is six previous exchanges, not four rendered events', 
 test('short-term serialization preserves multi-message beats inside one Rin turn', () => {
   const serialized = serializeShortTermDialogue({ requestId: 'r8', recentHistory: sevenExchangeHistory() });
   const parsed = JSON.parse(serialized);
-  assert.equal(parsed.exchanges.length, 6);
+  assert.equal(parsed.exchanges.length, 7);
   const lastRin = parsed.exchanges.at(-1).rin.messages;
   assert.equal(lastRin.length, 2);
   assert.equal(lastRin[0].kind, 'text');
   assert.equal(lastRin[1].kind, 'text');
 });
 
-test('Rin prompt exposes raw six-exchange dialogue while keeping the explicit cache prefix stable', () => {
+test('Rin prompt exposes raw ten-exchange dialogue while keeping the explicit cache prefix stable', () => {
   const baseState = {
     requestId: 'r8',
     userText: 'текущий пользовательский ход',
@@ -92,8 +92,8 @@ test('Rin prompt exposes raw six-exchange dialogue while keeping the explicit ca
   assert.match(first.dynamicSystem, /Краткосрочная память диалога/iu);
   assert.match(first.dynamicSystem, /Рин 7, первый пузырь/iu);
   assert.match(first.dynamicSystem, /Рин 7, второй пузырь/iu);
-  assert.equal(first.shortTermMetrics.exchanges, 6);
-  assert.equal(first.shortTermMetrics.speakerTurns, 12);
+  assert.equal(first.shortTermMetrics.exchanges, 7);
+  assert.equal(first.shortTermMetrics.speakerTurns, 14);
   assert.ok(first.shortTermMetrics.chars > 0);
 
   const firstMessages = buildMindMessages(first, 'gpt-6-luna');
