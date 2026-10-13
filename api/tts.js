@@ -2,11 +2,15 @@ import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin 
 import { preserveRinAudio } from '../lib/archive/media.js';
 import { validArchiveId } from '../lib/archive/core.js';
 
-const ELEVEN_KEY = process.env.ELEVENLABS_API_KEY;
-// Temporary voice comparison: pin the selected Voice Design voice for this test.
-// After the test, restore the environment-based configuration if needed.
-const VOICE_ID = 'CtE8XlupyJQIq6Bru1R3';
-const MODEL_ID = 'eleven_v4';
+// Voice and model are deployment configuration, not source-code constants.
+// The server must not silently fall back to a different voice or model.
+export function readTtsConfig(env = process.env) {
+  return {
+    apiKey: String(env?.ELEVENLABS_API_KEY || '').trim(),
+    voiceId: String(env?.ELEVENLABS_VOICE_ID || '').trim(),
+    modelId: String(env?.ELEVENLABS_MODEL_ID || '').trim()
+  };
+}
 const MAX_CHARS = 180;
 
 // Eleven v4 interprets short audio tags as delivery guidance. The mapping is
@@ -50,22 +54,23 @@ export default async function handler(req, res) {
     if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
     if (!requirePin(req, res, body)) return;
-    if (!ELEVEN_KEY) return res.status(503).json({ error: 'TTS is not configured', code: 'TTS_NOT_CONFIGURED' });
+    const {apiKey, voiceId, modelId} = readTtsConfig();
+    if (!apiKey || !voiceId || !modelId) return res.status(503).json({ error: 'TTS is not configured', code: 'TTS_NOT_CONFIGURED' });
 
     const cleanText = typeof body.text === 'string' ? body.text.trim() : '';
     if (!cleanText) return res.status(400).json({ error: 'Text is required', code: 'INVALID_TEXT' });
     const ttsInput = buildTtsInput(cleanText, body.emotion);
 
     const upstream = await fetchWithTimeout(
-      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(VOICE_ID)}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
       {
         method: 'POST',
         headers: {
-          'xi-api-key': ELEVEN_KEY,
+          'xi-api-key': apiKey,
           'Content-Type': 'application/json',
           Accept: 'audio/mpeg'
         },
-        body: JSON.stringify({ model_id: MODEL_ID, text: ttsInput })
+        body: JSON.stringify({ model_id: modelId, text: ttsInput })
       },
       20_000
     );
