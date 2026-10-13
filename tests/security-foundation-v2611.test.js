@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applySecurityLimit, auditRejectedPin, INTERNAL_BACKGROUND_CALL, setSecurityRedisForTests } from '../lib/server/security-gate.js';
+import { applySecurityLimit, auditRejectedPin, checkLoginFailureBudget, recordFailedLogin, INTERNAL_BACKGROUND_CALL, setSecurityRedisForTests } from '../lib/server/security-gate.js';
 import { createReq, createRes } from './helpers/runtime.js';
 
 function fakeRedis() {
@@ -9,18 +9,20 @@ function fakeRedis() {
   return {
     keys,
     shift(seconds) { now += seconds; },
-    async eval(_script, ks, args) {
+    async eval(script, ks, args) {
+      const login = script.includes('RIN_LOGIN_FAILURE_WINDOW');
+      const recordFailure = login && args[0] === '1';
       let firstExceeded = 0;
       let retry = 0;
       for (let i = 0; i < ks.length; i++) {
         const key = ks[i];
-        const ttlSeconds = Number(args[i * 2]);
-        const max = Number(args[i * 2 + 1]);
+        const ttlSeconds = Number(args[i * 2 + (login ? 1 : 0)]);
+        const max = Number(args[i * 2 + (login ? 2 : 1)]);
         let record = keys.get(key);
         if (!record || record.expires <= now) record = {count: 0, expires: now + ttlSeconds};
-        record.count += 1;
-        keys.set(key, record);
-        if (record.count > max) {
+        if (!login || recordFailure) record.count += 1;
+        if (record.count > 0) keys.set(key, record);
+        if ((login && !recordFailure ? record.count >= max : record.count > max)) {
           if (!firstExceeded) firstExceeded = i + 1;
           retry = Math.max(retry, Math.ceil(record.expires - now));
         }
@@ -34,29 +36,37 @@ function request(ip = '192.0.2.5') {
   return createReq({ headers: { 'x-vercel-forwarded-for': ip, 'x-rin-pin': 'unrelated-pin' } });
 }
 
-test('login brute-force limit is atomic, shared across endpoints and returns safe Retry-After', async () => {
+test('successful login prechecks do not consume the failed-attempt budget', async () => {
   const redis = fakeRedis();
   const req = request();
-  for (let n = 0; n < 8; n++) assert.equal(await applySecurityLimit(req, createRes(), 'login', {redis,env}), true);
+  for (let n = 0; n < 50; n++) {
+    assert.equal(await checkLoginFailureBudget(req, createRes(), {redis,env}), true);
+  }
+  assert.equal(redis.keys.size, 0);
+  for (let n = 0; n < 8; n++) {
+    assert.equal(await checkLoginFailureBudget(req, createRes(), {redis,env}), true);
+    assert.equal(await recordFailedLogin(req, createRes(), {redis,env}), true);
+  }
   const response = createRes();
-  assert.equal(await applySecurityLimit(req, response, 'login', {redis,env}), false);
+  assert.equal(await checkLoginFailureBudget(req, response, {redis,env}), false);
   assert.equal(response.statusCode, 429);
   assert.deepEqual(response.body, {code: 'RIN_RATE_LIMITED'});
   assert.ok(Number(response.headers['retry-after']) > 0);
   const dump = JSON.stringify([...redis.keys]);
   assert.doesNotMatch(dump, /192\.0\.2\.5|protected-test-secret|unrelated-pin/);
   redis.shift(901);
-  assert.equal(await applySecurityLimit(req, createRes(), 'login', {redis,env}), true);
+  assert.equal(await checkLoginFailureBudget(req, createRes(), {redis,env}), true);
 });
 
-test('distributed login brute-force is bounded by the shared global budget', async () => {
+test('distributed failed PIN attempts consume only their shared global failure budget', async () => {
   const redis = fakeRedis();
   for (let n = 0; n < 30; n++) {
-    const res = createRes();
-    assert.equal(await applySecurityLimit(request(`198.51.100.${n + 1}`), res, 'login', {redis,env}), true);
+    const req = request(`198.51.100.${n + 1}`);
+    assert.equal(await checkLoginFailureBudget(req, createRes(), {redis,env}), true);
+    assert.equal(await recordFailedLogin(req, createRes(), {redis,env}), true);
   }
   const res = createRes();
-  assert.equal(await applySecurityLimit(request('203.0.113.2'),res,'login',{redis,env}),false);
+  assert.equal(await checkLoginFailureBudget(request('203.0.113.2'),res,{redis,env}),false);
   assert.equal(res.statusCode,429);
 });
 
@@ -87,7 +97,7 @@ test('Redis failure denies requests before paid model calls', async () => {
   console.warn = (...args)=>logs.push(args.join(' '));
   try {
     const response = createRes();
-    assert.equal(await applySecurityLimit(request(), response, 'login', {redis,env}),false);
+    assert.equal(await checkLoginFailureBudget(request(), response, {redis,env}),false);
     assert.equal(response.statusCode,503);
     assert.deepEqual(response.body,{code:'RIN_SECURITY_TEMPORARILY_UNAVAILABLE'});
     assert.doesNotMatch(JSON.stringify({response,logs}),/secret credentials|protected-test-secret|192\.0\.2\.5/);
