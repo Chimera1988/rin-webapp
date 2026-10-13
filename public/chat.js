@@ -20,6 +20,8 @@ import { activeInitiationWindow, canAutoInitiate, canGreet, initiationWindowKey,
 import { createInitiationStateStore } from './js/initiation_state.js';
 import { createLocalSettings } from './js/local_settings.js';
 import { environmentIntent } from './js/environment_intent.js';
+import { weatherRefreshIntent, verifiedWeatherEvidence } from './js/weather_evidence.js';
+import { selfFollowThrough } from './js/self_follow_through.js';
 import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
 import { createPresenceController } from './js/presence_controller.js';
 import { createHumanDeliveryScheduler, createInputAggregator } from './js/delivery_scheduler.js';
@@ -203,7 +205,8 @@ async function fetchRinWeather(location = null){
         desc:  w.weather || '',
         temp:  typeof w.temp === 'number' ? Math.round(w.temp) : (typeof w.main?.temp === 'number' ? Math.round(w.main.temp) : null),
         feels: typeof w.feels_like === 'number' ? Math.round(w.feels_like) : (typeof w.main?.feels_like === 'number' ? Math.round(w.main.feels_like) : null),
-        icon:  w.icon || null
+        icon:  w.icon || null,
+        source: 'openweather', checkedAt: Date.now()
       };
     }
     const d = w?.weather?.[0]?.description || w?.current?.weather?.[0]?.description || '';
@@ -213,7 +216,8 @@ async function fetchRinWeather(location = null){
       desc: d,
       temp: typeof t === 'number' ? Math.round(t) : null,
       feels: typeof f === 'number' ? Math.round(f) : null,
-      icon: w?.weather?.[0]?.icon || w?.current?.weather?.[0]?.icon || null
+      icon: w?.weather?.[0]?.icon || w?.current?.weather?.[0]?.icon || null,
+      source: 'openweather', checkedAt: Date.now()
     };
   }catch{ return null; }
 }
@@ -2568,6 +2572,8 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
         sentAt: Date.now(),
         build: RIN_BUILD_VERSION,
         proactive: true,
+        weatherEvidence: verifiedWeatherEvidence(currentEnv),
+        followThrough: selfFollowThrough(history, Date.now(), schedule?.timezone || 'Europe/Moscow'),
         sticker: stickerClientPreferences()
       }
     });
@@ -2822,7 +2828,8 @@ async function processUserBatch(messageIds = []) {
     await memoryJobRunner.drain();
     const schedule = await ensureRuntimeSchedule();
     const envIntent = environmentIntent(combinedUserText);
-    await refreshRinEnv({ refreshWeather: envIntent === 'weather' || environmentIsStale(schedule) });
+    const asksWeather = envIntent === 'weather' || weatherRefreshIntent(combinedUserText, history);
+    await refreshRinEnv({ refreshWeather: asksWeather || environmentIsStale(schedule), strictWeather: asksWeather });
     const memoryModule = await ensureMemoryReady();
     const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, combinedUserText, schedule?.innerLife || {});
     const [memory, activeProfile] = await Promise.all([
@@ -2840,6 +2847,9 @@ async function processUserBatch(messageIds = []) {
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
         sentAt: Date.now(),
         build: RIN_BUILD_VERSION,
+        weatherIntent: asksWeather,
+        weatherEvidence: verifiedWeatherEvidence(currentEnv),
+        followThrough: selfFollowThrough(history, Date.now(), schedule?.timezone || 'Europe/Moscow'),
         sticker: stickerClientPreferences()
       }
     });
@@ -2999,7 +3009,7 @@ function environmentIsStale(schedule = null) {
   return !Number.isFinite(weatherTs) || weatherTs <= 0 || Date.now() - weatherTs >= maxAgeMinutes * 60000;
 }
 
-async function refreshRinEnv({ refreshWeather = true } = {}) {
+async function refreshRinEnv({ refreshWeather = true, strictWeather = false } = {}) {
   try {
     const schedule = await ensureRuntimeSchedule();
     if (!schedule?.timezone) return;
@@ -3023,6 +3033,10 @@ async function refreshRinEnv({ refreshWeather = true } = {}) {
       if (weather) {
         env.weather = weather;
         env._weatherTs = Date.now();
+      } else if (strictWeather) {
+        // Explicit weather questions cannot silently reuse an older snapshot.
+        env.weather = null;
+        env._weatherTs = 0;
       }
     }
     currentEnv = env;
