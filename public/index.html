@@ -12,17 +12,31 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/rin-kitsune-180.png" />
 
   <!-- Тема применяется до CSS/отрисовки внешним CSP-совместимым bootstrap. -->
-  <script src="/js/theme_bootstrap.js?v=2026-10-13-rin-mind-v2.6.4-memory-foundation-experience-formation-temporal-actions"></script>
+  <script src="/js/theme_bootstrap.js?v=2026-10-13-rin-mind-v2.6.5-memory-foundation-floating-voice-player"></script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-10-13-rin-mind-v2.6.4-memory-foundation-experience-formation-temporal-actions" />
-  <link rel="stylesheet" href="/archive.css?v=2026-10-13-rin-mind-v2.6.4-memory-foundation-experience-formation-temporal-actions" />
+  <link rel="stylesheet" href="/style.css?v=2026-10-13-rin-mind-v2.6.5-memory-foundation-floating-voice-player" />
+  <link rel="stylesheet" href="/archive.css?v=2026-10-13-rin-mind-v2.6.5-memory-foundation-floating-voice-player" />
+  <link rel="stylesheet" href="/voice_player.css?v=2026-10-13-rin-mind-v2.6.5-memory-foundation-floating-voice-player" />
 </head>
 <body class="chat-app">
 
   <div id="chatViewportShell" class="chat-viewport-shell">
   <!-- Шапка -->
   <header class="tg-header">
+    <div id="voiceMiniPlayer" class="voice-mini-player" role="group" aria-label="Плеер голосовых сообщений" hidden>
+      <button type="button" class="voice-mini-player__play" data-voice-mini-play aria-label="Воспроизвести голосовое">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+      </button>
+      <div class="voice-mini-player__caption">
+        <span class="voice-mini-player__name">Рин Акихара</span>
+        <span class="voice-mini-player__subtitle" data-voice-mini-subtitle>Голосовое сообщение</span>
+      </div>
+      <button type="button" class="voice-mini-player__speed" data-voice-mini-speed aria-label="Скорость воспроизведения 1×">1×</button>
+      <button type="button" class="voice-mini-player__close" data-voice-mini-close aria-label="Закрыть плеер">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
+      </button>
+    </div>
     <button id="backButton" class="tg-ico btn-back" type="button" aria-label="Назад" title="Назад">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -439,7 +453,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-10-13-rin-mind-v2.6.4-memory-foundation-experience-formation-temporal-actions"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-10-13-rin-mind-v2.6.5-memory-foundation-floating-voice-player"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>

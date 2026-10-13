@@ -1,0 +1,147 @@
+/* Floating audio player and precise voice bars — Rin 2.6.5 */
+/* Rin 2.6.5 — floating voice transport, anchored above the chat heading.
+   It participates in header layout (rather than covering the iOS safe area or messages). */
+.voice-mini-player[hidden] { display: none !important; }
+.voice-mini-player {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 54px 38px;
+  align-items: center;
+  gap: 7px;
+  min-height: 60px;
+  margin: 0 -4px 4px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 999px;
+  background: linear-gradient(115deg,
+    color-mix(in srgb, var(--surface-strong) 90%, transparent),
+    color-mix(in srgb, var(--surface-soft) 88%, transparent));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .22), inset 0 1px rgba(255,255,255,.07);
+  -webkit-backdrop-filter: blur(26px) saturate(1.3);
+  backdrop-filter: blur(26px) saturate(1.3);
+  color: var(--text);
+}
+.voice-mini-player__play,
+.voice-mini-player__speed,
+.voice-mini-player__close {
+  display: grid;
+  place-items: center;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.voice-mini-player__play {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.voice-mini-player__play svg,
+.voice-tg__play svg { width: 23px; height: 23px; }
+.voice-mini-player__caption {
+  display: flex; flex-direction: column; align-items: center;
+  min-width: 0; gap: 2px; line-height: 1.12;
+  pointer-events: none;
+}
+.voice-mini-player__name {
+  max-width: 100%; overflow: hidden;
+  font-size: 14px; font-weight: 650;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.voice-mini-player__subtitle {
+  max-width: 100%; overflow: hidden;
+  color: var(--muted); font-size: 10px;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.voice-mini-player__speed {
+  min-width: 48px; min-height: 42px;
+  padding: 0 3px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit; font-size: 14px; font-weight: 650;
+}
+.voice-mini-player__close {
+  width: 38px; height: 42px;
+  padding: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+}
+.voice-mini-player__close svg {
+  width: 21px; height: 21px;
+  fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round;
+}
+.voice-mini-player button:disabled { opacity: .6; cursor: wait; }
+.voice-mini-player button:focus-visible,
+.voice-tg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 350px) {
+  .voice-mini-player { grid-template-columns: 40px minmax(0,1fr) 46px 34px; gap: 4px; }
+  .voice-mini-player__play { width: 40px; height: 40px; }
+  .voice-mini-player__speed { min-width: 42px; font-size: 12px; }
+  .voice-mini-player__close { width: 34px; }
+}
+
+/* Refined, stable voice-wave bars. Heights vary per message but never jitter. */
+.bubble.voice-tg {
+  width: min(78%, 360px);
+  max-width: min(78%, 360px);
+  min-width: 0;
+  padding: 11px 11px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 8%, var(--bubble-border));
+  border-radius: 18px;
+}
+.voice-tg__row {
+  grid-template-columns: 42px minmax(0, 1fr) 35px;
+  gap: 8px;
+}
+.voice-tg__play { width: 42px; height: 42px; }
+.voice-tg__wave {
+  height: 32px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(34, minmax(0, 1fr));
+  align-items: center;
+  gap: 2px;
+  opacity: 1;
+  overflow: hidden;
+}
+.voice-tg__wave i {
+  display: block;
+  width: 100%;
+  max-width: 2.6px;
+  min-height: 3px;
+  margin-inline: auto;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 60%, var(--muted) 40%);
+  opacity: .76;
+  transition: background-color .12s linear, opacity .12s linear;
+  animation: none !important;
+  transform: none !important;
+}
+.voice-tg__wave i.is-played {
+  background: var(--accent);
+  opacity: 1;
+}
+.voice-tg__wave::after { content: none; }
+.voice-tg__action {
+  width: 35px; height: 36px;
+  border-radius: 11px;
+  font-size: 13px;
+}
+.voice-tg.playing .voice-tg__wave i,
+.voice-tg.playing .voice-tg__wave i:nth-child(2n),
+.voice-tg.playing .voice-tg__wave i:nth-child(3n) {
+  animation: none !important;
+}
+.voice-tg__dur { font-size: 11px; font-variant-numeric: tabular-nums; }
+@media (max-width: 375px) {
+  .voice-tg__row { grid-template-columns: 40px minmax(0,1fr) 32px; gap: 6px; }
+  .voice-tg__play { width: 40px; height: 40px; }
+  .voice-tg__action { width: 32px; height: 34px; }
+  .voice-tg__wave { gap: 1.4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-tg__wave i { transition: none; }
+}

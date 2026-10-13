@@ -30,6 +30,7 @@ import { createPushController } from './js/push_client.js';
 import { createDebugLogBuffer } from './js/debug_compact.js';
 import { createCloudArchive, mergeArchiveHistory } from './js/cloud_archive.js';
 import { chatDayLabel, localDayKey } from './js/chat_day_groups.js';
+import { createVoicePlayer } from './js/voice_player.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -73,6 +74,10 @@ const messageSelectionCount = document.getElementById('messageSelectionCount');
 const cancelMessageSelection = document.getElementById('cancelMessageSelection');
 const copySelectedMessages = document.getElementById('copySelectedMessages');
 const chatToast = document.getElementById('chatToast');
+const voicePlayer = createVoicePlayer({
+  root: document.getElementById('voiceMiniPlayer'),
+  onError: error => dbg(`voice player unavailable: ${error?.message || error}`)
+});
 
 const chatViewport = createChatViewportController({
   root: document.documentElement,
@@ -1823,11 +1828,6 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
   btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
   const wave=document.createElement('div');
   wave.className='voice-tg__wave';
-  for (let i=0;i<18;i++){
-    const bar=document.createElement('i');
-    bar.style.height = (6 + Math.round(Math.random()*13)) + 'px';
-    wave.appendChild(bar);
-  }
   const act=document.createElement('button');
   act.type='button';
   act.className='voice-tg__action';
@@ -1853,46 +1853,39 @@ function addVoiceBubble(audioUrl, text, who='assistant', ts=Date.now(), options=
 
   const audio=new Audio(audioUrl || undefined);
   let audioReady=Boolean(audioUrl);
-  const secToMMSS = value => {
-    const seconds=Math.max(0, Math.floor(value||0));
-    return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
-  };
-  audio.ontimeupdate = () => {
-    const cur = audio.currentTime || 0;
-    dur.textContent = secToMMSS(cur);
-    wave.style.setProperty('--progress', `${(cur / Math.max(1, audio.duration || 1)) * 100}%`);
-  };
-  btn.addEventListener('click', async () => {
-    if (audio.paused){
-      if (!audioReady && options.message?.media?.archived) {
-        btn.disabled=true;
-        try {
-          const response=await fetchWithTimeout(`/api/archive-media?id=${encodeURIComponent(options.message.id)}`,{
-            headers:authenticatedHeaders(),cache:'no-store'
-          },20000);
-          if (!response.ok) throw new Error(`audio_http_${response.status}`);
-          audio.src=URL.createObjectURL(await response.blob());
-          audioReady=true;
-        }catch(error){dbg(`archive voice playback unavailable: ${error?.message || error}`);}
-        finally{btn.disabled=false;}
+  let pendingArchive=null;
+  const ownedUrls=new Set();
+  if (audioUrl?.startsWith('blob:')) ownedUrls.add(audioUrl);
+  async function ensureSource(){
+    if (audioReady) return true;
+    if (!options.message?.media?.archived) return false;
+    if (pendingArchive) return pendingArchive;
+    pendingArchive=(async()=>{
+      try {
+        const response=await fetchWithTimeout(`/api/archive-media?id=${encodeURIComponent(options.message.id)}`,{
+          headers:authenticatedHeaders(),cache:'no-store'
+        },20000);
+        if (!response.ok) throw new Error(`audio_http_${response.status}`);
+        const blobUrl=URL.createObjectURL(await response.blob());
+        ownedUrls.add(blobUrl);
+        audio.src=blobUrl;
+        audioReady=true;
+        return true;
+      } catch(error) {
+        dbg(`archive voice playback unavailable: ${error?.message || error}`);
+        return false;
+      } finally {
+        pendingArchive=null;
       }
-      if (!audioReady) return;
-      // A voice message remains replayable until the page is closed.
-      if (audio.ended) audio.currentTime = 0;
-      audio.play().then(()=>{
-        btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
-        wrap.classList.add('playing');
-      }).catch(()=>{});
-    } else {
-      audio.pause();
-      btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
-      wrap.classList.remove('playing');
-    }
+    })();
+    return pendingArchive;
+  }
+  voicePlayer.register({
+    audio, bubble:wrap, playButton:btn, wave, durationNode:dur,
+    ensureSource,
+    sourceId:options.message?.id || `${ts}:${text}`,
+    releaseSource:()=>{ for(const url of ownedUrls) URL.revokeObjectURL(url); ownedUrls.clear(); }
   });
-  audio.onended=()=>{
-    btn.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
-    wrap.classList.remove('playing');
-  };
   act.addEventListener('click', () => {
     act.remove();
     const transcript=document.createElement('div');
@@ -1929,7 +1922,12 @@ function syncPeerAvailability() {
 window.addEventListener('online', syncPeerAvailability);
 window.addEventListener('offline', syncPeerAvailability);
 document.addEventListener('visibilitychange', syncPeerAvailability);
-window.addEventListener('pagehide', () => presence.dispose(), { once: true });
+window.addEventListener('pagehide', event => {
+  presence.dispose();
+  // Safari can restore a page from BFCache: keep its blob: URLs valid.
+  if (event.persisted) voicePlayer.close();
+  else voicePlayer.dispose();
+}, { once: true });
 
 
 
