@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { memoryFoundationStatus, memoryObservationPreview } from '../lib/memory-foundation/status.js';
 import { readMemoryFoundationStatus, readRecentMemorySources } from '../lib/memory-foundation/database.js';
-import handler from '../api/memory-foundation.js';
+import handler from '../api/archive.js';
 
 const source = relative => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 const fakeResponse = () => ({
@@ -68,23 +68,32 @@ test('v2.6.3 recent observations expose no conversation text or private URLs and
   assert.equal(memoryObservationPreview(null).length,0);
 });
 
-test('v2.6.3 diagnostic endpoint enforces PIN, GET and never allows writes',async()=>{
+test('v2.6.3 diagnostics share archive API, honor PIN, and reject unsupported methods',async()=>{
   const previous=process.env.ACCESS_PIN;
   const previousDb=process.env.DATABASE_URL;
   try {
     process.env.ACCESS_PIN='987123';
     delete process.env.DATABASE_URL;
     const badMethod=fakeResponse();
-    await handler({method:'POST',headers:{'x-rin-pin':'987123'}},badMethod);
+    await handler({method:'PATCH',headers:{'x-rin-pin':'987123'},query:{mode:'memory-status'}},badMethod);
     assert.equal(badMethod.code,405);
-    assert.equal(badMethod.headers.Allow,'GET');
     const unauthorized=fakeResponse();
-    await handler({method:'GET',headers:{'x-rin-pin':'bad'}},unauthorized);
+    await handler({method:'GET',headers:{'x-rin-pin':'bad'},query:{mode:'memory-status'}},unauthorized);
     assert.equal(unauthorized.code,401);
     const unconfigured=fakeResponse();
-    await handler({method:'GET',headers:{'x-rin-pin':'987123'}},unconfigured);
+    await handler({method:'GET',headers:{'x-rin-pin':'987123'},query:{mode:'memory-status'}},unconfigured);
     assert.equal(unconfigured.code,503);
-    assert.equal(unconfigured.body.code,'MEMORY_FOUNDATION_NOT_CONFIGURED');
+    assert.equal(unconfigured.body.code,'ARCHIVE_NOT_CONFIGURED');
+    // A memory-status GET must never call the archive POST action.
+    const archive=source('api/archive.js');
+    assert.match(archive,/query.mode==='memory-status'/u);
+    assert.match(archive,/query.mode==='memory-recent'/u);
+    assert.match(archive,/await readMemoryFoundationStatus\(\)/u);
+    assert.match(archive,/await readRecentMemorySources\(\)/u);
+    assert.equal(existsSync(new URL('../api/memory-foundation.js',import.meta.url)),false,
+      'Remove the original standalone handler to stay within the Hobby function cap');
+    const functionFiles=readdirSync(new URL('../api/',import.meta.url)).filter(name=>name.endsWith('.js'));
+    assert.ok(functionFiles.length<=12,`Vercel Hobby permits only 12 API functions; found ${functionFiles.length}`);
   } finally {
     if(previous===undefined)delete process.env.ACCESS_PIN;else process.env.ACCESS_PIN=previous;
     if(previousDb===undefined)delete process.env.DATABASE_URL;else process.env.DATABASE_URL=previousDb;
@@ -92,11 +101,11 @@ test('v2.6.3 diagnostic endpoint enforces PIN, GET and never allows writes',asyn
 });
 
 test('v2.6.3 does not modify production cognition, existing memory or the chat archive paths',()=>{
-  const api=source('api/memory-foundation.js');
-  assert.match(api,/requirePin\(req, res\)/u);
-  assert.match(api,/mode === 'status'/u);
-  assert.match(api,/mode === 'recent'/u);
-  assert.doesNotMatch(api,/POST.*(?:insert|write|save)/iu);
+  const api=source('api/archive.js');
+  assert.match(api,/requirePin\(req,res\)/u);
+  assert.match(api,/mode==='memory-status'/u);
+  assert.match(api,/mode==='memory-recent'/u);
+  assert.doesNotMatch(api,/UPDATE rin_memory_|INSERT INTO rin_memory_|DELETE FROM rin_memory_/iu);
   const release=source('public/js/release.js');
   assert.match(release,/memory-foundation/u);
 });
