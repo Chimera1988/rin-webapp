@@ -9,6 +9,11 @@ const MAINTENANCE_TARGETS = new Set([
   'emotional_closeness',
   'warm_connection'
 ]);
+// A continuing emotional dynamic is not an achievement with a completion bar.
+// This also migrates old model-chosen `kind=achievement` for explicit romantic
+// maintenance goals without changing unrelated achievement intents (repair,
+// support, commitments, etc.).
+const RELATIONAL_MAINTENANCE_GOAL = /(?:^|[^\p{L}])(?:сохранять|поддерживать|оставаться|бережно развивать)[^.!?]{0,140}(?:близост|нежност|флирт|т[её]пл[^\s]*\s+контакт)/iu;
 
 const clean = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const clamp = (value, min = 0, max = 100, fallback = min) => {
@@ -26,10 +31,10 @@ function hash(value = '') {
 }
 
 export function inferRinIntentKind(input = {}) {
+  const target = clean(input?.target, 160).toLowerCase();
+  if (MAINTENANCE_TARGETS.has(target) || RELATIONAL_MAINTENANCE_GOAL.test(clean(input?.goal, 300))) return 'maintenance';
   const explicit = clean(input?.kind, 40);
   if (RIN_INTENT_KINDS.has(explicit)) return explicit;
-  const target = clean(input?.target, 160).toLowerCase();
-  if (MAINTENANCE_TARGETS.has(target)) return 'maintenance';
   return 'achievement';
 }
 
@@ -60,11 +65,10 @@ export function normalizeRinIntent(input = null) {
   const terminalAtTurn = Math.max(0, Math.round(Number(input.terminalAtTurn) || (isTerminal ? updatedAtTurn : 0)));
   const cooldownUntilTurn = Math.max(0, Math.round(Number(input.cooldownUntilTurn) || (terminalAtTurn ? terminalAtTurn + 10 : 0)));
   const minTurns = clamp(input.minTurns, 1, 8, 2);
-  const legacyMaintenance = kind === 'maintenance' && clean(input.schema, 80) !== RIN_INTENT_SCHEMA;
   const defaultMaxTurns = kind === 'maintenance' ? 16 : Math.max(6, minTurns);
   let maxTurns = clamp(input.maxTurns, minTurns, 24, defaultMaxTurns);
-  if (legacyMaintenance) maxTurns = Math.max(14, maxTurns);
-  const turnCount = clamp(input.turnCount, 0, 40, 0);
+  if (kind === 'maintenance') maxTurns = Math.max(14, maxTurns);
+  const turnCount = clamp(input.turnCount, 0, 160, 0);
   const progress = kind === 'maintenance'
     ? null
     : clamp01(input.progress, status === 'completed' ? 1 : 0);
