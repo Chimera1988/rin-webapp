@@ -120,6 +120,7 @@ test('v2.4.11+ chat refreshes local Rin time every turn while weather keeps stal
   const chat = await readFile(new URL('../public/chat.js', import.meta.url), 'utf8');
   assert.match(chat, /environmentIsStale\(schedule\)/u);
   assert.match(chat, /const envIntent = environmentIntent\(combinedUserText\)/u);
-  assert.match(chat, /await refreshRinEnv\(\{ refreshWeather: envIntent === 'weather' \|\| environmentIsStale\(schedule\) \}\)/u);
+  assert.match(chat, /const asksWeather = envIntent === 'weather' \|\| weatherRefreshIntent\(combinedUserText, history\)/u);
+  assert.match(chat, /await refreshRinEnv\(\{ refreshWeather: asksWeather \|\| environmentIsStale\(schedule\), strictWeather: asksWeather \}\)/u);
   assert.match(chat, /fetchRinWeather\(schedule\.location\)/u);
 });

@@ -107,5 +107,5 @@ test('v2.6.3 does not modify production cognition, existing memory or the chat a
   assert.match(api,/mode==='memory-recent'/u);
   assert.doesNotMatch(api,/UPDATE rin_memory_|INSERT INTO rin_memory_|DELETE FROM rin_memory_/iu);
   const release=source('public/js/release.js');
-  assert.match(release,/memory-foundation/u);
+  assert.match(release,/export const RIN_RELEASE_ID = '\d{4}-\d{2}-\d{2}-rin-mind-v\d+\.\d+\.\d+-[a-z0-9-]+';/u);
 });

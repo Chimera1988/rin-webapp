@@ -113,7 +113,7 @@ test('kernel state and durable transition carry the same relational integrity on
 test('release and debug markers include the new relational consistency state',()=>{
   const release=readFileSync(new URL('../public/js/release.js',import.meta.url),'utf8');
   const chat=readFileSync(new URL('../public/chat.js',import.meta.url),'utf8');
-  assert.match(release,/memory-foundation/u);
+  assert.match(release,/export const RIN_RELEASE_ID = '\d{4}-\d{2}-\d{2}-rin-mind-v\d+\.\d+\.\d+-[a-z0-9-]+';/u);
   assert.match(chat,/relPressure=/u);
   assert.match(chat,/relBoundaries=/u);
 });

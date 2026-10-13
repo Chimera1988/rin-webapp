@@ -118,7 +118,8 @@ test('v2.4.12.2 prompt explicitly treats terminal closure as a silence opportuni
 test('v2.4.12.2 refreshes Rin clock every semantic turn while weather keeps its own TTL', async () => {
   const client = await readFile(new URL('../public/chat.js', import.meta.url), 'utf8');
   assert.match(client, /const envIntent = environmentIntent\(combinedUserText\)/u);
-  assert.match(client, /await refreshRinEnv\(\{ refreshWeather: envIntent === 'weather' \|\| environmentIsStale\(schedule\) \}\)/u);
+  assert.match(client, /const asksWeather = envIntent === 'weather' \|\| weatherRefreshIntent\(combinedUserText, history\)/u);
+  assert.match(client, /await refreshRinEnv\(\{ refreshWeather: asksWeather \|\| environmentIsStale\(schedule\), strictWeather: asksWeather \}\)/u);
   assert.match(client, /const weatherTs = Number\(currentEnv\?\._weatherTs \|\| 0\)/u);
   assert.match(client, /weather: priorWeather/u);
   assert.match(client, /rinHuman: fmtRinHuman\(rin\)/u);
