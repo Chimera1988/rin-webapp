@@ -2,6 +2,7 @@ import { readJsonBody, requirePin } from '../lib/server/http.js';
 import { archiveConfigured, archiveAudioConfigured, archiveSql, readArchivePage, writeArchiveMessages } from '../lib/archive/database.js';
 import { archiveCursor, archiveMessages, ARCHIVE_PAGE_LIMIT, cloudMessageWithMedia } from '../lib/archive/core.js';
 import { readMemoryFoundationStatus, readRecentMemorySources } from '../lib/memory-foundation/database.js';
+import { writeExperienceCandidates } from '../lib/memory-foundation/experience-database.js';
 
 // The Memory Foundation diagnostic shares the archive function to stay within
 // Vercel Hobby's 12 Serverless Functions. Its GET modes never write to the DB.
@@ -18,6 +19,9 @@ export default async function handler(req,res) {
       const messages=archiveMessages(body.messages);
       if (!messages) return res.status(400).json({code:'INVALID_ARCHIVE_BATCH'});
       await writeArchiveMessages(messages);
+      // Candidate formation is idempotent; a transient failure retries the whole append.
+      // Never acknowledge a message batch before its eligible provenance is persisted.
+      await writeExperienceCandidates(messages);
       return res.status(200).json({ok:true,accepted:messages.length});
     }
     const query=req.query || {};
