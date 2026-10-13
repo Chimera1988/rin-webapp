@@ -1,1 +1,1 @@
-export const RIN_RELEASE_ID = '2026-10-13-rin-mind-v2.6.4-memory-foundation-experience-formation-temporal-actions';
+export const RIN_RELEASE_ID = '2026-10-13-rin-mind-v2.6.5-memory-foundation-floating-voice-player';
