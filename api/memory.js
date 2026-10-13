@@ -1,3 +1,4 @@
+import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
 import { contentKey } from '../lib/chat-contract.js';
 import { fetchWithTimeout, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
 
@@ -147,13 +148,15 @@ ${clean(assistantText, 1400)}
 export default async function handler(req, res) {
   if (!requireMethod(req, res, 'POST')) return;
   const body = await readJsonBody(req);
-  if (!requirePin(req, res, body)) return;
+  if (!await applySecurityLimit(req, res, 'api')) return;
+  if (!requirePin(req, res, body)) { auditRejectedPin('memory'); return; }
   if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Memory service is not configured', code: 'MEMORY_NOT_CONFIGURED' });
 
   const userText = clean(body.userText, 2000);
   const assistantText = clean(body.assistantText, 2000);
   if (!userText || !assistantText) return res.status(200).json(createEmptyMemoryResult());
 
+  if (!await applySecurityLimit(req, res, 'memory')) return;
   try {
     const memory = await extractMemory({ userText, assistantText, existingMemory: body.existingMemory || null });
     return res.status(200).json(memory);

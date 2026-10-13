@@ -1,3 +1,4 @@
+import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
 import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
 import { preserveRinAudio } from '../lib/archive/media.js';
 import { validArchiveId } from '../lib/archive/core.js';
@@ -53,13 +54,16 @@ export default async function handler(req, res) {
   try {
     if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
-    if (!requirePin(req, res, body)) return;
+    if (!await applySecurityLimit(req, res, 'api')) return;
+    if (!requirePin(req, res, body)) { auditRejectedPin('tts'); return; }
     const {apiKey, voiceId, modelId} = readTtsConfig();
     if (!apiKey || !voiceId || !modelId) return res.status(503).json({ error: 'TTS is not configured', code: 'TTS_NOT_CONFIGURED' });
 
     const cleanText = typeof body.text === 'string' ? body.text.trim() : '';
     if (!cleanText) return res.status(400).json({ error: 'Text is required', code: 'INVALID_TEXT' });
     const ttsInput = buildTtsInput(cleanText, body.emotion);
+
+    if (!await applySecurityLimit(req, res, 'tts')) return;
 
     const upstream = await fetchWithTimeout(
       `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,

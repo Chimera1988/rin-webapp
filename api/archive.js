@@ -1,3 +1,4 @@
+import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
 import { readJsonBody, requirePin } from '../lib/server/http.js';
 import { archiveConfigured, archiveAudioConfigured, archiveSql, readArchivePage, writeArchiveMessages } from '../lib/archive/database.js';
 import { archiveCursor, archiveMessages, ARCHIVE_PAGE_LIMIT, cloudMessageWithMedia } from '../lib/archive/core.js';
@@ -10,7 +11,8 @@ export default async function handler(req,res) {
   res.setHeader('Cache-Control','private, no-store');
   res.setHeader('X-Content-Type-Options','nosniff');
   if (!['GET','POST'].includes(req.method)) return res.status(405).json({code:'METHOD_NOT_ALLOWED'});
-  if (!requirePin(req,res)) return;
+  if (!await applySecurityLimit(req, res, 'api')) return;
+  if (!requirePin(req,res)) { auditRejectedPin('archive'); return; }
   if (!archiveConfigured()) return res.status(503).json({code:'ARCHIVE_NOT_CONFIGURED'});
   try {
     if (req.method==='POST') {

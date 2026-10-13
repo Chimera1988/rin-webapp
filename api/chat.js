@@ -1,3 +1,4 @@
+import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { rinCalendarForPrompt } from '../lib/cognition/temporal-grounding.js';
@@ -424,7 +425,8 @@ export default async function handler(req, res) {
   try {
     if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
-    if (!requirePin(req, res, body)) return;
+    if (!await applySecurityLimit(req, res, 'api')) return;
+    if (!requirePin(req, res, body)) { auditRejectedPin('chat'); return; }
     if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Chat service is not configured', code: 'CHAT_NOT_CONFIGURED' });
 
     const requestId = normalize(body.requestId, 100);
@@ -440,6 +442,7 @@ export default async function handler(req, res) {
     const userTurn = trigger ? '' : groupUserText(group);
     if (!trigger && !userTurn) return res.status(400).json({ error: 'A user message is required', code: 'INVALID_HISTORY' });
 
+    if (!await applySecurityLimit(req, res, 'chat')) return;
     const profile = await buildServerProfile(body.profile);
     const memory = body.memory && typeof body.memory === 'object' ? body.memory : null;
     const env = body.env && typeof body.env === 'object' ? body.env : null;

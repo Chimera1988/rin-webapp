@@ -1,3 +1,4 @@
+import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
 import { Readable } from 'node:stream';
 import { requirePin } from '../lib/server/http.js';
 import { getRinArchivedAudio } from '../lib/archive/media.js';
@@ -6,7 +7,8 @@ import { validArchiveId } from '../lib/archive/core.js';
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','private, no-store');
   if (req.method!=='GET') return res.status(405).json({code:'METHOD_NOT_ALLOWED'});
-  if (!requirePin(req,res)) return;
+  if (!await applySecurityLimit(req, res, 'api')) return;
+  if (!requirePin(req, res)) { auditRejectedPin('archive-media'); return; }
   const id=req.query?.id;
   if (!validArchiveId(id)) return res.status(400).json({code:'INVALID_ID'});
   try {

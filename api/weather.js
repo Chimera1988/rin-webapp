@@ -1,3 +1,4 @@
+import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
 import { fetchWithTimeout, publicError, requireMethod, requirePin } from '../lib/server/http.js';
 
 const OPENWEATHER_KEY = process.env.OPENWEATHER_API_KEY;
@@ -12,7 +13,8 @@ function finiteCoordinate(value, min, max) {
 export default async function handler(req, res) {
   try {
     if (!requireMethod(req, res, 'GET')) return;
-    if (!requirePin(req, res, {})) return;
+    if (!await applySecurityLimit(req, res, 'api')) return;
+    if (!requirePin(req, res, {})) { auditRejectedPin('weather'); return; }
 
     const query = req.query || {};
     const units = ALLOWED_UNITS.has(String(query.units)) ? String(query.units) : 'metric';
