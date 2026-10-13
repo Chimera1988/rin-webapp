@@ -1,4 +1,5 @@
-import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
+import { requireSession } from '../lib/server/session.js';
+import { applySecurityLimit, auditRejectedSession } from '../lib/server/security-gate.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { rinCalendarForPrompt } from '../lib/cognition/temporal-grounding.js';
@@ -32,7 +33,7 @@ import {
   replySnapshotFromMessage,
   selectModelHistory
 } from '../lib/chat-contract.js';
-import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
+import { fetchWithTimeout, publicError, readJsonBody, requireMethod } from '../lib/server/http.js';
 import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 
@@ -426,7 +427,7 @@ export default async function handler(req, res) {
     if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
     if (!await applySecurityLimit(req, res, 'api')) return;
-    if (!requirePin(req, res, body)) { auditRejectedPin('chat'); return; }
+    if (!await requireSession(req, res)) { auditRejectedSession('chat'); return; }
     if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Chat service is not configured', code: 'CHAT_NOT_CONFIGURED' });
 
     const requestId = normalize(body.requestId, 100);

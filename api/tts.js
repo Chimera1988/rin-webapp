@@ -1,5 +1,6 @@
-import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
-import { fetchWithTimeout, publicError, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
+import { requireSession } from '../lib/server/session.js';
+import { applySecurityLimit, auditRejectedSession } from '../lib/server/security-gate.js';
+import { fetchWithTimeout, publicError, readJsonBody, requireMethod } from '../lib/server/http.js';
 import { preserveRinAudio } from '../lib/archive/media.js';
 import { validArchiveId } from '../lib/archive/core.js';
 
@@ -55,7 +56,7 @@ export default async function handler(req, res) {
     if (!requireMethod(req, res, 'POST')) return;
     const body = await readJsonBody(req);
     if (!await applySecurityLimit(req, res, 'api')) return;
-    if (!requirePin(req, res, body)) { auditRejectedPin('tts'); return; }
+    if (!await requireSession(req, res)) { auditRejectedSession('tts'); return; }
     const {apiKey, voiceId, modelId} = readTtsConfig();
     if (!apiKey || !voiceId || !modelId) return res.status(503).json({ error: 'TTS is not configured', code: 'TTS_NOT_CONFIGURED' });
 

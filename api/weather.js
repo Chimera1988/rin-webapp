@@ -1,5 +1,6 @@
-import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
-import { fetchWithTimeout, publicError, requireMethod, requirePin } from '../lib/server/http.js';
+import { requireSession } from '../lib/server/session.js';
+import { applySecurityLimit, auditRejectedSession } from '../lib/server/security-gate.js';
+import { fetchWithTimeout, publicError, requireMethod } from '../lib/server/http.js';
 
 const OPENWEATHER_KEY = process.env.OPENWEATHER_API_KEY;
 const ALLOWED_UNITS = new Set(['metric']);
@@ -14,7 +15,7 @@ export default async function handler(req, res) {
   try {
     if (!requireMethod(req, res, 'GET')) return;
     if (!await applySecurityLimit(req, res, 'api')) return;
-    if (!requirePin(req, res, {})) { auditRejectedPin('weather'); return; }
+    if (!await requireSession(req, res)) { auditRejectedSession('weather'); return; }
 
     const query = req.query || {};
     const units = ALLOWED_UNITS.has(String(query.units)) ? String(query.units) : 'metric';

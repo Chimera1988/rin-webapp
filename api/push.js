@@ -1,5 +1,6 @@
-import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
-import { readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
+import { requireSession } from '../lib/server/session.js';
+import { applySecurityLimit, auditRejectedSession } from '../lib/server/security-gate.js';
+import { readJsonBody, requireMethod } from '../lib/server/http.js';
 import { pushRedis, readProtected, writeProtected, deleteProtected, DELIVERY_TTL_SECONDS } from '../lib/push/redis.js';
 import { validateSubscription, validateSnapshot, deliveryQueue, PUSH_SCHEMA } from '../lib/push/core.js';
 import { sendRinPush } from '../lib/push/send.js';
@@ -10,7 +11,7 @@ export default async function handler(req,res) {
   if (!requireMethod(req,res,'POST')) return;
   const body = await readJsonBody(req);
   if (!await applySecurityLimit(req, res, 'api')) return;
-  if (!requirePin(req, res, body)) { auditRejectedPin('push'); return; }
+  if (!await requireSession(req, res)) { auditRejectedSession('push'); return; }
   const action = String(body.action||'');
   if (!['status','enable','sync','pull','ack','disable','test'].includes(action)) return res.status(400).json({code:'INVALID_PUSH_ACTION'});
   try {

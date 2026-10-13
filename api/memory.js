@@ -1,6 +1,7 @@
-import { applySecurityLimit, auditRejectedPin } from '../lib/server/security-gate.js';
+import { requireSession } from '../lib/server/session.js';
+import { applySecurityLimit, auditRejectedSession } from '../lib/server/security-gate.js';
 import { contentKey } from '../lib/chat-contract.js';
-import { fetchWithTimeout, readJsonBody, requireMethod, requirePin } from '../lib/server/http.js';
+import { fetchWithTimeout, readJsonBody, requireMethod } from '../lib/server/http.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MEMORY_MODEL = process.env.OPENAI_MEMORY_MODEL || process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
@@ -149,7 +150,7 @@ export default async function handler(req, res) {
   if (!requireMethod(req, res, 'POST')) return;
   const body = await readJsonBody(req);
   if (!await applySecurityLimit(req, res, 'api')) return;
-  if (!requirePin(req, res, body)) { auditRejectedPin('memory'); return; }
+  if (!await requireSession(req, res)) { auditRejectedSession('memory'); return; }
   if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Memory service is not configured', code: 'MEMORY_NOT_CONFIGURED' });
 
   const userText = clean(body.userText, 2000);
