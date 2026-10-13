@@ -728,6 +728,7 @@ export default async function handler(req, res) {
       closenessFocus: stateTransition?.dialogueState?.privateCloseness?.focus || 'none',
       closenessMove: stateTransition?.dialogueState?.privateCloseness?.move || 'none',
       closenessTurns: Number(stateTransition?.dialogueState?.privateCloseness?.turnsInMode || 0),
+      closenessThreadChars: String(stateTransition?.dialogueState?.privateCloseness?.thread || '').length,
       frameAlignment: mindTurn.mind?.frameAlignment || 'aligned',
       proactiveHandoff: brain.proactiveHandoff ? `${brain.proactiveHandoff.source}:${brain.proactiveHandoff.type}:${brain.proactiveHandoff.mode}` : '-',
       motifRepeat: motifTelemetry.streak || 0,
