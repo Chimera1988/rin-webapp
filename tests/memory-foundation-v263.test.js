@@ -1,3 +1,5 @@
+import { enableTestSecurity } from './helpers/security.js';
+const releaseSecurity = enableTestSecurity();
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';

@@ -1,3 +1,5 @@
+import { enableTestSecurity } from './helpers/security.js';
+const releaseSecurity = enableTestSecurity();
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -7,7 +9,7 @@ import cronHandler from '../api/push-cron.js';
 function response() {
   return {code:200,body:null,headers:{},setHeader(k,v){this.headers[k]=v;return this;},status(c){this.code=c;return this;},json(v){this.body=v;return this;}};
 }
-test('push endpoint refuses unauthenticated requests before any Redis access',async()=>{
+test('push endpoint refuses unauthenticated requests before push business Redis access',async()=>{
   const previous=process.env.ACCESS_PIN;process.env.ACCESS_PIN='correct-pin';
   try {
     const res=response();await pushHandler({method:'POST',headers:{'x-rin-pin':'wrong'},body:{action:'status'}},res);
