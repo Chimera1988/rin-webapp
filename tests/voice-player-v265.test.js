@@ -127,6 +127,6 @@ test('source and UI integration preserve archive, TTS and limit of 12 serverless
   assert.match(html,/voice_player\.css\?v=/u);
   assert.match(css,/\.voice-tg__wave i\.is-played/u);
   assert.match(css,/\.voice-mini-player\[hidden\]/u);
-  assert.match(file('public/js/release.js'),/2\.6\.5-memory-foundation-floating-voice-player/u);
+  assert.match(file('public/js/release.js'),/2\.6\.6-weather-provenance-self-follow-through/u);
   assert.equal(readdirSync(new URL('../api',import.meta.url)).filter(name=>name.endsWith('.js')).length,12);
 });
