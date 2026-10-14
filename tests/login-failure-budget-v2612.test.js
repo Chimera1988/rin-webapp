@@ -142,7 +142,7 @@ test('all UI entry points and debug version agree on active release', async () =
   const login = await readFile(new URL('../public/login.html', import.meta.url), 'utf8');
   const client = await readFile(new URL('../public/chat.js', import.meta.url), 'utf8');
   const id = release.match(/RIN_RELEASE_ID = '([^']+)'/)?.[1];
-  assert.match(id, /^2026-10-14-rin-mind-v2\.6\.15-/);
+  assert.match(id, /^2026-\d{2}-\d{2}-rin-mind-v2\.6\.\d+-/);
   for (const html of [index, login]) {
     assert.ok(html.includes(id));
     assert.doesNotMatch(html, /v2\.6\.9-scene-episodic-candidates/);

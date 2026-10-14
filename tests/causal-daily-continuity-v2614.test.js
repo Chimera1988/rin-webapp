@@ -57,7 +57,7 @@ test('no schedule-only inference about work, transit or breakfast', () => {
   // A work schedule is an intended availability window, not a proof of arrival.
   const source=readFileSync(new URL('../lib/cognition/rin-mind.js',import.meta.url),'utf8');
   assert.match(source,/Расписание и innerLife\.activity описывают ожидаемый ритм/);
-  assert.match(source,/formatMorningSequence\(inspectMorningSequence/);
+  assert.match(source,/formatMorningSequence\(state\?\.innerLife\?\.dailyEpisode/);
 });
 
 test('breakfast remains planned rather than magically completed a minute later', () => {
