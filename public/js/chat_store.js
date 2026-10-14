@@ -12,6 +12,8 @@ import { storageGet, storageRemove, storageSetVerified } from './storage.js';
 
 export { CHAT_SCHEMA_VERSION, isInternalNonverbalMetaText, normalizeReplySnapshot };
 export const CHAT_STORAGE_KEY = 'rin-history-v6';
+// Single chronological cache budget for every message kind; the Neon archive is unbounded.
+export const CHAT_HISTORY_CACHE_LIMIT = 180;
 export const LEGACY_CHAT_STORAGE_KEYS = ['rin-history-v5', 'rin-history-v4', 'rin-history-v3', 'rin-history-v2'];
 export const LEGACY_RESET_ONLY_STORAGE_KEYS = [
   ...LEGACY_CHAT_STORAGE_KEYS,
@@ -85,9 +87,14 @@ export function normalizeStoredHistory(value) {
     .map(normalizeStoredMessage)
     .filter(Boolean)
     .filter(message => !(message.role === 'assistant' && ['text', 'voice'].includes(message.kind) && isInternalNonverbalMetaText(message.content)));
-  const textIds = new Set(normalized.filter(item => ['text','voice','silence'].includes(item.kind)).slice(-140).map(item => item.id));
-  const visualIds = new Set(normalized.filter(item => !['text','voice'].includes(item.kind)).slice(-40).map(item => item.id));
-  return normalized.filter(item => textIds.has(item.id) || visualIds.has(item.id));
+  // Old 140-text/40-visual quotas retained stale stickers while evicting newer
+  // text. Keep the last N actual events instead, in timestamp order. Equal-time
+  // segments retain their original order, without dropping duplicate IDs here.
+  return normalized
+    .map((message, index) => ({ message, index }))
+    .sort((a, b) => Number(a.message.ts) - Number(b.message.ts) || a.index - b.index)
+    .slice(-CHAT_HISTORY_CACHE_LIMIT)
+    .map(entry => entry.message);
 }
 
 export function loadChatHistory(storage = localStorage) {

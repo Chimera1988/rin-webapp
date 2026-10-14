@@ -7,7 +7,7 @@ const cleanBatch = messages => (Array.isArray(messages)?messages:[]).filter(m=>
   m?.id && GOOD_STATUS.has(m.status) && ['text','voice','sticker','silence'].includes(m.kind) &&
   (['user','assistant'].includes(m.role)));
 
-// No 140/40 trimming here: only saveChatHistory applies limits to the local cache.
+// Never trim the immutable server archive by a browser cache budget.
 export function mergeArchiveHistory(local=[],remote=[]) {
   const ids=new Map();
   for(const message of remote) if (message?.id) ids.set(message.id,message);
@@ -18,6 +18,43 @@ export function mergeArchiveHistory(local=[],remote=[]) {
   }
   return [...ids.values()].map(normalizeStoredMessage).filter(Boolean)
     .sort((a,b)=>Number(a.ts)-Number(b.ts)||String(a.id).localeCompare(String(b.id)));
+}
+
+// Load an actual contiguous recent archive window, not the old mixed-kind
+// browser cache (which can have holes between separately retained stickers).
+// Keep fetched pages so excluded older events remain available on demand.
+export async function collectRecentArchiveWindow(firstPage, loadEarlier, limit = 180) {
+  if (!firstPage || !Array.isArray(firstPage.messages)) return null;
+  if (typeof loadEarlier !== 'function') throw new TypeError('Archive page loader is required.');
+  const pages = [];
+  const ids = new Set();
+  const cursors = new Set();
+  let page = firstPage;
+  let error = null;
+  while (page && pages.length < 8) {
+    pages.push(page);
+    for (const item of page.messages) if (item?.id) ids.add(item.id);
+    if (ids.size >= limit || !page.hasMore || !page.cursor) break;
+    const cursorKey = `${page.cursor.beforeTs}:${page.cursor.beforeId}`;
+    if (cursors.has(cursorKey)) break;
+    cursors.add(cursorKey);
+    try {
+      const older = await loadEarlier(page.cursor);
+      if (!older || !Array.isArray(older.messages)) break;
+      page = older;
+    } catch (cause) {
+      error = String(cause?.message || cause);
+      break; // Network errors must not prevent Rin from opening with local data.
+    }
+  }
+  const last = pages.at(-1);
+  return {
+    messages: pages.flatMap(part => part.messages),
+    pages,
+    cursor: last.cursor || null,
+    hasMore: last.hasMore === true,
+    error
+  };
 }
 
 export function createCloudArchive({fetchFn=fetch,headers=()=>({}),log=()=>{},timer=setTimeout}={}) {
