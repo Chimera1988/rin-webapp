@@ -11,6 +11,7 @@ import { normalizeInnerLife } from '../lib/inner-life-contract.js';
 import { contentKey } from '../lib/chat-contract.js';
 import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
 import { activityPeriod, resolveDailyRhythm } from './daily_rhythm.js';
+import { reconcileDailyEpisode, projectDailyEpisodeActivity } from '../lib/daily-episode.js';
 import { normalizeRelationalIntegrity } from '../lib/relational-integrity.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
@@ -670,6 +671,9 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
   const current = { ...defaultInnerLife(), ...(currentInput || {}) };
   const hasUserMessage = Boolean(cleanText(userText, 2000));
   const rhythm = resolveDailyRhythm(env, policy, current, now, hasUserMessage);
+  const dayKey = rhythm.local.dateKey;
+  const episode = reconcileDailyEpisode({prior:current.dailyEpisode,history:context.history || [],now,dayKey});
+  current.dailyEpisode = episode;
   const period = activityPeriod(rhythm);
   const part = period === 'sleeping' || period === 'interrupted_sleep' || period === 'winddown'
     ? 'night'
@@ -735,6 +739,10 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
     current.weatherGrounded = ['outdoor', 'mixed'].includes(current.activitySetting) && Boolean(current.weatherContext);
   }
 
+  // Causal episode is authoritative over an unverified schedule-derived activity.
+  // This is a state projection, not a new deterministic decision about what Rin must say.
+  Object.assign(current, projectDailyEpisodeActivity(current, episode, now));
+
   evolvePersistentLifeState(current, {
     part,
     dayType: rhythm.dayType,
@@ -774,8 +782,9 @@ export function advanceInnerLifeForBackground(current = {}, env = {}, now = Date
   return clone(computeInnerLife(current, env, '', now, policy, context));
 }
 
-export async function prepareInnerLife(env = {}, userText = '', now = Date.now(), policy = {}) {
+export async function prepareInnerLife(env = {}, userText = '', now = Date.now(), policy = {}, extra = {}) {
   if (now && typeof now === 'object' && !Array.isArray(now)) {
+    extra = policy && typeof policy === 'object' ? policy : {};
     policy = now;
     now = Date.now();
   }
@@ -784,7 +793,8 @@ export async function prepareInnerLife(env = {}, userText = '', now = Date.now()
   return clone(computeInnerLife(diary.innerLife, env, userText, timestamp, policy, {
     relationship: diary.relationship,
     emotionalState: diary.conversationState?.emotionalState,
-    mood: diary.mood
+    mood: diary.mood,
+    history: extra.history || []
   }));
 }
 
