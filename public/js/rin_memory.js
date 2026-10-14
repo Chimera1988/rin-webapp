@@ -12,6 +12,7 @@ import { contentKey } from '../lib/chat-contract.js';
 import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
 import { activityPeriod, resolveDailyRhythm } from './daily_rhythm.js';
 import { reconcileDailyEpisode, projectDailyEpisodeActivity } from '../lib/daily-episode.js';
+import { reconcileEventEvidence } from '../lib/event-evidence.js';
 import { normalizeRelationalIntegrity } from '../lib/relational-integrity.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
@@ -674,6 +675,7 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
   const dayKey = rhythm.local.dateKey;
   const episode = reconcileDailyEpisode({prior:current.dailyEpisode,history:context.history || [],now,dayKey});
   current.dailyEpisode = episode;
+  current.eventEvidence = reconcileEventEvidence({prior:current.eventEvidence,history:context.history || [],now,dayKey});
   const period = activityPeriod(rhythm);
   const part = period === 'sleeping' || period === 'interrupted_sleep' || period === 'winddown'
     ? 'night'
