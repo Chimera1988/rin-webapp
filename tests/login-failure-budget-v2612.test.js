@@ -135,16 +135,16 @@ process.env.RIN_PUSH_DATA_KEY=Buffer.alloc(32,43).toString('base64url');
 setSessionRedisForTests({async set(){return 'OK';}}); setSecurityRedisForTests(null); }
 });
 
-test('all UI entry points and debug version agree on release 2.6.12', async () => {
+test('all UI entry points and debug version agree on active release', async () => {
   const {readFile} = await import('node:fs/promises');
   const release = await readFile(new URL('../public/js/release.js', import.meta.url), 'utf8');
   const index = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
   const login = await readFile(new URL('../public/login.html', import.meta.url), 'utf8');
   const client = await readFile(new URL('../public/chat.js', import.meta.url), 'utf8');
   const id = release.match(/RIN_RELEASE_ID = '([^']+)'/)?.[1];
-  assert.equal(id, '2026-10-14-rin-mind-v2.6.13-secure-session-private-backup');
+  assert.match(id, /^2026-10-14-rin-mind-v2\.6\.15-/);
   for (const html of [index, login]) {
-    assert.match(html, /v2\.6\.13-secure-session-private-backup/);
+    assert.ok(html.includes(id));
     assert.doesNotMatch(html, /v2\.6\.9-scene-episodic-candidates/);
   }
   assert.match(client, /const RIN_BUILD_VERSION = RIN_RELEASE_ID/);

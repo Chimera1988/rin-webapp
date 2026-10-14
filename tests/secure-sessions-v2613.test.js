@@ -102,7 +102,7 @@ test('release v2.6.13 and logout UI ship with no extra serverless endpoint',asyn
  const root=new URL('../',import.meta.url);
  const [release,html,loginHtml,client]=await Promise.all(['public/js/release.js','public/index.html','public/login.html','public/js/http_client.js'].map(p=>readFile(new URL(p,root),'utf8')));
  const releaseId=release.match(/RIN_RELEASE_ID = '([^']+)'/)?.[1];
- assert.match(releaseId,/v2\.6\.13-secure-session-private-backup/);
+ assert.match(releaseId,/v2\.6\.15-causal-daily-state/);
  assert.ok(html.includes(releaseId)&&loginHtml.includes(releaseId));
  assert.match(html,/id="securityLogout"/);
  assert.doesNotMatch(client,/localStorage\.setItem/);
