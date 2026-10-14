@@ -490,6 +490,7 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
               lastStateAt: numberOr(state.lastStateAt),
               lastUserAt: numberOr(state.lastUserAt),
               interactionCount: numberOr(state.interactionCount, 0),
+              dailyEpisode: state.dailyEpisode || null,
               recentActivities: Array.isArray(state.recentActivities)
                 ? state.recentActivities.slice(-8).map(item => String(item || '').slice(0, 180)).filter(Boolean)
                 : []
@@ -915,7 +916,7 @@ async function acceptBackgroundDelivery(pending) {
     if (!sinceGeneration) {
       const schedule = await ensureRuntimeSchedule();
       await refreshRinEnv({refreshWeather:false});
-      const freshInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {},'',schedule?.innerLife||{});
+      const freshInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {},'',schedule?.innerLife||{},{history:toApiHistory(history)});
       await commitSuccessfulTurnState({memoryModule,requestId:pending.requestId,data:{stateTransition:pending.stateTransition,turnDecision:null},preparedInnerLife:freshInnerLife || pending.innerLife});
     } else dbg('background message arrived after newer user interaction; stale stateTransition intentionally skipped');
     await deliverCommittedAssistantTurn(prepared);
@@ -2621,7 +2622,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     const memoryModule = await ensureMemoryReady();
     const schedule = await ensureRuntimeSchedule();
     await refreshRinEnv({ refreshWeather: environmentIsStale(schedule) });
-    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, '', schedule?.innerLife || {});
+    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, '', schedule?.innerLife || {}, {history:toApiHistory(history)});
     const [memory, activeProfile] = await Promise.all([
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
       ensureActiveProfile()
@@ -2898,7 +2899,7 @@ async function processUserBatch(messageIds = []) {
     const asksWeather = envIntent === 'weather' || weatherRefreshIntent(combinedUserText, history);
     await refreshRinEnv({ refreshWeather: asksWeather || environmentIsStale(schedule), strictWeather: asksWeather });
     const memoryModule = await ensureMemoryReady();
-    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, combinedUserText, schedule?.innerLife || {});
+    const preparedInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {}, combinedUserText, schedule?.innerLife || {}, {history:toApiHistory(history)});
     const [memory, activeProfile] = await Promise.all([
       buildMemoryPayload({ innerLifeOverride: preparedInnerLife }),
       ensureActiveProfile()
