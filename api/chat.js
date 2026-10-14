@@ -3,6 +3,7 @@ import { applySecurityLimit, auditRejectedSession } from '../lib/server/security
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { rinCalendarForPrompt } from '../lib/cognition/temporal-grounding.js';
+import { guardUnsupportedSharedCompletion } from '../public/lib/event-evidence.js';
 import { inspectExpressionNovelty } from '../lib/cognition/expression-novelty.js';
 import { disallowedBoundaryUse, integrateRinRepairChoice } from '../lib/cognition/relational-integrity.js';
 import { analyzeConversation } from '../lib/conversation-brain.js';
@@ -652,6 +653,10 @@ export default async function handler(req, res) {
       if (forbidden) segment.text = 'Я помню, что это обращение тебе неприятно. Не буду повторять его. Мне важнее говорить с тобой бережно.';
     }
 
+    // Do not send a completed shared activity contradicted by the evidence ledger.
+    // The model remains the sole owner of intention and style; this only blocks
+    // one ungrounded factual assertion from being promoted to shared memory.
+    mindTurn.realization.segments = guardUnsupportedSharedCompletion(mindTurn.realization.segments, kernelState.innerLife?.eventEvidence);
     const deliveryPlan = await buildDeliveryPlan({
       requestId,
       decision: mindTurn.decision,
