@@ -18,6 +18,7 @@ import {
 } from './js/chat_store.js';
 import { RIN_RELEASE_ID } from './js/release.js';
 import { createMemoryJobRunner, enqueueMemoryJob } from './js/memory_job_queue.js';
+import { createCloudMemorySync } from './js/cloud_memory_sync.js';
 import { activeInitiationWindow, canAutoInitiate, canGreet, initiationWindowKey, resolveInitiationPolicy } from './js/conversation_policy.js';
 import { createInitiationStateStore } from './js/initiation_state.js';
 import { createLocalSettings } from './js/local_settings.js';
@@ -520,7 +521,8 @@ async function applyExtractedMemory(extracted, _userText = '', jobId = '') {
     for (const path of Array.isArray(result?.savedFactPaths) ? result.savedFactPaths : []) {
       dbg(`memory fact saved: ${path}`);
     }
-    return result?.applied === true || result?.duplicate === true;
+    if (result?.applied === true) void cloudMemorySync.sync();
+     return result?.applied === true || result?.duplicate === true;
   } catch (error) {
     dbg('apply extracted memory failed: ' + (error?.message || error));
     return false;
@@ -570,6 +572,16 @@ const memoryJobRunner = createMemoryJobRunner(
 );
 setTimeout(() => { void memoryJobRunner.drain(); }, 0);
 setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
+
+// Snapshot only stable memories and backfill archived first-person reports.
+// Neither operation wakes Rin, sends chat messages, or changes Cognitive Kernel state.
+const cloudMemorySync=createCloudMemorySync({
+  getDiary:async()=>{const lib=await ensureMemoryReady();return lib?.loadDiary?.()||null;},
+  headers:()=>authenticatedHeaders({'Content-Type':'application/json'}),
+  storage:localStorage,log:msg=>dbg(msg)
+});
+setTimeout(()=>{void cloudMemorySync.sync();void cloudMemorySync.backfill();},15_000);
+setInterval(()=>{void cloudMemorySync.sync();void cloudMemorySync.backfill();},180_000);
 
 /* ============================= */
 /* НАСТРОЕНИЕ РИН */
@@ -3052,6 +3064,7 @@ async function processUserBatch(messageIds = []) {
     const memoryText = assistantMemoryText(preparedDelivery);
     if (memoryText && shouldAnalyzeConversationForMemory(combinedUserText)) {
       enqueueMemoryJob({ id: requestId, userText: combinedUserText, assistantText: memoryText }, localStorage);
+       void cloudMemorySync.sync();
       void memoryJobRunner.drain();
     }
     const totalVisibleMs = Math.max(0, Date.now() - turnStartedAt);
