@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CHAT_STORAGE_KEY,
+  CHAT_HISTORY_CACHE_LIMIT,
+  normalizeStoredHistory,
   RESETTABLE_STORAGE_KEYS,
   createChatMessage,
   createSerialQueue,
@@ -214,4 +216,51 @@ test('verified history persistence detects a silent storage write failure', () =
   assert.equal(persistChatHistoryMutation(history, draft => draft.push(message), storage), false);
   assert.deepEqual(history, []);
   assert.equal(storage.getItem(CHAT_STORAGE_KEY), null);
+});
+
+
+test('a single 180-event browser limit preserves the actual latest text, sticker, voice and silence sequence', () => {
+  const storage = new MemoryStorage();
+  const kinds = ['text','sticker','text','voice','sticker','silence'];
+  const events = Array.from({length: 225}, (_, i) => createChatMessage({
+    role: i % 7 === 0 ? 'user' : 'assistant',
+    kind: kinds[i % kinds.length],
+    content: `event ${i}`, id: `event-${i}`, ts: 1000000 + i * 1000,
+    ...(kinds[i % kinds.length] === 'sticker' ? {sticker:{src:'/stickers/tender_soft_smile.webp'}} : {})
+  }));
+  assert.equal(CHAT_HISTORY_CACHE_LIMIT, 180);
+  assert.equal(saveChatHistory(events, storage), true);
+  const loaded = loadChatHistory(storage);
+  assert.equal(loaded.length, 180);
+  assert.deepEqual(loaded.map(x => x.id), events.slice(-180).map(x => x.id));
+  assert.ok(loaded.some(x => x.kind === 'sticker'));
+  assert.ok(loaded.some(x => x.kind === 'voice'));
+  assert.equal(loaded[0].kind, events[45].kind);
+});
+
+test('replacing the old 140/40 quotas evicts stale stickers instead of deleting recent texts', () => {
+  const storage = new MemoryStorage();
+  const oldStickerTail = Array.from({length:40}, (_, i) => createChatMessage({
+    role:'assistant',kind:'sticker',content:`old ${i}`,id:`old-sticker-${i}`,
+    sticker:{src:'/stickers/tender_soft_smile.webp'},ts:1000+i
+  }));
+  const modernText = Array.from({length:200}, (_, i) => createChatMessage({
+    role:'user',kind:'text',content:`new ${i}`,id:`new-text-${i}`,ts:2000+i
+  }));
+  const mixed = [...oldStickerTail,...modernText];
+  const loaded = normalizeStoredHistory(mixed);
+  assert.equal(loaded.length, 180);
+  assert.equal(loaded[0].id,'new-text-20');
+  assert.equal(loaded.at(-1).id,'new-text-199');
+  assert.ok(!loaded.some(item=>item.kind==='sticker'));
+});
+
+test('cache uses timestamps to repair shuffled legacy events, preserving equal-time segment order', () => {
+  const messages = [
+    createChatMessage({role:'assistant',kind:'sticker',content:'late',id:'later',ts:300,sticker:{src:'/stickers/tender_soft_smile.webp'}}),
+    createChatMessage({role:'user',kind:'text',content:'early',id:'earlier',ts:100}),
+    createChatMessage({role:'assistant',kind:'text',content:'part one',id:'a',ts:200}),
+    createChatMessage({role:'assistant',kind:'voice',content:'part two',id:'b',ts:200})
+  ];
+  assert.deepEqual(normalizeStoredHistory(messages).map(x=>x.id),['earlier','a','b','later']);
 });

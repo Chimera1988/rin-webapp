@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {localDayKey,chatDayLabel,historyDayGroups} from '../public/js/chat_day_groups.js';
-import {mergeArchiveHistory} from '../public/js/cloud_archive.js';
+import {collectRecentArchiveWindow,mergeArchiveHistory} from '../public/js/cloud_archive.js';
 import {normalizeStoredHistory, normalizeStoredMessage} from '../public/js/chat_store.js';
 import {cloudMessageWithMedia, sanitizeArchiveMessage} from '../lib/archive/core.js';
 
@@ -38,7 +38,7 @@ test('date dividers group text, stickers and voice together without synthetic me
   assert.equal(rows.length,6);
 });
 
-test('cloud merge does not apply the 140/40 local trim and keeps chronological interleaving',()=>{
+test('cloud merge has no browser-local limit and keeps chronological interleaving',()=>{
   const text=Array.from({length:212},(_,i)=>message(`t-${i}`,day(2026,10,11)+i*3000));
   const stickers=Array.from({length:42},(_,i)=>message(`s-${i}`,day(2026,10,11)+i*10000+1500,'sticker'));
   const remote=[...text,...stickers].reverse();
@@ -87,4 +87,61 @@ test('generated MP3 remains attached to a text message after restart and secure 
   assert.equal(persisted[0].media.archived,true);
   const browser=readFileSync(new URL('../public/chat.js',import.meta.url),'utf8');
   assert.match(browser,/\['voice','text'\]\.includes\(message\.kind\) && message\.media\?\.archived/);
+});
+
+
+test('initial cloud hydration spans at least 180 consecutive recent events and exposes earlier pages',async()=>{
+  const all=Array.from({length:300},(_,i)=>message(`event-${i}`,day(2026,10,10)+i*1000,i%11===0?'sticker':'text'));
+  const pages=[];
+  for(let e=all.length;e>0;e-=80){
+    const batch=all.slice(Math.max(0,e-80),e).reverse();
+    pages.push({messages:batch,cursor:e>80?{beforeTs:batch.at(-1).ts,beforeId:batch.at(-1).id}:null,hasMore:e>80});
+  }
+  const retrieved=[];
+  const result=await collectRecentArchiveWindow(pages[0],async cursor=>{
+    retrieved.push(cursor);
+    return pages[retrieved.length];
+  },180);
+  assert.equal(result.pages.length,3);
+  assert.equal(result.messages.length,240);
+  assert.equal(retrieved.length,2);
+  assert.equal(result.hasMore,true);
+  const mixed=mergeArchiveHistory([],result.messages);
+  const last180=normalizeStoredHistory(mixed);
+  assert.deepEqual(last180.map(x=>x.id),all.slice(-180).map(x=>x.id));
+  assert.ok(result.pages.at(-1).messages.some(x=>!last180.some(y=>y.id===x.id)));
+});
+
+test('archive hydration fails open on page errors without truncating local history',async()=>{
+  const initial={messages:[message('recent',day(2026,10,14))],cursor:{beforeTs:12,beforeId:'recent'},hasMore:true};
+  const result=await collectRecentArchiveWindow(initial,async()=>{throw new Error('offline');},180);
+  assert.equal(result.pages.length,1);
+  assert.equal(result.messages.length,1);
+  assert.equal(result.error,'offline');
+});
+
+test('legacy local sticker tail is replaced by recent contiguous archive text where archived',async()=>{
+  const start=day(2026,10,14);
+  const olderStickerTail=Array.from({length:40},(_,i)=>message(`legacy-sticker-${i}`,start-500000+i*1000,'sticker'));
+  const archivedText=Array.from({length:240},(_,i)=>message(`archived-text-${i}`,start+i*1000));
+  const oldLocal=[...olderStickerTail,...archivedText.slice(-140)];
+  const pages=[
+    {messages:archivedText.slice(-80),cursor:{beforeTs:start+159000,beforeId:'archived-text-159'},hasMore:true},
+    {messages:archivedText.slice(-160,-80),cursor:{beforeTs:start+79000,beforeId:'archived-text-79'},hasMore:true},
+    {messages:archivedText.slice(-240,-160),cursor:null,hasMore:false}
+  ];
+  let calls=0;
+  const pagesFromCloud=await collectRecentArchiveWindow(pages[0], async()=>pages[++calls],180);
+  const merged=normalizeStoredHistory(mergeArchiveHistory(oldLocal,pagesFromCloud.messages));
+  assert.equal(merged.length,180);
+  assert.deepEqual(merged.map(x=>x.id),archivedText.slice(-180).map(x=>x.id));
+  assert.equal(merged.some(x=>x.id.startsWith('legacy-sticker-')),false);
+});
+
+test('archive pagination protects against repeated cursors',async()=>{
+  const repeated={messages:[message('only',day(2026,10,14))],cursor:{beforeTs:100,beforeId:'same'},hasMore:true};
+  let requests=0;
+  const result=await collectRecentArchiveWindow(repeated,async()=>{requests++;return repeated;},180);
+  assert.equal(requests,1);
+  assert.equal(result.pages.length,2);
 });
