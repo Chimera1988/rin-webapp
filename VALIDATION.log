@@ -1,0 +1,90 @@
+
+> check
+> npm test && node --check installer/install.mjs && node --check lib/memory-foundation/autobiography.js && node --check lib/memory-foundation/backfill.js && node --check lib/memory-foundation/snapshots.js && node --check public/js/cloud_memory_sync.js
+
+
+> test
+> node --test tests/*.test.js
+
+TAP version 13
+# Subtest: all patches have unique paths, anchored changes and one-way releases
+ok 1 - all patches have unique paths, anchored changes and one-way releases
+  ---
+  duration_ms: 1.271056
+  type: 'test'
+  ...
+# Subtest: cloud backup saves content once, does not mutate browser diary and verifies server acknowledgement
+ok 2 - cloud backup saves content once, does not mutate browser diary and verifies server acknowledgement
+  ---
+  duration_ms: 6.997455
+  type: 'test'
+  ...
+# Subtest: bounded archive backfill returns cursor and only saves source-linked first-person claims
+ok 3 - bounded archive backfill returns cursor and only saves source-linked first-person claims
+  ---
+  duration_ms: 5.072995
+  type: 'test'
+  ...
+# Subtest: records explicit completed acts, not hypothetical or negated claims
+ok 4 - records explicit completed acts, not hypothetical or negated claims
+  ---
+  duration_ms: 5.880862
+  type: 'test'
+  ...
+# Subtest: stably identifies exact source, preserving epistemic uncertainty
+ok 5 - stably identifies exact source, preserving epistemic uncertainty
+  ---
+  duration_ms: 1.536446
+  type: 'test'
+  ...
+# Subtest: only explicit recall and specific subject triggers cloud query
+ok 6 - only explicit recall and specific subject triggers cloud query
+  ---
+  duration_ms: 0.679784
+  type: 'test'
+  ...
+# Subtest: read-only recall passes parameterized SQL and retains provenance
+ok 7 - read-only recall passes parameterized SQL and retains provenance
+  ---
+  duration_ms: 0.387845
+  type: 'test'
+  ...
+# Subtest: writes only source-linked candidates idempotently
+ok 8 - writes only source-linked candidates idempotently
+  ---
+  duration_ms: 0.55112
+  type: 'test'
+  ...
+# Subtest: browser WebCrypto snapshots match server Node verification
+ok 9 - browser WebCrypto snapshots match server Node verification
+  ---
+  duration_ms: 5.807662
+  type: 'test'
+  ...
+# Subtest: tampered snapshot is rejected before SQL write
+ok 10 - tampered snapshot is rejected before SQL write
+  ---
+  duration_ms: 2.058993
+  type: 'test'
+  ...
+# Subtest: snapshot is an immutable idempotent copy, not a browser restore
+ok 11 - snapshot is an immutable idempotent copy, not a browser restore
+  ---
+  duration_ms: 0.922971
+  type: 'test'
+  ...
+# Subtest: reject snapshot exceeding 300KB before any hashing
+ok 12 - reject snapshot exceeding 300KB before any hashing
+  ---
+  duration_ms: 3.44415
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 80.753134
