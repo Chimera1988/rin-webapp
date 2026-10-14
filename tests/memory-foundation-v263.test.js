@@ -6,6 +6,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { memoryFoundationStatus, memoryObservationPreview } from '../lib/memory-foundation/status.js';
 import { readMemoryFoundationStatus, readRecentMemorySources } from '../lib/memory-foundation/database.js';
 import handler from '../api/archive.js';
+import { testSessionHeaders } from './helpers/security.js';
 
 const source = relative => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 const fakeResponse = () => ({
@@ -83,7 +84,7 @@ test('v2.6.3 diagnostics share archive API, honor PIN, and reject unsupported me
     await handler({method:'GET',headers:{'x-rin-pin':'bad'},query:{mode:'memory-status'}},unauthorized);
     assert.equal(unauthorized.code,401);
     const unconfigured=fakeResponse();
-    await handler({method:'GET',headers:{'x-rin-pin':'987123'},query:{mode:'memory-status'}},unconfigured);
+    await handler({method:'GET',headers:testSessionHeaders(),query:{mode:'memory-status'}},unconfigured);
     assert.equal(unconfigured.code,503);
     assert.equal(unconfigured.body.code,'ARCHIVE_NOT_CONFIGURED');
     // A memory-status GET must never call the archive POST action.
@@ -104,7 +105,7 @@ test('v2.6.3 diagnostics share archive API, honor PIN, and reject unsupported me
 
 test('v2.6.3 does not modify production cognition, existing memory or the chat archive paths',()=>{
   const api=source('api/archive.js');
-  assert.match(api,/requirePin\(req,res\)/u);
+  assert.match(api,/requireSession\(req,res\)/u);
   assert.match(api,/mode==='memory-status'/u);
   assert.match(api,/mode==='memory-recent'/u);
   assert.doesNotMatch(api,/UPDATE rin_memory_|INSERT INTO rin_memory_|DELETE FROM rin_memory_/iu);

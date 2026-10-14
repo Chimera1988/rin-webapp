@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import pushHandler from '../api/push.js';
 import cronHandler from '../api/push-cron.js';
+import { testSessionHeaders } from './helpers/security.js';
 
 function response() {
   return {code:200,body:null,headers:{},setHeader(k,v){this.headers[k]=v;return this;},status(c){this.code=c;return this;},json(v){this.body=v;return this;}};
@@ -19,7 +20,7 @@ test('push endpoint refuses unauthenticated requests before push business Redis 
 test('push endpoint validates action before accessing Redis',async()=>{
   const previous=process.env.ACCESS_PIN;process.env.ACCESS_PIN='correct-pin';
   try {
-    const res=response();await pushHandler({method:'POST',headers:{'x-rin-pin':'correct-pin'},body:{action:'unrecognized'}},res);
+    const res=response();await pushHandler({method:'POST',headers:{...testSessionHeaders(),'x-rin-pin':'correct-pin'},body:{action:'unrecognized'}},res);
     assert.equal(res.code,400);assert.equal(res.body.code,'INVALID_PUSH_ACTION');
   } finally {if(previous===undefined)delete process.env.ACCESS_PIN;else process.env.ACCESS_PIN=previous;}
 });

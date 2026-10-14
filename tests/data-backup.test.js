@@ -14,6 +14,7 @@ function wallpaper(initial = '') {
   };
 }
 const picture = 'data:image/png;base64,aGVsbG8=';
+const PASSWORD='a long independent archive password';
 const sourceData = {
   'rin-history-v6': JSON.stringify([{role: 'user', content: 'Привет!', ts: 100}, {role: 'assistant', content: 'И тебе привет', ts: 110}]),
   'rin-diary-v1': JSON.stringify({ memories: [{ place: 'Вологда' }], conversationState: { revision: 23 } }),
@@ -24,11 +25,13 @@ const sourceData = {
 
 test('backup round-trip moves history, diary, settings and wallpaper, without PIN', async () => {
   const source = new MemoryStorage(sourceData);
-  const created = await createBackup({ storage: source, wallpaperStore: wallpaper(picture), cryptoRef: webcrypto, now: Date.parse('2026-10-10T13:20:00Z') });
+  const created = await createBackup({ storage: source, wallpaperStore: wallpaper(picture), cryptoRef: webcrypto, password: PASSWORD, now: Date.parse('2026-10-10T13:20:00Z') });
   assert.equal(created.summary.messages, 2);
   assert.ok(created.filename.includes('2026-10-10'));
   assert.ok(!created.json.includes('SECRET_PIN_MUST_NOT_LEAK'));
-  const parsed = await parseBackup(created.json, { cryptoRef: webcrypto });
+  assert.ok(!created.json.includes('Привет!'));
+  assert.ok(!created.json.includes('Вологда'));
+  const parsed = await parseBackup(created.json, { cryptoRef: webcrypto, password: PASSWORD });
   assert.equal(parsed.summary.wallpaper, true);
   const dest = new MemoryStorage({ 'rin-history-v6': '[]', 'rin-pin': 'MY_PWA_PIN', 'rin-sticker-prob': '5' });
   const destWallpaper = wallpaper();
@@ -42,22 +45,21 @@ test('backup round-trip moves history, diary, settings and wallpaper, without PI
   assert.equal(await destWallpaper.get(), picture);
 });
 
-test('tampered content and unexpected storage keys are rejected before restore', async () => {
-  const created = await createBackup({ storage: new MemoryStorage(sourceData), wallpaperStore: wallpaper(), cryptoRef: webcrypto });
-  const damaged = JSON.parse(created.json);
-  damaged.payload.storage['rin-theme'] = 'theme-dark';
-  await assert.rejects(() => parseBackup(JSON.stringify(damaged), { cryptoRef: webcrypto }), /BACKUP_CHECKSUM_INVALID/);
-  const unexpected = JSON.parse(created.json);
-  unexpected.payload.storage['rin-pin'] = 'stolen';
-  await assert.rejects(() => parseBackup(JSON.stringify(unexpected), { cryptoRef: webcrypto }), /BACKUP_STORAGE_INVALID/);
-  const stale = { ...JSON.parse(created.json), format: 'other-application' };
-  await assert.rejects(() => parseBackup(JSON.stringify(stale), { cryptoRef: webcrypto }), /BACKUP_FORMAT_UNSUPPORTED/);
-  assert.equal(JSON.parse(created.json).format, RIN_BACKUP_FORMAT);
+test('tampered encrypted ciphertext, missing and wrong passwords are rejected', async () => {
+  const created = await createBackup({storage:new MemoryStorage(sourceData),wallpaperStore:wallpaper(),cryptoRef:webcrypto,password:PASSWORD});
+  await assert.rejects(()=>parseBackup(created.json,{cryptoRef:webcrypto}),/BACKUP_PASSWORD_REQUIRED/);
+  await assert.rejects(()=>parseBackup(created.json,{cryptoRef:webcrypto,password:'a different long password'}),/BACKUP_DECRYPT_FAILED/);
+  const damaged=JSON.parse(created.json);
+  damaged.ciphertext=damaged.ciphertext.slice(0,35)+(damaged.ciphertext[35]==='A'?'B':'A')+damaged.ciphertext.slice(36);
+  await assert.rejects(()=>parseBackup(JSON.stringify(damaged),{cryptoRef:webcrypto,password:PASSWORD}),/BACKUP_DECRYPT_FAILED/);
+  const stale={...JSON.parse(created.json),format:'other-application'};
+  await assert.rejects(()=>parseBackup(JSON.stringify(stale),{cryptoRef:webcrypto,password:PASSWORD}),/BACKUP_FORMAT_UNSUPPORTED/);
+  assert.equal(JSON.parse(created.json).format,RIN_BACKUP_FORMAT);
 });
 
 test('ordinary write failures roll back all local keys and wallpaper', async () => {
-  const created = await createBackup({ storage: new MemoryStorage(sourceData), wallpaperStore: wallpaper(picture), cryptoRef: webcrypto });
-  const parsed = await parseBackup(created.json, { cryptoRef: webcrypto });
+  const created = await createBackup({ storage: new MemoryStorage(sourceData), wallpaperStore: wallpaper(picture), cryptoRef: webcrypto, password: PASSWORD });
+  const parsed = await parseBackup(created.json, { cryptoRef: webcrypto, password: PASSWORD });
   const dest = new MemoryStorage({ 'rin-history-v6': '[]', 'rin-pin': 'KEEP_ME', 'rin-theme': 'theme-dark' });
   const destWallpaper = wallpaper('data:image/png;base64,ZW5k');
   const oldWallpaper = await destWallpaper.get();

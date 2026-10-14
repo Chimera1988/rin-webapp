@@ -25,7 +25,7 @@ test('protected snapshots use authenticated encryption and reject tampering',()=
   const encrypted=seal({secret:'личная память'},KEY);
   assert.ok(!encrypted.includes('личная'));
   assert.deepEqual(openSealed(encrypted,KEY),{secret:'личная память'});
-  assert.throws(()=>openSealed(encrypted.slice(0,-1)+'A',KEY));
+  assert.throws(()=>openSealed(encrypted.slice(0,20)+(encrypted[20]==='A'?'B':'A')+encrypted.slice(21),KEY));
 });
 test('accepts Apple Push and rejects arbitrary servers',()=>{
   assert.deepEqual(validateSubscription(subscription).endpoint,subscription.endpoint);

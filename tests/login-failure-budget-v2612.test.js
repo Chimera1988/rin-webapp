@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import loginHandler from '../api/login.js';
+import { setSessionRedisForTests } from '../lib/server/session.js';
 import { setSecurityRedisForTests } from '../lib/server/security-gate.js';
 import { createReq, createRes } from './helpers/runtime.js';
 
 const originalPin = process.env.ACCESS_PIN;
 process.env.ACCESS_PIN = 'test-2612-strong-pin';
+const originalSessionKey=process.env.RIN_PUSH_DATA_KEY;
+process.env.RIN_PUSH_DATA_KEY=Buffer.alloc(32,43).toString('base64url');
+setSessionRedisForTests({async set(){return 'OK';}});
 
 function redisHarness() {
   let seconds = 0;
@@ -125,7 +129,10 @@ test('missing ACCESS_PIN remains a configuration error and does not create a fai
     assert.equal(res.statusCode,503);
     assert.equal(res.body.code,'AUTH_NOT_CONFIGURED');
     assert.equal(client.values.size,0);
-  } finally { process.env.ACCESS_PIN = 'test-2612-strong-pin'; setSecurityRedisForTests(null); }
+  } finally { process.env.ACCESS_PIN = 'test-2612-strong-pin';
+const originalSessionKey=process.env.RIN_PUSH_DATA_KEY;
+process.env.RIN_PUSH_DATA_KEY=Buffer.alloc(32,43).toString('base64url');
+setSessionRedisForTests({async set(){return 'OK';}}); setSecurityRedisForTests(null); }
 });
 
 test('all UI entry points and debug version agree on release 2.6.12', async () => {
@@ -135,9 +142,9 @@ test('all UI entry points and debug version agree on release 2.6.12', async () =
   const login = await readFile(new URL('../public/login.html', import.meta.url), 'utf8');
   const client = await readFile(new URL('../public/chat.js', import.meta.url), 'utf8');
   const id = release.match(/RIN_RELEASE_ID = '([^']+)'/)?.[1];
-  assert.equal(id, '2026-10-14-rin-mind-v2.6.12-login-failure-budget');
+  assert.equal(id, '2026-10-14-rin-mind-v2.6.13-secure-session-private-backup');
   for (const html of [index, login]) {
-    assert.match(html, /v2\.6\.12-login-failure-budget/);
+    assert.match(html, /v2\.6\.13-secure-session-private-backup/);
     assert.doesNotMatch(html, /v2\.6\.9-scene-episodic-candidates/);
   }
   assert.match(client, /const RIN_BUILD_VERSION = RIN_RELEASE_ID/);
@@ -147,4 +154,7 @@ test.after(() => {
   if (originalPin === undefined) delete process.env.ACCESS_PIN;
   else process.env.ACCESS_PIN = originalPin;
   setSecurityRedisForTests(null);
+  setSessionRedisForTests(null);
+  if(originalSessionKey===undefined)delete process.env.RIN_PUSH_DATA_KEY;
+  else process.env.RIN_PUSH_DATA_KEY=originalSessionKey;
 });

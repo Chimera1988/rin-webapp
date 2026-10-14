@@ -98,6 +98,6 @@ test('migration SQL is idempotent and audio is private rather than linked public
   assert.match(sql,/IF NOT EXISTS rin_archive_assets/);
   assert.match(media,/access:'private'/);
   assert.match(tts,/preserveRinAudio\(body.messageId, buf\)/);
-  assert.match(archiveApi,/requirePin\(req,res\)/);
+  assert.match(archiveApi,/requireSession\(req,res\)/);
   assert.match(browser,/api\/archive-media/);
 });

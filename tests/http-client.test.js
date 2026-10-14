@@ -5,26 +5,23 @@ import {
   fetchWithTimeout,
   getStoredPin,
   removeStoredPin,
-  storePin
+  setCsrfToken
 } from '../public/js/http_client.js';
 import { MemoryStorage } from './helpers/runtime.js';
 
-test('client PIN helpers use one storage contract and tolerate unavailable storage', () => {
-  const storage = new MemoryStorage();
-  assert.equal(storePin(' 2468 ', storage), true);
-  assert.equal(getStoredPin(storage), '2468');
-  assert.equal(authenticatedHeaders({ Accept: 'application/json' }, storage)['X-Rin-Pin'], '2468');
-  assert.equal(removeStoredPin(storage), true);
-  assert.equal(getStoredPin(storage), '');
-
-  const blocked = {
-    getItem() { throw new Error('blocked'); },
-    setItem() { throw new Error('blocked'); },
-    removeItem() { throw new Error('blocked'); }
-  };
-  assert.equal(getStoredPin(blocked), '');
-  assert.equal(storePin('1', blocked), false);
-  assert.equal(removeStoredPin(blocked), false);
+test('client uses transient CSRF headers, not persistent PIN, and can delete legacy data',()=>{
+  const storage=new MemoryStorage({'rin-pin':' 2468 '});
+  assert.equal(getStoredPin(storage),'2468');
+  assert.equal(authenticatedHeaders({Accept:'application/json'})['X-Rin-Pin'],undefined);
+  setCsrfToken('temporary-csrf');
+  assert.equal(authenticatedHeaders()['X-Rin-CSRF'],'temporary-csrf');
+  setCsrfToken('');
+  assert.equal(authenticatedHeaders()['X-Rin-CSRF'],undefined);
+  assert.equal(removeStoredPin(storage),true);
+  assert.equal(storage.getItem('rin-pin'),null);
+  const blocked={getItem(){throw Error('blocked');},removeItem(){throw Error('blocked');}};
+  assert.equal(getStoredPin(blocked),'');
+  assert.equal(removeStoredPin(blocked),false);
 });
 
 test('client fetch policy aborts stalled requests with a retryable AbortError', async () => {
