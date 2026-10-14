@@ -185,7 +185,15 @@ export function resolveDailyRhythm(env = {}, policy = {}, currentInput = {}, now
     }
   } else if (afterWake) {
     if (!sleepStartedAt && plannedSleepAt < plannedWakeAt) sleepStartedAt = inferredSleepStart;
-    if (sleepStartedAt > 0 && sleepStartedAt < plannedWakeAt) {
+    // Reconcile the previous night only once. Reapplying the debt blend on
+    // every chat turn causes artificial recovery (44 -> 28 -> 21 minutes).
+    // The completed sleep duration is persisted by the existing inner-life schema.
+    const nightAlreadyReconciled = sameCycle &&
+      ['awake', 'waking'].includes(clean(current.sleepPhase, 40)) &&
+      Number(current.lastSleepMinutes || 0) > 0;
+    if (nightAlreadyReconciled) {
+      // Preserve both the measured duration and its associated debt until a new cycle.
+    } else if (sleepStartedAt > 0 && sleepStartedAt < plannedWakeAt) {
       let awakePenaltyMinutes = 0;
       if (wakeReason === 'kirill_message' && lastWakeAt > sleepStartedAt && lastWakeAt < plannedWakeAt) {
         const latestNightContact = Math.max(lastWakeAt, Math.min(previousLastUserAt || lastWakeAt, plannedWakeAt));
@@ -224,7 +232,7 @@ export function resolveDailyRhythm(env = {}, policy = {}, currentInput = {}, now
   const workday = currentDay.dayType === 'weekday';
   const workMode = workday ? 'normal' : 'off';
   const sleepCarryover = lateConversationMinutes >= 20
-    ? `разговор с Кириллом продолжался примерно на ${lateConversationMinutes} мин позже обычного времени сна; это может ощущаться утром, при этом Рин сама участвовала в решении не заканчивать разговор`
+    ? `поздний контакт произошёл примерно через ${lateConversationMinutes} мин после обычного времени сна; это не доказывает непрерывный разговор или решение Рин бодрствовать: учитывай, отвечала ли она на самом деле`
     : interruptions > 0
       ? `ночью сон был прерван сообщением Кирилла; это может ощущаться утром, но не означает желание оттолкнуть его`
       : '';
