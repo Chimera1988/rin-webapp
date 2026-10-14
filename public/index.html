@@ -12,12 +12,12 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/rin-kitsune-180.png" />
 
   <!-- Тема применяется до CSS/отрисовки внешним CSP-совместимым bootstrap. -->
-  <script src="/js/theme_bootstrap.js?v=2026-10-14-rin-mind-v2.6.12-login-failure-budget"></script>
+  <script src="/js/theme_bootstrap.js?v=2026-10-14-rin-mind-v2.6.13-secure-session-private-backup"></script>
 
   <style>html:not(.auth-ready) body{visibility:hidden}</style>
-  <link rel="stylesheet" href="/style.css?v=2026-10-14-rin-mind-v2.6.12-login-failure-budget" />
-  <link rel="stylesheet" href="/archive.css?v=2026-10-14-rin-mind-v2.6.12-login-failure-budget" />
-  <link rel="stylesheet" href="/voice_player.css?v=2026-10-14-rin-mind-v2.6.12-login-failure-budget" />
+  <link rel="stylesheet" href="/style.css?v=2026-10-14-rin-mind-v2.6.13-secure-session-private-backup" />
+  <link rel="stylesheet" href="/archive.css?v=2026-10-14-rin-mind-v2.6.13-secure-session-private-backup" />
+  <link rel="stylesheet" href="/voice_player.css?v=2026-10-14-rin-mind-v2.6.13-secure-session-private-backup" />
 </head>
 <body class="chat-app">
 
@@ -394,7 +394,7 @@
         <h3 class="settings-group-title">Резервная копия</h3>
         <div class="settings-detail-card">
           <div class="settings-control-row">
-            <div><strong>Сохранить историю Rin</strong><small>Сообщения, дневник, текущее состояние, настройки и обои. PIN входа не включается.</small></div>
+            <div><strong>Сохранить историю Rin</strong><small>Сообщения, дневник, текущее состояние, настройки и обои. Данные входа в копию не включаются.</small></div>
           </div>
           <button id="backupExport" class="settings-action settings-backup-button" type="button">Создать резервную копию</button>
           <a id="backupDownload" class="settings-action settings-backup-button" href="#" download hidden>Скачать готовый файл</a>
@@ -405,12 +405,19 @@
           <label class="settings-action settings-file-action settings-backup-button" for="backupImport">Выбрать файл копии
             <input id="backupImport" type="file" accept=".json,application/json" />
           </label>
+          <p class="settings-backup-status">Новые копии шифруются отдельным паролем (от 12 символов). Пароль восстановить нельзя. Старые копии можно импортировать.</p>
           <p id="backupStatus" class="settings-backup-status" role="status" aria-live="polite">Для переноса: сначала создай копию в Safari, затем открой её через PWA.</p>
+        </div>
+        <h3 class="settings-group-title">Безопасность</h3>
+        <div class="settings-detail-card">
+          <div class="settings-control-row"><div><strong>Завершить сеанс</strong><small>Удалить серверную сессию на этом устройстве. Переписка и память сохранятся.</small></div></div>
+          <button id="securityLogout" class="settings-action settings-backup-button" type="button">Выйти из Rin</button>
+          <p id="securityLogoutStatus" class="settings-backup-status" role="status" aria-live="polite"></p>
         </div>
         <h3 class="settings-group-title">Сброс</h3>
         <div class="settings-detail-card">
           <div class="settings-control-row">
-            <div><strong>Сбросить данные</strong><small>Удалить историю, память, профиль, настройки, счётчики инициатив, стикеров и локальные кэши на этом устройстве. PIN входа останется сохранён</small></div>
+            <div><strong>Сбросить данные</strong><small>Удалить историю, память, профиль, настройки, счётчики инициатив, стикеров и локальные кэши на этом устройстве. Авторизация останется активной</small></div>
           </div>
           <div class="settings-divider"></div>
           <button id="resetApp" class="settings-reset-button" type="button">Сбросить данные</button>
@@ -453,7 +460,7 @@
   </div>
 
   <!-- Единая точка запуска: сначала серверная проверка PIN, затем UI и чат. -->
-  <script type="module" src="/js/app_bootstrap.js?v=2026-10-14-rin-mind-v2.6.12-login-failure-budget"></script>
+  <script type="module" src="/js/app_bootstrap.js?v=2026-10-14-rin-mind-v2.6.13-secure-session-private-backup"></script>
 
   <!-- Мини-стили панели персонажа (если есть собственные — этот блок можно убрать) -->
   <style>
@@ -474,5 +481,20 @@
     .muted{color:#948c90}
     .settings .btn{white-space:nowrap}
   </style>
+  <dialog id="backupPasswordDialog" class="backup-password-dialog" aria-labelledby="backupPasswordTitle">
+    <form id="backupPasswordForm" method="dialog">
+      <h2 id="backupPasswordTitle">Пароль резервной копии</h2>
+      <p id="backupPasswordHelp">Не используй PIN входа. Сохрани этот пароль отдельно от копии.</p>
+      <label for="backupPassword">Пароль</label>
+      <input id="backupPassword" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+      <label id="backupPasswordRepeatLabel" for="backupPasswordRepeat">Повтори пароль</label>
+      <input id="backupPasswordRepeat" type="password" autocomplete="new-password" minlength="12" maxlength="256" />
+      <p id="backupPasswordError" role="alert" aria-live="polite"></p>
+      <div class="backup-password-actions">
+        <button type="button" id="backupPasswordCancel">Отмена</button>
+        <button type="submit">Продолжить</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

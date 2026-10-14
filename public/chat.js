@@ -22,7 +22,7 @@ import { createLocalSettings } from './js/local_settings.js';
 import { environmentIntent } from './js/environment_intent.js';
 import { weatherRefreshIntent, verifiedWeatherEvidence } from './js/weather_evidence.js';
 import { selfFollowThrough } from './js/self_follow_through.js';
-import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './js/http_client.js';
+import { authenticatedHeaders, fetchWithTimeout, setCsrfToken } from './js/http_client.js';
 import { createPresenceController } from './js/presence_controller.js';
 import { createHumanDeliveryScheduler, createInputAggregator } from './js/delivery_scheduler.js';
 import { createChatViewportController } from './js/chat_viewport.js';
@@ -1223,12 +1223,51 @@ function setBackupBusy(value) {
   if (backupExportButton) backupExportButton.disabled = backupBusy;
   if (backupImportInput) backupImportInput.disabled = backupBusy;
 }
+function requestBackupPassword({repeat=false}={}) {
+  const dialog=document.getElementById('backupPasswordDialog');
+  const form=document.getElementById('backupPasswordForm');
+  const password=document.getElementById('backupPassword');
+  const confirmation=document.getElementById('backupPasswordRepeat');
+  const label=document.getElementById('backupPasswordRepeatLabel');
+  const error=document.getElementById('backupPasswordError');
+  const cancel=document.getElementById('backupPasswordCancel');
+  if(!dialog?.showModal||!form||!password||!confirmation)return Promise.reject(new Error('BACKUP_DIALOG_UNAVAILABLE'));
+  password.value='';confirmation.value='';error.textContent='';
+  confirmation.hidden=!repeat;label.hidden=!repeat;
+  confirmation.required=repeat;
+  dialog.showModal();
+  password.focus();
+  return new Promise(resolve=>{
+    let completed=false;
+    const finish=value=>{
+      if(completed)return;completed=true;
+      form.removeEventListener('submit',submit);cancel.removeEventListener('click',abort);
+      dialog.removeEventListener('close',closed);
+      password.value='';confirmation.value='';
+      if(dialog.open)dialog.close();
+      resolve(value);
+    };
+    const abort=()=>finish(null);
+    const closed=()=>finish(null);
+    const submit=event=>{
+      event.preventDefault();
+      if(password.value.length<12){error.textContent='Используй не менее 12 символов.';return;}
+      if(repeat && password.value!==confirmation.value){error.textContent='Пароли не совпадают.';return;}
+      finish(password.value);
+    };
+    form.addEventListener('submit',submit);
+    cancel.addEventListener('click',abort);
+    dialog.addEventListener('close',closed);
+  });
+}
 if (backupExportButton) {
   backupExportButton.addEventListener('click', async () => {
     if (backupBusy) return;
     setBackupBusy(true);
     try {
-      const backup = await createBackup({ storage: localStorage, wallpaperStore });
+      const password=await requestBackupPassword({repeat:true});
+      if(!password){setBackupStatus('Создание копии отменено.');return;}
+      const backup = await createBackup({ storage: localStorage, wallpaperStore, password });
       const url = URL.createObjectURL(new Blob([backup.json], { type: 'application/json;charset=utf-8' }));
       if (backupDownloadUrl) URL.revokeObjectURL(backupDownloadUrl);
       backupDownloadUrl = url;
@@ -1252,10 +1291,14 @@ if (backupImportInput) {
     setBackupBusy(true);
     try {
       if (file.size > MAX_BACKUP_IMPORT_BYTES) throw new Error('BACKUP_SIZE_INVALID');
-      const backup = await parseBackup(await file.text());
+      const raw=await file.text();
+      let parsedHeader;try{parsedHeader=JSON.parse(raw);}catch{throw new Error('BACKUP_JSON_INVALID');}
+      const password=parsedHeader?.version===1?undefined:await requestBackupPassword();
+      if(parsedHeader?.version!==1 && !password){setBackupStatus('Восстановление отменено.');return;}
+      const backup = await parseBackup(raw,{password});
       const summary = backup.summary;
       const date = new Date(backup.createdAt).toLocaleString('ru-RU');
-      if (!confirm(`Восстановить резервную копию от ${date}?\n\nСообщений: ${summary.messages}\nЗаписей хранилища: ${summary.keys}\nОбои: ${summary.wallpaper ? 'есть' : 'нет'}\n\nТекущая переписка и память на ЭТОМ устройстве будут заменены. PIN входа не меняется.`)) {
+      if (!confirm(`Восстановить резервную копию от ${date}?\n\nСообщений: ${summary.messages}\nЗаписей хранилища: ${summary.keys}\nОбои: ${summary.wallpaper ? 'есть' : 'нет'}\n\nТекущая переписка и память на ЭТОМ устройстве будут заменены. Сессия входа не меняется.`)) {
         setBackupStatus('Восстановление отменено. Данные не изменены.');
         return;
       }
@@ -1273,6 +1316,25 @@ if (backupImportInput) {
     }
   });
 }
+
+const logoutButton=document.getElementById('securityLogout');
+logoutButton?.addEventListener('click',async()=>{
+  if(!confirm('Завершить сессию на этом устройстве? Переписка и память сохранятся.'))return;
+  logoutButton.disabled=true;
+  const status=document.getElementById('securityLogoutStatus');
+  try{
+    const response=await fetchWithTimeout('/api/login',{
+      method:'POST',headers:authenticatedHeaders({'Content-Type':'application/json'}),
+      body:JSON.stringify({action:'logout'}),cache:'no-store'
+    },12000);
+    if(!response.ok)throw new Error('LOGOUT_FAILED');
+    setCsrfToken('');
+    window.location.replace('/login.html');
+  }catch{
+    if(status)status.textContent='Не удалось завершить сеанс. Проверь подключение и повтори.';
+    logoutButton.disabled=false;
+  }
+});
 
 /* — Сброс — */
 if (resetApp){
@@ -2585,7 +2647,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
     let data = {};
     try { data = await response.json(); } catch {}
     if (response.status === 401) {
-      removeStoredPin();
+      setCsrfToken('');
       window.location.replace('/login');
       return false;
     }
@@ -2862,7 +2924,7 @@ async function processUserBatch(messageIds = []) {
     try { data = await response.json(); } catch {}
     requestMs = requestStartedAt ? Math.max(0, Date.now() - requestStartedAt) : 0;
     if (response.status === 401) {
-      removeStoredPin();
+      setCsrfToken('');
       window.location.replace('/login');
       return;
     }
