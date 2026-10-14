@@ -1,5 +1,5 @@
 import { RIN_RELEASE_ID } from './release.js';
-import { authenticatedHeaders, fetchWithTimeout, getStoredPin, removeStoredPin } from './http_client.js';
+import { fetchWithTimeout, getStoredPin, removeStoredPin, setCsrfToken } from './http_client.js';
 
 function redirectToLogin(reason = '') {
   const query = reason ? `?reason=${encodeURIComponent(reason)}` : '';
@@ -10,18 +10,28 @@ document.getElementById('backButton')?.addEventListener('click', () => {
   if (window.history.length > 1) window.history.back();
 });
 
-async function validateSession(pin) {
+async function validateSession() {
   try {
-    const response = await fetchWithTimeout('/api/login', {
-      method: 'POST',
-      headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ pin }),
-      cache: 'no-store'
-    }, 10_000);
-    return { ok: response.ok, status: response.status };
-  } catch (error) {
-    return { ok: false, status: 0, code: error?.name === 'AbortError' ? 'timeout' : 'network' };
-  }
+    let response=await fetchWithTimeout('/api/login',{method:'GET',cache:'no-store'},10000);
+    // A one-time migration preserves access for existing iOS PWA installations.
+    if(response.status===401){
+      const oldPin=getStoredPin();
+      if(oldPin){
+        const migration=await fetchWithTimeout('/api/login',{
+          method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:oldPin}),cache:'no-store'
+        },10000);
+        if(migration.ok){removeStoredPin();response=await fetchWithTimeout('/api/login',{method:'GET',cache:'no-store'},10000);}
+        else if(migration.status===401){removeStoredPin();return {ok:false,status:401};}
+        else return {ok:false,status:migration.status};
+      }
+    }
+    if(!response.ok)return {ok:false,status:response.status};
+    const data=await response.json();
+    if(!data?.ok||!data?.csrf)return {ok:false,status:503};
+    setCsrfToken(data.csrf);
+    removeStoredPin();
+    return {ok:true,status:200};
+  }catch(error){return {ok:false,status:0,code:error?.name==='AbortError'?'timeout':'network'};}
 }
 
 const CHAT_ERROR_TEXTS = new Set([
@@ -91,23 +101,14 @@ function installChatErrorNoticeBridge() {
   return observer;
 }
 
-const pin = getStoredPin();
-if (!pin) {
-  redirectToLogin('missing_pin');
-} else {
-  const auth = await validateSession(pin);
-  if (!auth.ok) {
-    if (auth.status === 401) {
-      removeStoredPin();
-      redirectToLogin('invalid_pin');
-    } else {
-      redirectToLogin('auth_unavailable');
-    }
-  } else {
-    installChatErrorNoticeBridge();
-    await import(`/js/persona_ui.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
-    const chatModule = await import(`/chat.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
-    await chatModule.RIN_CHAT_READY;
-    document.documentElement.classList.add('auth-ready');
-  }
+const auth=await validateSession();
+if(!auth.ok){
+  if(auth.status===401){removeStoredPin();redirectToLogin('session_expired');}
+  else redirectToLogin('auth_unavailable');
+}else{
+  installChatErrorNoticeBridge();
+  await import(`/js/persona_ui.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
+  const chatModule=await import(`/chat.js?v=${encodeURIComponent(RIN_RELEASE_ID)}`);
+  await chatModule.RIN_CHAT_READY;
+  document.documentElement.classList.add('auth-ready');
 }
