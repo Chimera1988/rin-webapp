@@ -21,7 +21,7 @@ export function inspectMorningSequence({ history = [], now = Date.now() } = {}) 
     .sort((left, right) => Number(left.ts) - Number(right.ts));
 
   const state = { breakfast: null, preparing: null, travel: null, workplace: null,
-    work: null, corrected: false, evidenceAt: 0, correctionText: null };
+    work: null, lunch: null, conflict: false, corrected: false, evidenceAt: 0, correctionText: null };
   let anyRelevant = false;
   for (const item of recent) {
     let relevant = false;
@@ -57,7 +57,33 @@ export function inspectMorningSequence({ history = [], now = Date.now() } = {}) 
     const arrival = has(t, /(?:я\s+(?:уже|сейчас)\s+(?:в\s+рабочем\s+помещении|на\s+работе|в\s+офисе)|(?:я\s+)?(?:уже\s+)?(?:добралась|приехала)\s+(?:на\s+работу|в\s+офис|в\s+рабочее))/iu);
     const travelNow = has(t, /(?:я\s+(?:сейчас\s+)?еду\s+(?:на\s+работу|в\s+офис|в\s+рабочее)|я\s+в\s+дороге\s+(?:на\s+работу|в\s+офис)|я\s+(?:уже\s+)?в\s+пути\s+на\s+работу)/iu);
     const travelPlan = has(t, /(?:потом|затем|после\s+завтрака|после\s+сборов)\s+поеду|(?:собираюсь|планирую)\s+ехать\s+на\s+работу|когда\s+доберусь/iu);
-    if (notArrived) {
+    // Once Rin has reported lunch or resumed work, an isolated regression to
+    // morning preparations is contradictory, not evidence of time travel.
+    // An explicit, specific correction can still revise her earlier report.
+    const lunchNotDone = has(t, /(?:не\s+(?:успела\s+)?пообедать|не\s+обедала|обеда\s+(?:ещё\s+)?не\s+было)/iu);
+    const lunchCompleted = has(t, /(?:я\s+(?:уже\s+)?пообедала|(?:уже\s+)?пообедала\s+и|после\s+обеда\s+(?:я\s+)?(?:вернулась|снова)|обед\s+(?:уже\s+)?закончила)/iu);
+    const lunchOngoing = has(t, /(?:я\s+(?:сейчас\s+)?обедаю|сейчас\s+на\s+обеде|я\s+ем\s+обед)/iu);
+    const lunchPlanned = has(t, /(?:пойду\s+пообедаю|собираюсь\s+пообедать|планирую\s+обед|хочу\s+пообедать)/iu);
+    const resumedWork = has(t, /(?:вернулась\s+к\s+(?:правкам|редактированию|тексту|работе)|снова\s+(?:редактирую|занимаюсь\s+правками)|после\s+обеда[^.!?]{0,80}(?:правк|редактир|работаю))/iu);
+    if (lunchNotDone) { state.lunch='planned'; relevant=true; }
+    else if (lunchCompleted) {state.lunch='claimed_complete'; relevant=true;}
+    else if (lunchOngoing) {state.lunch='in_progress'; relevant=true;}
+    else if (lunchPlanned && !state.lunch) {state.lunch='planned'; relevant=true;}
+    if (resumedWork) {
+      state.work='claimed_in_progress'; relevant=true;
+      // Editing can resume from home: neither inferred office arrival nor a
+      // stale morning 'not arrived' remains the authoritative current setting.
+      if (state.workplace === 'not_arrived') state.workplace=null;
+      if (state.preparing === 'in_progress') state.preparing=null;
+      if (state.travel === 'planned') state.travel=null;
+    }
+    const earlierProgress = ['in_progress','claimed_complete'].includes(state.lunch) ||
+      state.work === 'claimed_in_progress';
+    const explicitRollback = correction && lunchNotDone;
+    if (notArrived && earlierProgress && !explicitRollback) {
+      state.conflict = true;
+      relevant=true;
+    } else if (notArrived) {
       // The later correction is authoritative for the *reported* scene.
       state.preparing = 'in_progress';
       state.travel = 'planned';
@@ -108,19 +134,20 @@ export function formatMorningSequence(state = null) {
   const rows = [
     ['завтрак', state.breakfast], ['сборы', state.preparing],
     ['дорога', state.travel], ['рабочее место', state.workplace],
-    ['редакторская работа', state.work]
+    ['редакторская работа', state.work], ['обед', state.lunch]
   ].filter(([, phase]) => phase);
   if (!rows.length) return '';
-  return `- ПРИЧИННАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ УТРА (сведения только из недавних слов Рин): ${rows.map(([name, phase]) => `${name}: ${phases[phase] || phase}`).join('; ')}. ` +
+  return `- ПРИЧИННАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ ДНЯ (сведения только из недавних слов Рин): ${rows.map(([name, phase]) => `${name}: ${phases[phase] || phase}`).join('; ')}. ` +
     `Это сообщения о действиях, не независимое наблюдение. Рабочий интервал расписания НЕ доказывает, что она уже доехала, поела или открыла текст. ` +
     `Не переносить запланированное действие в прошлое автоматически; изменение плана и пропуск еды допустимы по её собственному решению. ` +
+    (state.conflict ? 'Обнаружено противоречие между поздним этапом дня и повторными утренними сборами: не выдавать оба состояния за истинные одновременно. ' : '') +
     (state.corrected ? 'Она уже исправляла собственную хронологию: последняя явная поправка приоритетнее старого заявления о месте/занятии. ' : '') +
     `Если описывает новый шаг — он должен следовать из последнего состояния, реального прошедшего времени или явно озвученного изменения плана.`;
 }
 
 
 // Persistent, bounded causal ledger (reported events, not verified physical facts).
-const FIELDS = ['breakfast', 'preparing', 'travel', 'workplace', 'work'];
+const FIELDS = ['breakfast', 'preparing', 'travel', 'workplace', 'work', 'lunch'];
 const PHASES = new Set(['planned','in_progress','claimed_complete','claimed_arrived','not_arrived','claimed_in_progress','skipped']);
 const FRESHNESS_MS = 4 * 60 * 60 * 1000;
 const SAME_SCENE_MINUTES = 30;
@@ -131,7 +158,7 @@ export function normalizeDailyEpisode(source = null, now = Date.now(), dayKey = 
   if (!Number.isFinite(at) || at <= 0 || at > now + 120000 || now - at > FRESHNESS_MS) return null;
   if (dayKey && String(source.dayKey || '') !== String(dayKey)) return null;
   const episode = {dayKey:String(source.dayKey || '').slice(0,10), evidenceAt:at,
-    corrected:source.corrected === true, correctionText:clean(source.correctionText).slice(0,200)};
+    corrected:source.corrected === true, conflict:source.conflict === true, correctionText:clean(source.correctionText).slice(0,200)};
   for (const field of FIELDS) episode[field] = PHASES.has(source[field]) ? source[field] : null;
   return FIELDS.some(key => episode[key]) ? episode : null;
 }
@@ -144,9 +171,20 @@ export function reconcileDailyEpisode({ prior = null, history = [], now = Date.n
   // History can be truncated while the persistent ledger remains newer.
   if (!next) return old;
   if (old && old.evidenceAt > next.evidenceAt) return old;
+  const progressed = old && (old.lunch === 'claimed_complete' || old.work === 'claimed_in_progress');
+  const regressed = next.workplace === 'not_arrived' && next.preparing === 'in_progress' &&
+    !['claimed_complete','in_progress'].includes(next.lunch) && next.work !== 'claimed_in_progress';
+  if (progressed && regressed && !next.corrected) {
+    return {...old, evidenceAt:next.evidenceAt, conflict:true};
+  }
   // Carry forward uncontradicted reported steps if old history is no longer present.
   if (old && old.evidenceAt < next.evidenceAt && !next.corrected) {
-    for (const field of FIELDS) if (!next[field]) next[field] = old[field];
+    for (const field of FIELDS) {
+      if (next[field]) continue;
+      if (['preparing','travel','workplace'].includes(field) &&
+          (next.work === 'claimed_in_progress' || next.lunch === 'claimed_complete')) continue;
+      next[field] = old[field];
+    }
   }
   return next;
 }
@@ -160,7 +198,8 @@ export function projectDailyEpisodeActivity(innerLife = {}, episode = null, now 
   if (!valid || current.workMode === 'off' || ['sleeping','interrupted_sleep','drowsy','winding_down'].includes(current.sleepPhase)) return current;
   const ageMinutes = (now - valid.evidenceAt) / 60000;
   // Explicit on-site statements have priority over an older plan.
-  if (valid.workplace === 'claimed_arrived') return current;
+  if (valid.workplace === 'claimed_arrived' || valid.work === 'claimed_in_progress' ||
+      ['in_progress','claimed_complete'].includes(valid.lunch)) return current;
   if (valid.workplace !== 'not_arrived') return current;
   let activity, goal, trace;
   if (valid.travel === 'in_progress' && ageMinutes <= SAME_SCENE_MINUTES) {
