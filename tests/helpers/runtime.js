@@ -9,7 +9,11 @@ export class MemoryStorage {
 }
 
 export function createReq({ method = 'POST', headers = {}, body = {}, query = {} } = {}) {
-  return { method, headers, body, query };
+  const pin=headers['x-rin-pin'] ?? headers['X-Rin-Pin'];
+  const validPin=pin && pin===String(process.env.ACCESS_PIN||'');
+  // Legacy fixtures now authenticate as a session. Production code has no such bridge.
+  const sessionHeaders=validPin && globalThis.__rinTestSessionHeaders?.() || {};
+  return { method, headers:{...sessionHeaders,...headers}, body, query };
 }
 
 export function createRes() {
