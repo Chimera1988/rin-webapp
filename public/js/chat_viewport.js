@@ -33,6 +33,29 @@ export function isNearChatBottom(chat, threshold = DEFAULT_BOTTOM_THRESHOLD) {
   return distance <= Math.max(0, Number(threshold) || 0);
 }
 
+// Selection mode changes the width of every message row. Keep the same visible
+// conversation position rather than letting scroll anchoring land on older text.
+export function preserveChatScrollDuringLayout(chat, update, bottomTolerance = 24) {
+  if (!chat || typeof update !== 'function') throw new TypeError('Expected chat and layout update.');
+  const previousTop = Number(chat.scrollTop) || 0;
+  const distance = Number(chat.scrollHeight || 0) - Number(chat.clientHeight || 0) - previousTop;
+  const wasAtBottom = distance <= Math.max(0, Number(bottomTolerance) || 0);
+  const chatTop = chat.getBoundingClientRect?.().top ?? 0;
+  const anchor = wasAtBottom ? null : [...(chat.querySelectorAll?.('.message-row[data-message-id]') || [])]
+    .find(row => row.getBoundingClientRect().bottom > chatTop);
+  const anchorTop = anchor?.getBoundingClientRect().top;
+
+  const result = update();
+  if (wasAtBottom) {
+    chat.scrollTop = chat.scrollHeight;
+  } else if (anchor && anchor.isConnected !== false && Number.isFinite(anchorTop)) {
+    chat.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+  } else {
+    chat.scrollTop = previousTop;
+  }
+  return result;
+}
+
 export function createChatViewportController({
   root,
   chat,
