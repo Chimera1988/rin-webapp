@@ -34,7 +34,8 @@ export async function processPushOpportunity({redis, schedule, now = Date.now(),
   const normalizedSchedule = normalizeScheduleConfig(schedule);
   currentMemory.innerLife = advanceInnerLifeForBackground(currentMemory.innerLife || {}, currentEnv, now, normalizedSchedule.innerLife, {
     relationship:currentMemory.relationship, mood:currentMemory.mood,
-    emotionalState:currentMemory.conversationState?.emotionalState
+    emotionalState:currentMemory.conversationState?.emotionalState,
+    history:modelSnapshot.history
   });
   const response = await generate({
     requestId,
