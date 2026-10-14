@@ -5,6 +5,8 @@ import {
   createSerialQueue,
   hasBlockingTurn,
   loadChatHistory,
+  normalizeStoredHistory,
+  CHAT_HISTORY_CACHE_LIMIT,
   isInternalNonverbalMetaText,
   normalizeReplySnapshot,
   reconcilePendingDeliveryHistory,
@@ -30,7 +32,7 @@ import { createWallpaperStore } from './js/wallpaper_store.js';
 import { createBackup, parseBackup, restoreBackup, MAX_BACKUP_IMPORT_BYTES } from './js/data_backup.js';
 import { createPushController } from './js/push_client.js';
 import { createDebugLogBuffer } from './js/debug_compact.js';
-import { createCloudArchive, mergeArchiveHistory } from './js/cloud_archive.js';
+import { collectRecentArchiveWindow, createCloudArchive, mergeArchiveHistory } from './js/cloud_archive.js';
 import { chatDayLabel, localDayKey } from './js/chat_day_groups.js';
 import { createVoicePlayer } from './js/voice_player.js';
 
@@ -741,6 +743,7 @@ function saveHistory(h){
 // there may be archived text *between* locally retained visual events.
 let archiveCursor=null;
 let archiveHasMore=false;
+let archivePrefetchedPages=[];
 let archivePendingPage=null;
 let archiveLoadButton=null;
 let archiveLoading=false;
@@ -755,11 +758,13 @@ function archiveDisplayable(message) {
 async function discoverUnseenArchivedPage(){
   const known=renderedArchiveIds();
   archivePendingPage=null;
-  while(archiveHasMore && archiveCursor){
-    const page=await cloudArchive.page(archiveCursor);
+  while(archivePrefetchedPages.length || (archiveHasMore && archiveCursor)){
+    // Prefetched pages were read during initial repair. Their cursor must NOT
+    // rewind the live cloud cursor, or manual paging would repeat pages.
+    const prefetched=archivePrefetchedPages.shift();
+    const page=prefetched || await cloudArchive.page(archiveCursor);
     if(!page) { archiveHasMore=false; return false; }
-    archiveCursor=page.cursor;
-    archiveHasMore=page.hasMore;
+    if(!prefetched){ archiveCursor=page.cursor; archiveHasMore=page.hasMore; }
     if(page.messages.some(m=>archiveDisplayable(m) && !known.has(m.id))){
       archivePendingPage=page;
       return true;
@@ -2057,12 +2062,22 @@ export const RIN_CHAT_READY = new Promise(resolve => { resolveChatReady = resolv
   const originalLocalHistory=history.slice();
   const firstArchivePage=await cloudArchive.start();
   if (firstArchivePage) {
-    history=mergeArchiveHistory(history,firstArchivePage.messages);
-    archiveCursor=firstArchivePage.cursor;
-    archiveHasMore=firstArchivePage.hasMore;
-    saveChatHistory(history,localStorage); // bounded local cache, not a full-history cutoff
-    cloudArchive.enqueue(originalLocalHistory); // idempotent migration
-    dbg(`cloud archive ready; recent=${firstArchivePage.messages.length}; older=${archiveHasMore?'yes':'no'}`);
+    // An older cache retained separate 140-text/40-sticker quotas. Fetch enough
+    // consecutive cloud events to reconstruct the newest unified 180-event slice,
+    // even if those missing text events had already been evicted locally.
+    const recent=await collectRecentArchiveWindow(
+      firstArchivePage, cursor=>cloudArchive.page(cursor), CHAT_HISTORY_CACHE_LIMIT
+    );
+    archiveCursor=recent.cursor;
+    archiveHasMore=recent.hasMore;
+    history=normalizeStoredHistory(mergeArchiveHistory(originalLocalHistory,recent.messages));
+    saveChatHistory(history,localStorage);
+    // Preserve every still-available local event for archival migration, even
+    // if it did not fit into the refreshed on-device cache.
+    cloudArchive.enqueue(originalLocalHistory);
+    archivePrefetchedPages=recent.pages;
+    if(recent.error) dbg(`recent archive hydration incomplete: ${recent.error}`);
+    dbg(`cloud archive ready; recent=${recent.messages.length}; local=${history.length}; older=${archiveHasMore?'yes':'no'}`);
   }
   for (const message of history) await renderStoredMessage(message);
   refreshChatDayDividers();
