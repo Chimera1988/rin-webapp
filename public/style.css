@@ -1608,6 +1608,16 @@ body.settings-open {
 }
 
 
+/* iOS installed PWA: the standalone viewport already stops above the home
+   indicator. Its extra safe-area inset in the composer created a double bottom
+   gap (the previous 10px visual spacing is the intended one). Safari tab
+   mode keeps the usual safe-area padding. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    .composer { padding-bottom: 10px; }
+  }
+}
+
 @media (max-width: 430px) {
   .tg-header { grid-template-columns: 44px minmax(0, 1fr) auto; padding-inline: 12px; }
   .tg-ico { width: 42px; height: 42px; }

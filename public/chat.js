@@ -25,7 +25,7 @@ import { selfFollowThrough } from './js/self_follow_through.js';
 import { authenticatedHeaders, fetchWithTimeout, setCsrfToken } from './js/http_client.js';
 import { createPresenceController } from './js/presence_controller.js';
 import { createHumanDeliveryScheduler, createInputAggregator } from './js/delivery_scheduler.js';
-import { createChatViewportController } from './js/chat_viewport.js';
+import { createChatViewportController, preserveChatScrollDuringLayout } from './js/chat_viewport.js?v=2026-10-14-ui-fix-1';
 import { createWallpaperStore } from './js/wallpaper_store.js';
 import { createBackup, parseBackup, restoreBackup, MAX_BACKUP_IMPORT_BYTES } from './js/data_backup.js';
 import { createPushController } from './js/push_client.js';
@@ -1445,15 +1445,20 @@ async function writeClipboardText(text = '') {
 }
 
 function renderMessageSelectionUI() {
-  chatEl.classList.toggle('is-selecting', messageSelectionActive);
-  formEl.classList.toggle('is-selecting', messageSelectionActive);
-  if (messageSelectionBar) messageSelectionBar.hidden = !messageSelectionActive;
-  if (messageSelectionCount) messageSelectionCount.textContent = String(selectedMessageIds.size);
-  if (copySelectedMessages) copySelectedMessages.disabled = selectedMessageIds.size === 0;
+  // The 34px selection gutter can rewrap hundreds of message bubbles.
+  // Preserve the last message when at the bottom, or the visible anchor row
+  // when selecting from somewhere higher in the conversation.
+  preserveChatScrollDuringLayout(chatEl, () => {
+    chatEl.classList.toggle('is-selecting', messageSelectionActive);
+    formEl.classList.toggle('is-selecting', messageSelectionActive);
+    if (messageSelectionBar) messageSelectionBar.hidden = !messageSelectionActive;
+    if (messageSelectionCount) messageSelectionCount.textContent = String(selectedMessageIds.size);
+    if (copySelectedMessages) copySelectedMessages.disabled = selectedMessageIds.size === 0;
 
-  for (const row of chatEl.querySelectorAll('.message-row[data-message-id]')) {
-    row.classList.toggle('is-selected', selectedMessageIds.has(row.dataset.messageId));
-  }
+    for (const row of chatEl.querySelectorAll('.message-row[data-message-id]')) {
+      row.classList.toggle('is-selected', selectedMessageIds.has(row.dataset.messageId));
+    }
+  });
 }
 
 function startMessageSelection() {
