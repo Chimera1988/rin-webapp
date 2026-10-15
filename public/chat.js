@@ -536,8 +536,21 @@ function shouldAnalyzeConversationForMemory(userText = '') {
   const meaningful = /(меня зовут|мне \d{1,3} (?:лет|года|год)|мой день рождения|я живу|я работаю|моя работа|мой проект|я разрабатываю|я люблю|мне нравится|я предпочитаю|обычно я|кажд(?:ый|ую) (?:день|неделю)|завтра|послезавтра|на следующей неделе|собеседован|встреча|поездк|обещаю|решил|решила|планирую|хочу рассказать|только тебе|доверяю тебе|важно для меня)/iu.test(text);
   const substantial = text.length >= 220;
   const periodicCatchUp = completedUserTurns > 0 && completedUserTurns % 8 === 0 && text.length >= 45;
+  // A bare date is meaningful only when answering Rin's actual question about
+  // the user's birthday. Never turn a bare date about Rin into user.birthday.
+  let ownBirthdayAnswer = false;
+  if (/^(?:[0-3]?\d)(?:-?(?:ое|го|е|й))?\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+\d{4})?[.!\s]*$/iu.test(text)) {
+    const current = history.findLastIndex(item => item?.role === 'user' && String(item?.content || '').trim() === text);
+    const before = current >= 0 ? history.slice(Math.max(0, current - 8), current) : [];
+    const previousRin = [...before].reverse().find(item => item?.role === 'assistant');
+    const previousUser = [...before].reverse().find(item => item?.role === 'user');
+    const rinQuestion = String(previousRin?.content || '').toLowerCase();
+    const userContext = String(previousUser?.content || '').toLowerCase();
+    ownBirthdayAnswer = /(?:когда\s+именно|когда\s+у\s+тебя\s+день\s+рождения)/iu.test(rinQuestion)
+      && /(?:у\s+меня\s+тоже|мой\s+день\s+рождения)/iu.test(userContext);
+  }
   const trivial = /^(?:привет|доброе утро|добрый день|добрый вечер|ну пока|до завтра|спокойной ночи|спасибо|ага|да|нет|ок(?:ей)?|хорошо|понятно|мм+|ха+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s.!?]+)$/iu.test(text);
-  return !trivial && (meaningful || substantial || periodicCatchUp);
+  return !trivial && (meaningful || substantial || periodicCatchUp || ownBirthdayAnswer);
 }
 
 async function analyzeConversationForMemory(userText, assistantText, jobId = '') {
@@ -546,7 +559,9 @@ async function analyzeConversationForMemory(userText, assistantText, jobId = '')
     const res = await fetchWithTimeout('/api/memory', {
       method: 'POST',
       headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ userText, assistantText, existingMemory: existingMemory || undefined })
+      body: JSON.stringify({ userText, assistantText, existingMemory: existingMemory || undefined,
+        recentHistory: history.filter(item => ['user','assistant'].includes(item?.role) && ['text','voice'].includes(item?.kind || 'text') && item?.status === 'complete')
+          .slice(-10).map(item => ({ role: item.role, content: String(item.content || '').slice(0, 350) })) })
     }, 25_000);
     if (res.status === 401) return { ok: false, code: 'UNAUTHORIZED' };
     if (!res.ok) return { ok: false, code: 'MEMORY_HTTP_ERROR' };
