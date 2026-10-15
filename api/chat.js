@@ -37,7 +37,7 @@ import {
 import { fetchWithTimeout, publicError, readJsonBody, requireMethod } from '../lib/server/http.js';
 import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
-import { recallRinAction } from '../lib/memory-foundation/autobiography.js';
+import { retrieveAutobiographicalMemory } from '../lib/memory-foundation/retrieval.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MIND_MODEL = process.env.OPENAI_MIND_MODEL || process.env.OPENAI_DECISION_MODEL || 'gpt-6-luna';
@@ -490,17 +490,24 @@ export default async function handler(req, res) {
       conversationState,
       stickerState
     });
-    // Non-blocking, source-qualified autobiographical recall; not a directive to the Mind.
-    // Fail open when Neon is unavailable: Rin's existing local memory remains authoritative.
+    // Source-qualified cloud recall supplies evidence, never a personality decision.
+    // No recalls on proactive/sleep turns. The local diary is untouched on failure.
+    let cloudRecallTimeout;
     try {
-      const recalled=trigger ? [] : await recallRinAction(userTurn);
+      const recalled = trigger ? [] : await Promise.race([
+        retrieveAutobiographicalMemory({ userText: userTurn, history: fullHistory }),
+        new Promise(resolve => { cloudRecallTimeout = setTimeout(() => resolve([]), 1100); })
+      ]);
       if (recalled.length) {
-        const previous=kernelState.relevantMemory || {};
-        kernelState.relevantMemory={...previous,
-          events:[...recalled,...(Array.isArray(previous.events)?previous.events:[])].slice(0,4),
-          suppressed:false,reason:'source_qualified_cloud_recall'};
+        const previous = kernelState.relevantMemory || {};
+        kernelState.relevantMemory = { ...previous,
+          cloud: recalled,
+          suppressed: false,
+          reason: 'source_qualified_cloud_autobiography'
+        };
       }
-    } catch (error) {console.error('Autobiographical recall unavailable:',error?.message||error);}
+    } catch (error) { console.error('Cloud autobiography recall unavailable:', error?.message || error); }
+    finally { if (cloudRecallTimeout) clearTimeout(cloudRecallTimeout); }
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
     const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
     const sharedSymbolState = inspectSharedSymbols({
