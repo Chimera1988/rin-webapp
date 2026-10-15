@@ -495,11 +495,11 @@ export default async function handler(req, res) {
     // No recalls on proactive/sleep turns. The local diary is untouched on failure.
     const recallDiagnostics = { status: 'skipped', ms: 0, count: 0, sourceIds: [] };
     let cloudRecallTimeout;
-    if (!trigger && recallIntent(userTurn).eligible) {
+    if (!trigger && recallIntent(userTurn, fullHistory).eligible) {
       const recallStartedAt = Date.now();
       try {
         const result = await Promise.race([
-          retrieveAutobiographicalMemory({ userText: userTurn, history: fullHistory })
+          retrieveAutobiographicalMemory({ userText: userTurn, history: fullHistory, nowMs: Date.now() })
             .then(records => ({ status: 'complete', records })),
           new Promise(resolve => { cloudRecallTimeout = setTimeout(() => resolve({ status: 'timeout', records: [] }), 2500); })
         ]);
