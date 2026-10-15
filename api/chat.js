@@ -37,7 +37,7 @@ import {
 import { fetchWithTimeout, publicError, readJsonBody, requireMethod } from '../lib/server/http.js';
 import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
-import { retrieveAutobiographicalMemory } from '../lib/memory-foundation/retrieval.js';
+import { retrieveAutobiographicalMemory, recallIntent } from '../lib/memory-foundation/retrieval.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MIND_MODEL = process.env.OPENAI_MIND_MODEL || process.env.OPENAI_DECISION_MODEL || 'gpt-6-luna';
@@ -491,23 +491,38 @@ export default async function handler(req, res) {
       stickerState
     });
     // Source-qualified cloud recall supplies evidence, never a personality decision.
+    // A bounded timeout is explicit in diagnostics; it is NOT equivalent to a search miss.
     // No recalls on proactive/sleep turns. The local diary is untouched on failure.
+    const recallDiagnostics = { status: 'skipped', ms: 0, count: 0, sourceIds: [] };
     let cloudRecallTimeout;
-    try {
-      const recalled = trigger ? [] : await Promise.race([
-        retrieveAutobiographicalMemory({ userText: userTurn, history: fullHistory }),
-        new Promise(resolve => { cloudRecallTimeout = setTimeout(() => resolve([]), 1100); })
-      ]);
-      if (recalled.length) {
-        const previous = kernelState.relevantMemory || {};
-        kernelState.relevantMemory = { ...previous,
-          cloud: recalled,
-          suppressed: false,
-          reason: 'source_qualified_cloud_autobiography'
-        };
+    if (!trigger && recallIntent(userTurn).eligible) {
+      const recallStartedAt = Date.now();
+      try {
+        const result = await Promise.race([
+          retrieveAutobiographicalMemory({ userText: userTurn, history: fullHistory })
+            .then(records => ({ status: 'complete', records })),
+          new Promise(resolve => { cloudRecallTimeout = setTimeout(() => resolve({ status: 'timeout', records: [] }), 2500); })
+        ]);
+        recallDiagnostics.status = result.status === 'timeout' ? 'timeout' : result.records.length ? 'hit' : 'miss';
+        if (result.status === 'complete' && result.records.length) {
+          const recalled = result.records;
+          recallDiagnostics.count = recalled.length;
+          recallDiagnostics.sourceIds = recalled.map(item => item.sourceMessageId).filter(Boolean).slice(0, 3);
+          const previous = kernelState.relevantMemory || {};
+          kernelState.relevantMemory = { ...previous,
+            cloud: recalled,
+            suppressed: false,
+            reason: 'source_qualified_cloud_autobiography'
+          };
+        }
+      } catch (error) {
+        recallDiagnostics.status = 'error';
+        console.error('Cloud autobiography recall unavailable:', error?.message || error);
+      } finally {
+        recallDiagnostics.ms = Date.now() - recallStartedAt;
+        if (cloudRecallTimeout) clearTimeout(cloudRecallTimeout);
       }
-    } catch (error) { console.error('Cloud autobiography recall unavailable:', error?.message || error); }
-    finally { if (cloudRecallTimeout) clearTimeout(cloudRecallTimeout); }
+    }
     const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
     const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
     const sharedSymbolState = inspectSharedSymbols({
@@ -553,9 +568,11 @@ export default async function handler(req, res) {
 
     let mindTurn;
     let modelFallback = false;
+    let fallbackReason = null;
     if (completion.finishReason === 'length' || !completion.content) {
       mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
       modelFallback = true;
+      fallbackReason = completion.finishReason === 'length' ? 'model_length' : 'model_empty';
     } else {
       try {
         mindTurn = parseRinMind(completion.content, { behaviorState, sharedSymbolState });
@@ -566,6 +583,7 @@ export default async function handler(req, res) {
         });
         mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
         modelFallback = true;
+        fallbackReason = 'parse_error';
       }
     }
 
@@ -625,6 +643,7 @@ export default async function handler(req, res) {
     });
     if (decisionValidation.hardWarnings.length) {
       modelFallback = true;
+      fallbackReason ||= 'decision_hard_warning';
       resourceWarnings = [];
       decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
         conversationState,
@@ -648,6 +667,7 @@ export default async function handler(req, res) {
     if (realizationValidation.hardWarnings?.length) {
       mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
       modelFallback = true;
+      fallbackReason ||= 'realization_hard_warning';
       decisionValidation = advisoryDecisionValidation(mindTurn.decision, {
         conversationState,
         client: body.client || {},
@@ -690,6 +710,7 @@ export default async function handler(req, res) {
     if (!deliveryPlan.segments.length && mindTurn.decision.delivery.mode !== 'silence') {
       mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
       modelFallback = true;
+      fallbackReason ||= 'empty_delivery';
       deliveryPlan.segments = [{
         id: `rin-turn-${normalize(requestId, 80)}-fallback`,
         segmentIndex: 0,
@@ -881,6 +902,11 @@ export default async function handler(req, res) {
         calls: { mind: 1, kernel: 0, realization: 0, transportAttempts: completion.requestAttempts || 1 },
         historyItems: history.length,
         modelFallback,
+        fallbackReason,
+        recallStatus: recallDiagnostics.status,
+        recallMs: recallDiagnostics.ms,
+        recallCount: recallDiagnostics.count,
+        recallSourceIds: recallDiagnostics.sourceIds,
         semanticRetries: 0
       },
       perception: brain,
