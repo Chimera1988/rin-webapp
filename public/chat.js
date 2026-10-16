@@ -582,9 +582,9 @@ async function flushEpisodeCandidates() {
   episodeCaptureBusy = true;
   try {
     const batch = all.slice(0, 10);
-    const response = await fetchWithTimeout('/api/episode-capture', {
+    const response = await fetchWithTimeout('/api/memory', {
       method: 'POST', headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ candidates: batch })
+      body: JSON.stringify({ action: 'episode_capture_retry', candidates: batch })
     }, 14_000);
     if (!response.ok) return;
     const result = await response.json();
