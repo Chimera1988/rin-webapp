@@ -367,12 +367,22 @@ function fallbackOnHardDecision({ mindTurn, validation, userText, behaviorState 
 
 function advisoryRealizationValidation(realization = null, context = {}) {
   const base = validateRealization(realization, context);
+  // When explicitly asked about AI/system nature, truth must not be treated as
+  // an accidental persona/meta leak. Never bypass unrelated factual hard flags.
+  const identityQuestionText = String(context.currentUserText || '');
+  const directTechnicalQuestion = /\?/u.test(identityQuestionText) && (
+    /(?:^|[^\p{L}])(?:ты|рин)\s+(?:же\s+|ведь\s+|не\s+|действительно\s+){0,3}(?:бот|робот|ии|ai|искусственн|модел|программ|виртуальн|человек|настоящая)/iu.test(identityQuestionText)
+    || /(?:как|чем)\s+(?:же\s+)?(?:ты|рин).{0,55}(?:устроен|работаешь|являешься)/iu.test(identityQuestionText)
+  );
+  const effectiveHardWarnings = (base.hardWarnings || []).filter(reason =>
+    !(directTechnicalQuestion && reason === 'meta_identity_leak'));
   return {
     ...base,
-    version: 'rin-turn-validator-v3-advisory',
+    hardWarnings: effectiveHardWarnings,
+    version: 'rin-turn-validator-v4-human-truthful',
     // Soft conversational/style warnings never fail the turn.
-    passed: !(base?.hardWarnings?.length),
-    accepted: !(base?.hardWarnings?.length),
+    passed: !effectiveHardWarnings.length,
+    accepted: !effectiveHardWarnings.length,
     softWarnings: Array.isArray(base?.rewriteableWarnings) ? base.rewriteableWarnings : [],
     attempts: 1,
     rewrites: 0,
@@ -536,7 +546,12 @@ export default async function handler(req, res) {
         if (cloudRecallTimeout) clearTimeout(cloudRecallTimeout);
       }
     }
-    const realityBoundary = buildRealityBoundary({ profile, memory, lore, userText: userTurn, history: fullHistory });
+    const sourcedLifeChoices = (kernelState.relevantMemory?.cloud || [])
+      .filter(x => x?.scope === 'life_choice' && ['rin_reflection','rin_action_planned'].includes(x?.kind))
+      .map(x => ({text: x?.text || ''})).slice(0, 3);
+    const realityBoundary = buildRealityBoundary({ profile,
+      memory: {...memory, establishedLifeChoices: sourcedLifeChoices},
+      lore, userText: userTurn, history: fullHistory });
     const driveState = buildDriveState({ state: kernelState, affectiveTurn, behaviorState, brain });
     const sharedSymbolState = inspectSharedSymbols({
       profile,
