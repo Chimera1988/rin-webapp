@@ -3,6 +3,7 @@ import { applySecurityLimit, auditRejectedSession } from '../lib/server/security
 import { contentKey } from '../lib/chat-contract.js';
 import { fetchWithTimeout, readJsonBody, requireMethod } from '../lib/server/http.js';
 import { validEpisodeCandidates, saveEpisodeCandidates } from '../lib/memory-foundation/episode-capture.js';
+import { archiveSql } from '../lib/archive/database.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MEMORY_MODEL = process.env.OPENAI_MEMORY_MODEL || process.env.OPENAI_SHORT_MODEL || 'gpt-4o-mini';
@@ -225,11 +226,40 @@ ${clean(assistantText, 1400)}
   try { return sanitizeMemoryResult(JSON.parse(content), { userText, recentHistory, existingMemory }); } catch { return createEmptyMemoryResult(); }
 }
 
+// The archival retry and the LLM-based extraction share a single Vercel function.
+// Hobby deployments have a maximum of 12 functions; splitting this retry into
+// api/episode-capture.js would create a 13th function and reject the deployment.
+// This branch does NOT run the extraction model again.
+export async function captureEpisodesRetry(body, res, { sqlFactory = archiveSql } = {}) {
+  const candidates = (Array.isArray(body?.candidates) ? body.candidates : []).slice(0, 12)
+    .filter(x => x && typeof x === 'object' && typeof x.sourceMessageId === 'string');
+  if (!candidates.length) return res.status(200).json({ saved: 0, pending: [] });
+  try {
+    const sql = await sqlFactory();
+    const ids = [...new Set(candidates.map(x => String(x.sourceMessageId).slice(0, 145)))];
+    const rows = await sql.query(`SELECT id,ts,role,payload->>'content' AS content
+      FROM rin_archive_messages WHERE id=ANY($1::text[]) AND kind IN ('text','voice')`, [ids]);
+    const verified = validEpisodeCandidates(candidates, rows, '');
+    const validIds = new Set(verified.map(x => x.sourceMessageId));
+    const notYetSynced = candidates.filter(x => !rows.some(m => m.id === x.sourceMessageId));
+    const captured = await saveEpisodeCandidates(verified, { sqlClient: sql });
+    const stillPending = [...notYetSynced, ...captured.pending]
+      .filter((x, i, all) => all.findIndex(y => y.sourceMessageId === x.sourceMessageId && y.episodeKey === x.episodeKey) === i);
+    return res.status(200).json({ saved: captured.saved, pending: stillPending.slice(0, 12),
+      verified: validIds.size, dropped: candidates.length - verified.length - notYetSynced.length });
+  } catch (error) {
+    console.warn('Episode capture retry deferred', String(error?.message || error).slice(0, 140));
+    return res.status(503).json({ code: 'EPISODE_CAPTURE_DEFERRED' });
+  }
+}
+
 export default async function handler(req, res) {
   if (!requireMethod(req, res, 'POST')) return;
   const body = await readJsonBody(req);
   if (!await applySecurityLimit(req, res, 'api')) return;
   if (!await requireSession(req, res)) { auditRejectedSession('memory'); return; }
+  // Authenticated retry, no OpenAI API key or memory extraction needed.
+  if (body?.action === 'episode_capture_retry') return captureEpisodesRetry(body, res);
   if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Memory service is not configured', code: 'MEMORY_NOT_CONFIGURED' });
 
   const userText = clean(body.userText, 2000);
