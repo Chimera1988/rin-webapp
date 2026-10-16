@@ -535,7 +535,10 @@ function shouldAnalyzeConversationForMemory(userText = '') {
   const completedUserTurns = history.filter(item => item?.role === 'user' && item?.status === 'complete' && ['text', 'voice'].includes(item?.kind || 'text')).length;
   const meaningful = /(меня зовут|мне \d{1,3} (?:лет|года|год)|мой день рождения|я живу|я работаю|моя работа|мой проект|я разрабатываю|я люблю|мне нравится|я предпочитаю|обычно я|кажд(?:ый|ую) (?:день|неделю)|завтра|послезавтра|на следующей неделе|собеседован|встреча|поездк|обещаю|решил|решила|планирую|хочу рассказать|только тебе|доверяю тебе|важно для меня)/iu.test(text);
   const substantial = text.length >= 220;
-  const periodicCatchUp = completedUserTurns > 0 && completedUserTurns % 8 === 0 && text.length >= 45;
+  // Episodic curation needs enough shared context; sample approximately every
+  // six user turns, never for one-word acknowledgement or every intimacy beat.
+  const periodicCatchUp = completedUserTurns > 0 && completedUserTurns % 6 === 0 && text.length >= 18;
+  const strongEpisode = /(?:помирил|разобрал(?:ись|ась|ся)|я\s+люблю\s+тебя|люблю\s+тебя|ты\s+мне\s+важн|наш\s+мир|доверя|нашу\s+истори|истори[юя]\s+про|как\s+тебе\s+(?:эта\s+)?истори|я\s+не\s+знаю\s+что\s+думать)/iu.test(text);
   // A bare date is meaningful only when answering Rin's actual question about
   // the user's birthday. Never turn a bare date about Rin into user.birthday.
   let ownBirthdayAnswer = false;
@@ -550,8 +553,56 @@ function shouldAnalyzeConversationForMemory(userText = '') {
       && /(?:у\s+меня\s+тоже|мой\s+день\s+рождения)/iu.test(userContext);
   }
   const trivial = /^(?:привет|доброе утро|добрый день|добрый вечер|ну пока|до завтра|спокойной ночи|спасибо|ага|да|нет|ок(?:ей)?|хорошо|понятно|мм+|ха+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s.!?]+)$/iu.test(text);
-  return !trivial && (meaningful || substantial || periodicCatchUp || ownBirthdayAnswer);
+  return !trivial && (meaningful || substantial || periodicCatchUp || strongEpisode || ownBirthdayAnswer);
 }
+
+// A late cloud-archive upload must not silently discard a qualified episode.
+// Retry only the source verification/write, never the AI extraction itself.
+const EPISODE_PENDING_KEY = 'rin-episode-capture-v1';
+let episodeCaptureBusy = false;
+function episodeCandidateKey(x) { return `${x.day || ''}|${x.kind || ''}|${x.episodeKey || ''}|${x.sourceMessageId || ''}`; }
+function storedEpisodeCandidates() {
+  try {
+    const data = JSON.parse(localStorage.getItem(EPISODE_PENDING_KEY) || '[]');
+    return Array.isArray(data) ? data.filter(x => x && x.sourceMessageId && x.episodeKey).slice(-20) : [];
+  } catch { return []; }
+}
+function queueEpisodeCandidates(items = []) {
+  if (!Array.isArray(items) || !items.length) return;
+  try {
+    const map = new Map(storedEpisodeCandidates().map(x => [episodeCandidateKey(x), x]));
+    for (const item of items.slice(0, 4)) if (item?.sourceMessageId && item?.episodeKey) map.set(episodeCandidateKey(item), item);
+    localStorage.setItem(EPISODE_PENDING_KEY, JSON.stringify([...map.values()].slice(-20)));
+  } catch (error) { dbg(`episode retry queue unavailable: ${error?.message || error}`); }
+}
+async function flushEpisodeCandidates() {
+  if (episodeCaptureBusy) return;
+  const all = storedEpisodeCandidates();
+  if (!all.length) return;
+  episodeCaptureBusy = true;
+  try {
+    const batch = all.slice(0, 10);
+    const response = await fetchWithTimeout('/api/episode-capture', {
+      method: 'POST', headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ candidates: batch })
+    }, 14_000);
+    if (!response.ok) return;
+    const result = await response.json();
+    const attempted = new Set(batch.map(episodeCandidateKey));
+    const rest = storedEpisodeCandidates().filter(x => !attempted.has(episodeCandidateKey(x)));
+    const pending = Array.isArray(result?.pending) ? result.pending : batch;
+    const merged = new Map([...rest, ...pending].map(x => [episodeCandidateKey(x), x]));
+    try {
+      if (merged.size) localStorage.setItem(EPISODE_PENDING_KEY, JSON.stringify([...merged.values()].slice(-20)));
+      else localStorage.removeItem(EPISODE_PENDING_KEY);
+    } catch (error) { dbg(`episode queue update failed: ${error?.message || error}`); }
+    dbg(`episode retry: saved=${Number(result?.saved)||0}; pending=${pending.length}; rejected=${Number(result?.dropped)||0}`);
+  } catch (error) {
+    dbg(`episode retry deferred: ${error?.message || error}`);
+  } finally { episodeCaptureBusy = false; }
+}
+setTimeout(() => { void flushEpisodeCandidates(); }, 25_000);
+setInterval(() => { void flushEpisodeCandidates(); }, 45_000);
 
 async function analyzeConversationForMemory(userText, assistantText, jobId = '') {
   try {
@@ -561,12 +612,17 @@ async function analyzeConversationForMemory(userText, assistantText, jobId = '')
       headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ userText, assistantText, existingMemory: existingMemory || undefined,
         recentHistory: history.filter(item => ['user','assistant'].includes(item?.role) && ['text','voice'].includes(item?.kind || 'text') && item?.status === 'complete')
-          .slice(-10).map(item => ({ role: item.role, content: String(item.content || '').slice(0, 350) })) })
+          .slice(-28).map(item => ({ id: String(item.id || '').slice(0, 145), ts: Number(item.ts)||0, role: item.role, content: String(item.content || '').slice(0, 650) })) })
     }, 25_000);
     if (res.status === 401) return { ok: false, code: 'UNAUTHORIZED' };
     if (!res.ok) return { ok: false, code: 'MEMORY_HTTP_ERROR' };
     const extracted = await res.json();
     if (extracted?.warning) return { ok: false, code: extracted.warning };
+    if (extracted?.episodeCapture?.attempted > 0) dbg(`episodic memory: saved=${extracted.episodeCapture.saved||0}; pending=${extracted.episodeCapture.deferred||0}`);
+    if (Array.isArray(extracted?.pendingEpisodes) && extracted.pendingEpisodes.length) {
+      queueEpisodeCandidates(extracted.pendingEpisodes);
+      void flushEpisodeCandidates();
+    }
     const applied = await applyExtractedMemory(extracted, userText, jobId);
     return { ok: applied, code: applied ? null : 'MEMORY_APPLY_FAILED' };
   } catch (error) {
@@ -2583,7 +2639,7 @@ function stickerDebugSummary(data = null, committed = null) {
     : `${Number(state?.usedStickerTurns || 0)}/${state?.limitStickerTurns ?? '-'}`;
   const snapshot = buildTurnDebugSnapshot(data, committed);
   const tokenSummary = metrics
-    ? `; model=${data?.model?.mind || '-'}; reasoning=${metrics?.reasoningEffort || '-'}; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; cached=${Number(metrics?.cachedInputTokens || 0)}; cacheWrite=${Number(metrics?.cacheWriteTokens || 0)}; reasoningTokens=${Number(metrics?.reasoningTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; fallbackReason=${String(metrics?.fallbackReason || '-')}; recall=${String(metrics?.recallStatus || '-')}; recallMs=${Number(metrics?.recallMs || 0)}; recallCount=${Number(metrics?.recallCount || 0)}; recallSources=${Array.isArray(metrics?.recallSourceIds) ? metrics.recallSourceIds.slice(0, 3).map(id => String(id).slice(0, 120)).join(',') || '-' : '-'}; intentOp=${snapshot.operation}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; closeness=${snapshot.closenessMode}/${snapshot.closenessFocus}/${snapshot.closenessMove}; closenessTurns=${snapshot.closenessTurns}; closenessThreadChars=${snapshot.closenessThreadChars}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; handoff=${snapshot.proactiveHandoff}; literalCorrection=${snapshot.literalCorrection}; temporalGap=${snapshot.temporalGap ?? '-'}; rupture=${snapshot.relationalRuptureAffected || 'none'}:${snapshot.relationalRupturePhase || 'none'}; relPressure=${snapshot.relationalPressure || 'none'}; relBoundaries=${snapshot.relationalBoundaries || 0}; temporalResume=${snapshot.temporalResume ? 'yes' : 'no'}; temporalPeriodShift=${snapshot.temporalPeriodShift}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; vocative=${String(snapshot.vocativeUsed || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeUsedClass}; vocPressure=${snapshot.vocativePressure}; vocRecent=${snapshot.vocativeRecent6}/6; vocStreak=${snapshot.vocativeStreak}; vocGap=${snapshot.vocativeTurnsSinceAny}; vocCooldown=${snapshot.vocativeAnyGapRemaining}/${snapshot.vocativeClassGapRemaining}/${snapshot.vocativeExactGapRemaining}; vocLast=${String(snapshot.vocativeLastExact || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeLastClass}; vocAvoid=${snapshot.vocativeStrongAvoid ? 'yes' : 'no'}; vocDirect=${snapshot.vocativeDirectRequest ? 'yes' : 'no'}; vocOverride=${snapshot.vocativeOverride ? 'yes' : 'no'}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; callback=${snapshot.futureCallbackDetected ? 'new' : 'carry'}:${snapshot.futureCallbackCue}:${String(snapshot.futureCallbackSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; callbackActive=${snapshot.futureCallbackActive}; callbackResolved=${String(snapshot.futureCallbackResolvedId || '-').slice(-12)}; closure=${snapshot.sceneClosureStrong ? 'strong' : snapshot.sceneClosureSoft ? 'soft' : 'no'}:${snapshot.sceneClosureKind}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; shortTerm=${Number(metrics?.shortTermExchanges || 0)}ex/${Number(metrics?.shortTermSpeakerTurns || 0)}turns/${Number(metrics?.shortTermChars || 0)}c; exprPressure=${Number(metrics?.expressionPressure || 0)}; exprMoves=${String(metrics?.expressionRepeatedMoves || '-').slice(0, 120)}; sceneActions=${Number(metrics?.sceneActionCount || 0)}; cacheMode=${metrics?.cacheMode || '-'}; cachePrefixChars=${Number(metrics?.cachePrefixChars || 0)}; cacheKey=${String(metrics?.cacheKey || '-').slice(-12)}; serverMs=${Number(metrics?.serverMs || 0)}; modelMs=${Number(metrics?.modelMs || 0)}`
+    ? `; model=${data?.model?.mind || '-'}; reasoning=${metrics?.reasoningEffort || '-'}; mindCalls=${Number(metrics?.calls?.mind || 0)}; tokens=${Number(metrics?.inputTokens || 0)}/${Number(metrics?.outputTokens || 0)}/${Number(metrics?.totalTokens || 0)}; cached=${Number(metrics?.cachedInputTokens || 0)}; cacheWrite=${Number(metrics?.cacheWriteTokens || 0)}; reasoningTokens=${Number(metrics?.reasoningTokens || 0)}; semanticRetries=${Number(metrics?.semanticRetries || 0)}; transport=${Number(metrics?.calls?.transportAttempts || 0)}; modelFallback=${metrics?.modelFallback === true ? 'yes' : 'no'}; fallbackReason=${String(metrics?.fallbackReason || '-')}; validationHard=${Array.isArray(metrics?.validationHardReasons) ? metrics.validationHardReasons.join(',').slice(0, 140) || '-' : '-'}; recall=${String(metrics?.recallStatus || '-')}; recallMs=${Number(metrics?.recallMs || 0)}; recallCount=${Number(metrics?.recallCount || 0)}; recallSources=${Array.isArray(metrics?.recallSourceIds) ? metrics.recallSourceIds.slice(0, 3).map(id => String(id).slice(0, 120)).join(',') || '-' : '-'}; intentOp=${snapshot.operation}; intentKind=${snapshot.kind}; intentPhase=${snapshot.phase}; intentAge=${snapshot.age}; intentProgress=${snapshot.progress ?? '-'}; intentEngagement=${snapshot.engagement ?? '-'}; intentSaturation=${snapshot.saturation ?? '-'}; intentSimilarity=${snapshot.similarity}; sceneMotif=${snapshot.sceneMotif}; closeness=${snapshot.closenessMode}/${snapshot.closenessFocus}/${snapshot.closenessMove}; closenessTurns=${snapshot.closenessTurns}; closenessThreadChars=${snapshot.closenessThreadChars}; motifRepeat=${snapshot.motifRepeat}; motifPressure=${snapshot.motifPressure}; frameAlignment=${snapshot.frameAlignment}; handoff=${snapshot.proactiveHandoff}; literalCorrection=${snapshot.literalCorrection}; temporalGap=${snapshot.temporalGap ?? '-'}; rupture=${snapshot.relationalRuptureAffected || 'none'}:${snapshot.relationalRupturePhase || 'none'}; relPressure=${snapshot.relationalPressure || 'none'}; relBoundaries=${snapshot.relationalBoundaries || 0}; temporalResume=${snapshot.temporalResume ? 'yes' : 'no'}; temporalPeriodShift=${snapshot.temporalPeriodShift}; referenceAnchor=${String(snapshot.referenceAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; lifeDomain=${snapshot.lifeDomain}; lifeMotif=${snapshot.lifeMotif}; lifeRepeat=${snapshot.lifeMotifAppearances}; lifeNovelty=${snapshot.lifeNoveltyPressure}; responseDepth=${snapshot.responseDepth}; depthLock=${snapshot.responseShortLock}; messageShape=${snapshot.messageShape}; shapeLock=${snapshot.responseSingleLock}; vocative=${String(snapshot.vocativeUsed || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeUsedClass}; vocPressure=${snapshot.vocativePressure}; vocRecent=${snapshot.vocativeRecent6}/6; vocStreak=${snapshot.vocativeStreak}; vocGap=${snapshot.vocativeTurnsSinceAny}; vocCooldown=${snapshot.vocativeAnyGapRemaining}/${snapshot.vocativeClassGapRemaining}/${snapshot.vocativeExactGapRemaining}; vocLast=${String(snapshot.vocativeLastExact || '-').replace(/\s+/g, ' ').slice(0, 48)}/${snapshot.vocativeLastClass}; vocAvoid=${snapshot.vocativeStrongAvoid ? 'yes' : 'no'}; vocDirect=${snapshot.vocativeDirectRequest ? 'yes' : 'no'}; vocOverride=${snapshot.vocativeOverride ? 'yes' : 'no'}; commitment=${snapshot.commitmentAction}/${snapshot.commitmentConflict}:${String(snapshot.commitmentSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; commitmentRequested=${snapshot.commitmentRequestedAction}; commitmentHorizon=${snapshot.commitmentHorizon}; activeCommitments=${snapshot.activeCommitments}; callback=${snapshot.futureCallbackDetected ? 'new' : 'carry'}:${snapshot.futureCallbackCue}:${String(snapshot.futureCallbackSubject || '-').replace(/\s+/g, ' ').slice(0, 72)}; callbackActive=${snapshot.futureCallbackActive}; callbackResolved=${String(snapshot.futureCallbackResolvedId || '-').slice(-12)}; closure=${snapshot.sceneClosureStrong ? 'strong' : snapshot.sceneClosureSoft ? 'soft' : 'no'}:${snapshot.sceneClosureKind}; symbolCandidate=${snapshot.sharedSymbolCandidateId}@${snapshot.sharedSymbolCandidateActivation}${snapshot.sharedSymbolCandidateDirectRecall ? ':direct' : ''}; sharedSymbol=${snapshot.sharedSymbolId}/${snapshot.sharedSymbolExpression}; symbolActivation=${snapshot.sharedSymbolActivation}; symbolRepeat=${snapshot.sharedSymbolRepeat}; reciprocityPressure=${snapshot.reciprocityPressure}; reciprocityOpportunity=${snapshot.reciprocityOpportunity ? 'yes' : 'no'}; reciprocityAnchor=${String(snapshot.reciprocityAnchor || '-').replace(/\s+/g, ' ').slice(0, 80)}; shortTerm=${Number(metrics?.shortTermExchanges || 0)}ex/${Number(metrics?.shortTermSpeakerTurns || 0)}turns/${Number(metrics?.shortTermChars || 0)}c; exprPressure=${Number(metrics?.expressionPressure || 0)}; exprMoves=${String(metrics?.expressionRepeatedMoves || '-').slice(0, 120)}; sceneActions=${Number(metrics?.sceneActionCount || 0)}; cacheMode=${metrics?.cacheMode || '-'}; cachePrefixChars=${Number(metrics?.cachePrefixChars || 0)}; cacheKey=${String(metrics?.cacheKey || '-').slice(-12)}; serverMs=${Number(metrics?.serverMs || 0)}; modelMs=${Number(metrics?.modelMs || 0)}`
     : '';
   return `; stickerMode=${state?.mode || '-'}; stickerAvail=${state?.available === true ? 'yes' : 'no'}:${state?.reason || '-'}; stickerHard=${state?.hardAvailable === true ? 'yes' : 'no'}:${state?.hardReason || '-'}; stickerBudget=${budget}; stickerTurns=${state?.semanticAssistantTurns ?? '-'}; stickerGap=${state?.turnsSinceSticker ?? '-'}/${state?.requiredGapTurns ?? '-'}; stickerCooldown=${state?.cooldownRemainingTurns ?? '-'}; stickerGapOk=${state?.gapSatisfied === true ? 'yes' : 'no'}; stickerLastTurn=${String(state?.lastStickerTurnKey || '-').slice(-18)}; stickerIntent=${stickerSegment?.stickerIntent || '-'}; stickerAsset=${stickerSegment?.sticker?.id || '-'}${tokenSummary}`;
 }
