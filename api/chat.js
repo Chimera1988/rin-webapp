@@ -421,6 +421,19 @@ export async function buildDeliveryPlan({ requestId, decision, realization, scen
   };
 }
 
+// A repair intent is an interaction, not a counter. It cannot claim success
+// while the user is still actively contesting the explanation. A suspended
+// intent does not force romance, an apology, or another reply.
+export function stabilizeRepairCompletion({ activeIntent = null, transition = null,
+  userText = '', conversationState = 'ongoing', contactStance = 'open' } = {}) {
+  if (!transition || transition.operation !== 'complete' || conversationState === 'ending') return transition;
+  if (!['relationship_repair', 'relationship_safety'].includes(activeIntent?.target)) return transition;
+  const explicitResolution = /(?:помирились|разобрались|мы\s+(?:снова\s+)?в\s+порядке|всё\s+хорошо|все\s+хорошо|конфликт\s+исчерпан)/iu.test(userText);
+  if (explicitResolution && contactStance !== 'strained_presence') return transition;
+  return { ...transition, operation: 'suspend', phase: 'suspended', progress: null,
+    reason: 'repair_unconfirmed_by_user' };
+}
+
 export default async function handler(req, res) {
   const handlerStartedAt = Date.now();
   let modelStartedAt = 0;
@@ -569,6 +582,9 @@ export default async function handler(req, res) {
     let mindTurn;
     let modelFallback = false;
     let fallbackReason = null;
+    let semanticRetries = 0;
+    let retryUsage = null;
+    let validationHardReasons = [];
     if (completion.finishReason === 'length' || !completion.content) {
       mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
       modelFallback = true;
@@ -613,16 +629,12 @@ export default async function handler(req, res) {
     mindTurn.decision = stabilized.decision;
     mindTurn.realization = stabilized.realization;
 
-    // A repair intent must not declare victory while the affected person has not confirmed repair.
-    const ruptureOpen = kernelState.relationalIntegrity?.rupture && kernelState.relationalIntegrity.rupture.phase !== 'resolved';
-    const repairingGoal = kernelState.activeIntent?.target === 'relationship_repair';
-    if (ruptureOpen && repairingGoal && conversationState !== 'ending'
-        && mindTurn.decision?.intentTransition?.operation === 'complete') {
-      mindTurn.decision.intentTransition.operation = 'advance';
-      mindTurn.decision.intentTransition.phase = 'advancing';
-      mindTurn.decision.intentTransition.progress = Math.min(0.75, Number(mindTurn.decision.intentTransition.progress) || 0.5);
-      mindTurn.decision.intentTransition.reason = 'repair_not_confirmed';
-    }
+    // In both relationship_safety and relationship_repair a fixed horizon is
+    // not proof that the misunderstanding has been repaired.
+    if (mindTurn.decision?.intentTransition) mindTurn.decision.intentTransition =
+      stabilizeRepairCompletion({ activeIntent: kernelState.activeIntent,
+        transition: mindTurn.decision.intentTransition, userText: userTurn,
+        conversationState, contactStance: mindTurn.mind?.contactStance });
 
 
     let resourceWarnings = await decisionResourceWarnings(mindTurn.decision);
@@ -662,8 +674,59 @@ export default async function handler(req, res) {
       currentUserText: kernelState?.userText || ''
     });
 
-    // Truly hard realization violations (metadata leak, unsupported reality claim, etc.)
-    // are replaced locally. No second model call, no user-visible validation error.
+    // Keep the precise original reasons even if a last-resort deterministic
+    // reply is substituted. Network failures never masquerade as hard warnings.
+    validationHardReasons = [...new Set(realizationValidation.hardWarnings || [])].slice(0, 8);
+    if (validationHardReasons.length && !modelFallback) {
+      // One bounded semantic rewrite on hard warnings only. Preserve Rin Mind's
+      // first decision/mind — this second pass may correct wording/delivery,
+      // but never take ownership of her choices. No automatic retry on network.
+      semanticRetries = 1;
+      try {
+        const retryStartedAt = Date.now();
+        const repaired = await openaiChat({
+          model: MIND_MODEL,
+          messages: [...buildMindMessages(prompt, MIND_MODEL),
+            { role: 'assistant', content: completion.content },
+            { role: 'developer', content: `Только исправление реализации текущего хода. Сохрани прежние mind и decision без изменений, изменяй только realization.segments. Предыдущая реализация не прошла контроль: ${validationHardReasons.join(', ').slice(0, 260)}. Дай целиком корректный JSON указанной схемы. Не добавляй биографических фактов, не меняй количество текстовых сегментов плана и не воспроизводи технические сведения.` }],
+          response_format: prompt.responseFormat,
+          reasoning_effort: MIND_REASONING_EFFORT,
+          ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
+        });
+        modelDurationMs += Date.now() - retryStartedAt;
+        retryUsage = repaired.usage;
+        if (repaired.content && repaired.finishReason !== 'length') {
+          const rewritten = parseRinMind(repaired.content, { behaviorState, sharedSymbolState });
+          // The original decision is authoritative. Stabilization may remove
+          // a purely invalid delivery beat, as on the first pass.
+          const cleaned = stabilizeTurn({
+            decision: mindTurn.decision, realization: rewritten.realization,
+            activeIntent: kernelState.activeIntent, recentIntents: kernelState.recentIntents,
+            revision: kernelState.revision, recentActs: kernelState.dialogueState?.recentActs || [],
+            conversationState, stickerState: kernelState.stickerState,
+            visualReplyCandidates: kernelState.visualReplyCandidates,
+            behaviorState, driveState, scene: kernelState.scene,
+            fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn }),
+            longRequested: isLong
+          });
+          // Never import a second model decision.
+          const revisedValidation = advisoryRealizationValidation(cleaned.realization, {
+            decision: mindTurn.decision, realityBoundary,
+            recentHistory: kernelState?.recentHistory || [], currentUserText: kernelState?.userText || ''
+          });
+          if (!revisedValidation.hardWarnings?.length &&
+              cleaned.realization?.segments?.length === mindTurn.realization?.segments?.length) {
+            mindTurn.realization = cleaned.realization;
+            realizationValidation = { ...revisedValidation, attempts: 2, rewrites: 1,
+              trace: [...(realizationValidation.trace || []), ...(revisedValidation.trace || [])] };
+            validationHardReasons = [];
+          }
+        }
+      } catch (error) {
+        console.warn('Rin realization rewrite did not recover', { requestId,
+          reason: String(error?.code || error?.message || 'unknown').slice(0, 110) });
+      }
+    }
     if (realizationValidation.hardWarnings?.length) {
       mindTurn = makeFallbackMindTurn({ userText: userTurn, behaviorState });
       modelFallback = true;
@@ -741,6 +804,10 @@ export default async function handler(req, res) {
     const realizedVocatives = extractVocativeAddresses(reply);
     const primaryVocative = realizedVocatives[0] || null;
     const usage = usageOrZero(completion.usage);
+    if (retryUsage) {
+      const added = usageOrZero(retryUsage);
+      for (const key of Object.keys(usage)) usage[key] += added[key] || 0;
+    }
     const intentTelemetry = inspectIntentLifecycle({
       activeIntent: kernelState.activeIntent,
       recentIntents: kernelState.recentIntents,
@@ -899,15 +966,16 @@ export default async function handler(req, res) {
         expressionPressure: Number(expressionNovelty?.pressure || 0),
         expressionRepeatedMoves: (expressionNovelty?.repeatedMoves || []).map(item => `${item.move}:${item.count}`).join(',').slice(0, 120),
         sceneActionCount: Number(kernelState.dialogueState?.sceneActions?.length || 0),
-        calls: { mind: 1, kernel: 0, realization: 0, transportAttempts: completion.requestAttempts || 1 },
+        calls: { mind: 1 + semanticRetries, kernel: 0, realization: semanticRetries, transportAttempts: completion.requestAttempts || 1 },
         historyItems: history.length,
         modelFallback,
         fallbackReason,
+        validationHardReasons,
         recallStatus: recallDiagnostics.status,
         recallMs: recallDiagnostics.ms,
         recallCount: recallDiagnostics.count,
         recallSourceIds: recallDiagnostics.sourceIds,
-        semanticRetries: 0
+        semanticRetries
       },
       perception: brain,
       cognition: { ...compactKernelState(kernelState), behaviorState, driveState, intentTelemetry, sceneControl },
