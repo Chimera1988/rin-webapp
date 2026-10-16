@@ -1,1 +1,1 @@
-export const RIN_RELEASE_ID = '2026-10-16-rin-mind-v2.6.19-unified-memory-and-repair-hobby12';
+export const RIN_RELEASE_ID = '2026-10-17-rin-mind-v2.6.20-character-freedom';
