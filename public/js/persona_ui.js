@@ -2,6 +2,7 @@
 // timing are server/runtime-owned and intentionally not editable here.
 
 import { getDefaultProfile, loadProfile, saveProfile } from './rin_memory.js';
+import { initAvatarPicker } from './avatar_picker.js?v=2026-10-17-copy-v1';
 
 const btnOpen = document.getElementById('openPersona');
 const panel = document.getElementById('personaPanel');
@@ -83,4 +84,34 @@ document.addEventListener('keydown', event => {
 
 (async function bootstrap() {
   window.RIN_PROFILE = await loadProfile().catch(() => getDefaultProfile());
+})();
+
+// Gallery is installed from this already-loaded UI module, leaving index.html,
+// chat.js, server, and dialogue behavior untouched. The existing avatar remains
+// available as the first gallery choice.
+(function installRinAvatarGallery() {
+  const avatar = document.getElementById('avatarTop');
+  const chat = document.getElementById('chat');
+  if (!avatar || !chat || !avatar.parentNode) return;
+
+  if (!document.querySelector('link[data-rin-avatar-gallery]')) {
+    const stylesheet = document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = '/avatar-picker.css?v=2026-10-17-copy-v1';
+    stylesheet.dataset.rinAvatarGallery = '1';
+    document.head.appendChild(stylesheet);
+  }
+
+  const trigger = document.createElement('button');
+  trigger.id = 'avatarPickerToggle';
+  trigger.className = 'rin-avatar-trigger';
+  trigger.type = 'button';
+  trigger.title = 'Выбрать аватар Рин';
+  trigger.setAttribute('aria-label', 'Выбрать аватар Рин');
+  trigger.setAttribute('aria-haspopup', 'dialog');
+  trigger.setAttribute('aria-expanded', 'false');
+  avatar.replaceWith(trigger);
+  trigger.appendChild(avatar);
+
+  initAvatarPicker({ chatRoot: chat });
 })();
