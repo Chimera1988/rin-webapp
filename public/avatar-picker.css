@@ -1,4 +1,4 @@
-/* Avatar gallery is a modal above the fixed iOS chat viewport shell. */
+/* Messenger-like fullscreen photo viewer, without decorative categories. */
 .rin-avatar-trigger {
   display: block;
   width: 42px;
@@ -15,141 +15,161 @@
 .rin-avatar-trigger .avatar { pointer-events: none; }
 @media (max-width: 430px) { .rin-avatar-trigger { width: 40px; height: 40px; } }
 
-.rin-avatar-picker[hidden] { display: none !important; }
-.rin-avatar-picker {
+.rin-avatar-viewer[hidden] { display: none !important; }
+.rin-avatar-viewer {
   position: fixed;
-  z-index: 90;
   inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  color: var(--text);
-  overscroll-behavior: contain;
-}
-.rin-avatar-picker__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, .62);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
-}
-.rin-avatar-picker__sheet {
-  position: relative;
-  width: min(100%, 590px);
-  max-height: min(84dvh, 720px);
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  background: var(--app-background);
-  background-color: var(--surface-strong);
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: 24px 24px 0 0;
-  box-shadow: 0 -15px 50px rgba(0, 0, 0, .30);
-  padding: 9px 15px calc(16px + env(safe-area-inset-bottom, 0px));
-}
-.rin-avatar-picker__handle {
-  width: 36px;
-  height: 4px;
-  margin: 0 auto 14px;
-  border-radius: 99px;
-  background: var(--muted);
-  opacity: .6;
-}
-.rin-avatar-picker__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.rin-avatar-picker__head h2 {
-  margin: 0;
-  color: var(--text);
-  font-size: 20px;
-  font-weight: 720;
-}
-.rin-avatar-picker__head p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.35;
-}
-.rin-avatar-picker__close {
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface-soft);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-.rin-avatar-picker__close:focus-visible,
-.rin-avatar-picker__choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.rin-avatar-picker__grid {
+  z-index: 110;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-rows: auto minmax(0,1fr) auto;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: #090a0d;
+  color: #f8f8f8;
+  overscroll-behavior: contain;
+  -webkit-user-select: none;
+  user-select: none;
 }
-.rin-avatar-picker__choice {
-  position: relative;
-  min-width: 0;
-  padding: 5px 5px 9px;
-  border: 2px solid var(--line);
-  border-radius: 15px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
+.rin-avatar-viewer__top {
+  display: grid;
+  grid-template-columns: 44px minmax(0,1fr) 54px;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 4px 12px;
+}
+.rin-avatar-viewer__name {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rin-avatar-viewer__count {
+  text-align: right;
+  color: rgba(255,255,255,.65);
   font-size: 13px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+  font-variant-numeric: tabular-nums;
 }
-.rin-avatar-picker__choice img {
+.rin-avatar-viewer__close {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: white;
+  cursor: pointer;
+}
+.rin-avatar-viewer__close svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.rin-avatar-viewer__stage {
+  position: relative;
+  min-height: 0;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+.rin-avatar-viewer__photo {
   display: block;
   width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 10px;
-  background: var(--surface-soft);
+  height: 100%;
+  object-fit: contain;
+  background: transparent;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
-.rin-avatar-picker__choice.is-selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.rin-avatar-picker__label {
-  display: block;
-  overflow: hidden;
-  margin-top: 7px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-weight: 600;
-}
-.rin-avatar-picker__tick {
+.rin-avatar-viewer__arrow {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  display: none;
-  width: 23px;
-  height: 23px;
-  border-radius: 50%;
-  background: var(--accent-strong);
+  z-index: 1;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 52px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 12px;
+  background: rgba(0,0,0,.25);
   color: #fff;
-  align-items: center;
-  justify-content: center;
+  cursor: pointer;
+}
+.rin-avatar-viewer__arrow--prev { left: 12px; }
+.rin-avatar-viewer__arrow--next { right: 12px; }
+.rin-avatar-viewer__arrow svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rin-avatar-viewer__bottom {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  padding: 13px 12px 20px;
+  background: linear-gradient(180deg, rgba(9,10,13,0), rgba(9,10,13,.95) 30%);
+}
+.rin-avatar-viewer__filmstrip {
+  display: flex;
+  justify-content: safe center;
+  gap: 9px;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.rin-avatar-viewer__filmstrip::-webkit-scrollbar { display: none; }
+.rin-avatar-viewer__thumb {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  overflow: hidden;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  background: #25252a;
+  opacity: .65;
+  cursor: pointer;
+  transition: opacity .14s ease, border-color .14s ease;
+}
+.rin-avatar-viewer__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.rin-avatar-viewer__thumb.is-current { opacity: 1; border-color: #fff; }
+.rin-avatar-viewer__install {
+  min-width: 170px;
+  min-height: 44px;
+  padding: 10px 26px;
+  border: 0;
+  border-radius: 12px;
+  background: #e9e9ed;
+  color: #19191b;
+  font: inherit;
   font-size: 15px;
-  font-weight: 800;
-  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  font-weight: 650;
+  cursor: pointer;
 }
-.rin-avatar-picker__choice.is-selected .rin-avatar-picker__tick { display: flex; }
+.rin-avatar-viewer__install:disabled {
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.64);
+  cursor: default;
+}
+.rin-avatar-viewer button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+@media (pointer: coarse) {
+  .rin-avatar-viewer__arrow { display: none; }
+}
 @media (max-width: 380px) {
-  .rin-avatar-picker__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rin-avatar-viewer__thumb { width: 44px; height: 44px; flex-basis: 44px; }
+  .rin-avatar-viewer__filmstrip { gap: 6px; }
 }
-@supports (-webkit-touch-callout: none) {
-  @media (display-mode: standalone) {
-    .rin-avatar-picker__sheet { padding-bottom: 16px; }
-  }
+@media (prefers-reduced-motion: reduce) {
+  .rin-avatar-viewer__thumb { transition: none; }
 }
