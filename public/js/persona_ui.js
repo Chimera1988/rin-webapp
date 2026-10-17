@@ -2,7 +2,7 @@
 // timing are server/runtime-owned and intentionally not editable here.
 
 import { getDefaultProfile, loadProfile, saveProfile } from './rin_memory.js';
-import { initAvatarPicker } from './avatar_picker.js?v=2026-10-17-copy-v1';
+import { initAvatarPicker } from './avatar_picker.js?v=2026-10-17-messenger-v2';
 
 const btnOpen = document.getElementById('openPersona');
 const panel = document.getElementById('personaPanel');
@@ -97,7 +97,7 @@ document.addEventListener('keydown', event => {
   if (!document.querySelector('link[data-rin-avatar-gallery]')) {
     const stylesheet = document.createElement('link');
     stylesheet.rel = 'stylesheet';
-    stylesheet.href = '/avatar-picker.css?v=2026-10-17-copy-v1';
+    stylesheet.href = '/avatar-picker.css?v=2026-10-17-messenger-v2';
     stylesheet.dataset.rinAvatarGallery = '1';
     document.head.appendChild(stylesheet);
   }
