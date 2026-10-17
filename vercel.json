@@ -22,6 +22,15 @@
       ]
     },
     {
+      "source": "/avatars.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        }
+      ]
+    },
+    {
       "source": "/api/(.*)",
       "headers": [
         {
@@ -141,5 +150,6 @@
       "path": "/api/push-cron-evening",
       "schedule": "30 17 * * *"
     }
-  ]
+  ],
+  "buildCommand": "node scripts/build-avatar-manifest.mjs"
 }
