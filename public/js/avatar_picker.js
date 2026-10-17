@@ -1,35 +1,52 @@
-/* Rin profile photographs. Browsing never changes the chosen picture. */
+/* Rin photographs: manifest generated from public/avatars by Vercel build. */
 export const AVATAR_STORAGE_KEY = 'rin-avatar-choice-v1';
 
-export const AVATAR_OPTIONS = Object.freeze([
-  { id: 'original', src: '/avatar.jpg' },
-  { id: 'home', src: '/avatars/rin-home.webp' },
-  { id: 'walk', src: '/avatars/rin-walk.webp' },
-  { id: 'evening', src: '/avatars/rin-evening.webp' },
-  { id: 'morning', src: '/avatars/rin-morning.webp' },
-  { id: 'work', src: '/avatars/rin-work.webp' }
-]);
+const ORIGINAL = 'rin-original.jpg';
+const LEGACY_IDS = Object.freeze({
+  original: ORIGINAL,
+  home: 'rin-home.webp',
+  walk: 'rin-walk.webp',
+  evening: 'rin-evening.webp',
+  morning: 'rin-morning.webp',
+  work: 'rin-work.webp'
+});
+const MANIFEST_URL = '/avatars.json';
+// Manifest is generated at build time and never requires an API function.
+const FALLBACK_SRC = '';
 
-const optionFor = id => AVATAR_OPTIONS.find(item => item.id === id) || AVATAR_OPTIONS[0];
-function savedAvatarId() {
-  try { return localStorage.getItem(AVATAR_STORAGE_KEY); }
-  catch { return null; }
+// The gallery waits for the actual manifest; no hard-coded photograph is required.
+export let AVATAR_OPTIONS = Object.freeze([]);
+
+function storedId() {
+  try {
+    const stored = localStorage.getItem(AVATAR_STORAGE_KEY);
+    return LEGACY_IDS[stored] || stored;
+  } catch { return null; }
 }
-let selectedId = optionFor(savedAvatarId()).id;
 
+let selectedId = storedId() || null;
+const optionForId = id => AVATAR_OPTIONS.find(option => option.id === id);
 export function getSelectedAvatarUrl() {
-  return optionFor(selectedId).src;
+  return (optionForId(selectedId) || AVATAR_OPTIONS[0])?.src || FALLBACK_SRC;
 }
 
-/** Full-screen messenger-style viewer. Runs in the existing, authenticated UI. */
+function normalizeManifestOptions(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  return value.filter(item => {
+    if (!item || typeof item.id !== 'string' || typeof item.src !== 'string') return false;
+    if (seen.has(item.id) || !/^[^/\\]{1,160}\.(?:jpg|jpeg|png|webp)$/i.test(item.id)) return false;
+    // Only same-origin photographs under /avatars may be shown.
+    if (!/^\/avatars\/[^/?#]+\.(?:jpg|jpeg|png|webp)(?:\?v=[a-f0-9]{12})?$/i.test(item.src)) return false;
+    seen.add(item.id);
+    return true;
+  }).slice(0, 200).map(item => ({ id: item.id, src: item.src }));
+}
+
 export function initAvatarPicker({ chatRoot = document.getElementById('chat') } = {}) {
   const trigger = document.getElementById('avatarPickerToggle');
   const topAvatar = document.getElementById('avatarTop');
-  if (!trigger || !topAvatar) return null;
-
-  // Avoid duplicated listeners when the profile UI is initialized again.
-  const existing = document.getElementById('rinAvatarPicker');
-  if (existing) return null;
+  if (!trigger || !topAvatar || document.getElementById('rinAvatarPicker')) return null;
 
   const overlay = document.createElement('div');
   overlay.id = 'rinAvatarPicker';
@@ -66,50 +83,85 @@ export function initAvatarPicker({ chatRoot = document.getElementById('chat') } 
   const counter = overlay.querySelector('.rin-avatar-viewer__count');
   const install = overlay.querySelector('.rin-avatar-viewer__install');
   const closeButton = overlay.querySelector('.rin-avatar-viewer__close');
-  const thumbs = [];
+  let thumbs = [];
   let viewedIndex = 0;
   let returnFocus = trigger;
   let touchStart = null;
+  let loading = null;
 
-  for (const [index, option] of AVATAR_OPTIONS.entries()) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'rin-avatar-viewer__thumb';
-    button.setAttribute('aria-label', `Фото ${index + 1} из ${AVATAR_OPTIONS.length}`);
-    button.setAttribute('aria-current', 'false');
-    const thumbnail = document.createElement('img');
-    thumbnail.src = option.src;
-    thumbnail.alt = '';
-    thumbnail.loading = 'lazy';
-    thumbnail.decoding = 'async';
-    button.appendChild(thumbnail);
-    button.addEventListener('click', () => view(index));
-    filmstrip.appendChild(button);
-    thumbs.push(button);
+  function renderThumbnails() {
+    filmstrip.replaceChildren();
+    thumbs = AVATAR_OPTIONS.map((option, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'rin-avatar-viewer__thumb';
+      button.setAttribute('aria-label', `Фото ${index + 1} из ${AVATAR_OPTIONS.length}`);
+      button.setAttribute('aria-current', 'false');
+      const thumbnail = document.createElement('img');
+      thumbnail.src = option.src;
+      thumbnail.alt = '';
+      thumbnail.loading = 'lazy';
+      thumbnail.decoding = 'async';
+      button.appendChild(thumbnail);
+      button.addEventListener('click', () => view(index));
+      filmstrip.appendChild(button);
+      return button;
+    });
   }
 
   function refreshAvatars() {
     const src = getSelectedAvatarUrl();
+    if (!src) return;
     if (topAvatar.getAttribute('src') !== src) topAvatar.src = src;
-    // Existing messages, reloaded archive, voice notes and future messages use one avatar.
     for (const image of chatRoot?.querySelectorAll('.row.her img.avatar.small') || []) {
       if (image.getAttribute('src') !== src) image.src = src;
     }
   }
 
   function view(index) {
+    if (!AVATAR_OPTIONS.length) {
+      counter.textContent = '…';
+      mainPhoto.removeAttribute('src');
+      install.disabled = true;
+      install.textContent = 'Установить';
+      return;
+    }
     viewedIndex = (index + AVATAR_OPTIONS.length) % AVATAR_OPTIONS.length;
     const option = AVATAR_OPTIONS[viewedIndex];
-    mainPhoto.src = option.src;
+    if (mainPhoto.getAttribute('src') !== option.src) mainPhoto.src = option.src;
     counter.textContent = `${viewedIndex + 1} / ${AVATAR_OPTIONS.length}`;
     thumbs.forEach((button, i) => {
       button.classList.toggle('is-current', i === viewedIndex);
       button.setAttribute('aria-current', String(i === viewedIndex));
     });
-    // Browsing a photograph is not a selection. Only the install button saves it.
     const installed = option.id === selectedId;
     install.disabled = installed;
     install.textContent = installed ? 'Установлен' : 'Установить';
+  }
+
+  async function reloadOptions() {
+    if (loading) return loading;
+    loading = (async () => {
+      const response = await fetch(MANIFEST_URL, { cache: 'no-store', credentials: 'same-origin' });
+      if (!response.ok) throw new Error('AVATARS_FETCH_FAILED');
+      const result = await response.json();
+      const options = normalizeManifestOptions(result?.avatars);
+      if (!options.length) throw new Error('AVATARS_EMPTY');
+      const previousViewed = AVATAR_OPTIONS[viewedIndex]?.id;
+      AVATAR_OPTIONS = Object.freeze(options);
+      if (!optionForId(selectedId)) {
+        selectedId = AVATAR_OPTIONS[0].id;
+        try { localStorage.setItem(AVATAR_STORAGE_KEY, selectedId); } catch {}
+      }
+      refreshAvatars();
+      renderThumbnails();
+      if (!overlay.hidden) {
+        const index = AVATAR_OPTIONS.findIndex(item => item.id === previousViewed);
+        view(index < 0 ? AVATAR_OPTIONS.findIndex(item => item.id === selectedId) : index);
+      }
+      return true;
+    })().catch(() => false).finally(() => { loading = null; });
+    return loading;
   }
 
   function close() {
@@ -125,13 +177,17 @@ export function initAvatarPicker({ chatRoot = document.getElementById('chat') } 
     if (!overlay.hidden) return;
     returnFocus = document.activeElement;
     document.activeElement?.blur?.();
-    selectedId = optionFor(savedAvatarId()).id;
-    view(AVATAR_OPTIONS.findIndex(item => item.id === selectedId));
+    const stored = storedId();
+    if (stored && optionForId(stored)) selectedId = stored;
+    renderThumbnails();
+    viewedIndex = Math.max(0, AVATAR_OPTIONS.findIndex(item => item.id === selectedId));
+    view(viewedIndex);
     overlay.hidden = false;
     document.body.classList.add('rin-avatar-picker-open');
     trigger.setAttribute('aria-expanded', 'true');
     document.addEventListener('keydown', onKeydown, true);
     closeButton.focus({ preventScroll: true });
+    void reloadOptions();
   }
 
   function onKeydown(event) {
@@ -158,14 +214,13 @@ export function initAvatarPicker({ chatRoot = document.getElementById('chat') } 
   overlay.querySelector('.rin-avatar-viewer__arrow--next').addEventListener('click', () => view(viewedIndex + 1));
   install.addEventListener('click', () => {
     const option = AVATAR_OPTIONS[viewedIndex];
-    if (option.id === selectedId) return;
+    if (!option || option.id === selectedId) return;
     selectedId = option.id;
-    try { localStorage.setItem(AVATAR_STORAGE_KEY, selectedId); } catch { /* private browsing */ }
+    try { localStorage.setItem(AVATAR_STORAGE_KEY, selectedId); } catch {}
     refreshAvatars();
     close();
   });
 
-  // Horizontal gestures on the photograph, without treating vertical movement as a swipe.
   const stage = overlay.querySelector('.rin-avatar-viewer__stage');
   stage.addEventListener('touchstart', event => {
     const t = event.changedTouches[0];
@@ -183,26 +238,29 @@ export function initAvatarPicker({ chatRoot = document.getElementById('chat') } 
   }, { passive: true });
   stage.addEventListener('touchcancel', () => { touchStart = null; }, { passive: true });
 
-  // Cross-tab selection sync; the viewer does not change a selected photo on preview.
   window.addEventListener('storage', event => {
     if (event.key !== AVATAR_STORAGE_KEY && event.key !== null) return;
-    selectedId = optionFor(savedAvatarId()).id;
+    const stored = storedId();
+    selectedId = optionForId(stored)?.id || AVATAR_OPTIONS[0]?.id || null;
     refreshAvatars();
     if (!overlay.hidden) view(viewedIndex);
   });
 
-  // Safe fallback for an incomplete deployment.
+  // chat.js can create legacy /avatar.jpg elements. Replace them with the
+  // actual chosen image. Never fall back to an image removed from the folder.
   document.addEventListener('error', event => {
     const image = event.target;
     if (!(image instanceof HTMLImageElement)) return;
     if (!image.matches('#avatarTop, .row.her img.avatar.small')) return;
-    if (image.getAttribute('src') !== '/avatar.jpg') image.src = '/avatar.jpg';
+    const src = getSelectedAvatarUrl();
+    if (src && image.getAttribute('src') !== src) image.src = src;
+    else image.removeAttribute('src');
   }, true);
 
-  // chat.js still creates new bubbles with /avatar.jpg: keep them in sync in place.
   if (chatRoot && typeof MutationObserver === 'function') {
     const observer = new MutationObserver(records => {
       const src = getSelectedAvatarUrl();
+      if (!src) return;
       for (const record of records) {
         for (const node of record.addedNodes) {
           if (!(node instanceof Element)) continue;
@@ -217,6 +275,8 @@ export function initAvatarPicker({ chatRoot = document.getElementById('chat') } 
     observer.observe(chatRoot, { childList: true, subtree: true });
   }
 
+  renderThumbnails();
   refreshAvatars();
-  return { open, close, selected: () => selectedId };
+  void reloadOptions();
+  return { open, close, selected: () => selectedId, refresh: reloadOptions };
 }

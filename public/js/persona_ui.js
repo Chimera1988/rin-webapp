@@ -2,7 +2,7 @@
 // timing are server/runtime-owned and intentionally not editable here.
 
 import { getDefaultProfile, loadProfile, saveProfile } from './rin_memory.js';
-import { initAvatarPicker } from './avatar_picker.js?v=2026-10-17-messenger-v2';
+import { initAvatarPicker } from './avatar_picker.js?v=2026-10-17-static-manifest-v1';
 
 const btnOpen = document.getElementById('openPersona');
 const panel = document.getElementById('personaPanel');
@@ -87,8 +87,8 @@ document.addEventListener('keydown', event => {
 })();
 
 // Gallery is installed from this already-loaded UI module, leaving index.html,
-// chat.js, server, and dialogue behavior untouched. The existing avatar remains
-// available as the first gallery choice.
+// chat.js, server, and dialogue behavior untouched. The gallery uses
+// photos discovered from the avatars folder during deployment.
 (function installRinAvatarGallery() {
   const avatar = document.getElementById('avatarTop');
   const chat = document.getElementById('chat');
