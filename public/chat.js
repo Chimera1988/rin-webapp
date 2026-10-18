@@ -1707,7 +1707,7 @@ function renderReplyPreview() {
   replyPreviewAuthor.textContent = replyAuthorLabel(snapshot);
   replyPreviewText.textContent = replyVisibleText(snapshot);
   if (snapshot.kind === 'sticker' && snapshot.stickerSrc) {
-    replyPreviewThumb.src = snapshot.stickerSrc;
+    replyPreviewThumb.src = stickerDisplayUrl(snapshot.stickerSrc);
     replyPreviewThumb.alt = 'Миниатюра стикера';
     replyPreviewThumb.hidden = false;
   } else {
@@ -1757,7 +1757,7 @@ function createReplyQuote(snapshot, messageId) {
     quote.classList.add('reply-quote--media');
     const thumb = document.createElement('img');
     thumb.className = 'reply-quote__thumb';
-    thumb.src = normalized.stickerSrc;
+    thumb.src = stickerDisplayUrl(normalized.stickerSrc);
     thumb.alt = 'Стикер';
     quote.appendChild(thumb);
   } else if (normalized.kind === 'voice') {
@@ -1952,6 +1952,17 @@ function addTyping(){
   return row;
 }
 
+// Use a new URL once to invalidate sticker copies cached by older PWA versions.
+// Vercel serves WebP stickers with no-store after this update; future replacements
+// therefore do not need another URL version. Stored sticker paths remain unchanged.
+const STICKER_IMAGE_CACHE_REV = '2026-10-18-sticker-identity-refresh';
+function stickerDisplayUrl(src) {
+  const pathname = String(src || '');
+  return /^\/stickers\/[a-z0-9_]+\.webp$/i.test(pathname)
+    ? `${pathname}?v=${STICKER_IMAGE_CACHE_REV}`
+    : pathname;
+}
+
 /* === Стикеры: рендер === */
 function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now(), options={}){
   return new Promise(resolve => {
@@ -1976,7 +1987,7 @@ function addStickerBubble(src, who='assistant', utterance=null, ts=Date.now(), o
     chatEl.appendChild(row);
     image.onload = () => { row.classList.remove('sticker-loading'); chatViewport.requestScrollToBottom({ force: options.forceScroll !== false }); resolve(row); };
     image.onerror = () => { dbg(`sticker asset failed: ${src}`); row.remove(); resolve(null); };
-    image.src = src;
+    image.src = stickerDisplayUrl(src);
   });
 }
 
