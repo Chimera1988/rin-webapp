@@ -3,8 +3,9 @@ import {prepareClientSnapshot} from './cloud_memory_snapshot.js';
 const SYNC_HASH_KEY='rin-neon-memory-last-snapshot-hash-v1';
 const BACKFILL_CURSOR_KEY='rin-neon-memory-backfill-cursor-v1';
 const BACKFILL_DONE_KEY='rin-neon-memory-backfill-done-v1';
-export function createCloudMemorySync({getDiary,headers=()=>({}),fetchFn=fetch,storage=localStorage,log=()=>{}}={}) {
+export function createCloudMemorySync({getDiary,headers=()=>({}),fetchFn=fetch,storage=localStorage,log=()=>{},restoreActionLedger=false}={}) {
   let running=null;
+  let restorationAttempted=false;
   const get=(key)=>{try{return storage.getItem(key);}catch{return null;}};
   const put=(key,v)=>{try{storage.setItem(key,v);return true;}catch{return false;}};
   const request=async(body,timeout=16000)=>{
@@ -13,9 +14,34 @@ export function createCloudMemorySync({getDiary,headers=()=>({}),fetchFn=fetch,s
       headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});}
     finally {clearTimeout(timer);}
   };
+  async function restoreActions(){
+    if(restorationAttempted)return true;
+    restorationAttempted=true;
+    try {
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),8000);
+      let response;
+      try {response=await fetchFn('/api/archive?mode=memory-latest',{method:'GET',cache:'no-store',headers:headers(),signal:controller.signal});}
+      finally {clearTimeout(timeout);}
+      if(!response.ok)throw new Error(`MEMORY_RESTORE_HTTP_${response.status}`);
+      const data=await response.json();
+      if(data?.ok!==true)throw new Error('MEMORY_RESTORE_BAD_ACK');
+      const personalActions=data?.snapshot?.recovered_personal_actions ?? data?.snapshot?.personal_actions;
+      if(Array.isArray(personalActions)){
+        const mod=await import('./rin_memory.js');
+        await mod.mergeCloudPersonalActions(personalActions);
+      }
+      return true;
+    } catch(error) {
+      restorationAttempted=false;
+      log('cloud action restore postponed: '+String(error?.message||error).slice(0,80));
+      return false;
+    }
+  }
   async function sync() {
     if (running) return running;
     running=(async()=>{
+      if(restoreActionLedger && !await restoreActions())throw new Error('ACTION_RESTORE_PENDING');
       const diary=await getDiary(); if(!diary) return {ok:false,code:'NO_DIARY'};
       // Only long-term content contributes to fingerprint. Mood/turn timestamps do not create duplicates.
       const snapshot=await prepareClientSnapshot({...diary,_updated_at:null});

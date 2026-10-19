@@ -10,9 +10,10 @@ import { normalizeRinIntent } from '../lib/intent-contract.js';
 import { normalizeInnerLife } from '../lib/inner-life-contract.js';
 import { contentKey } from '../lib/chat-contract.js';
 import { storageGet, storageReadJson, storageRemove, storageWriteJsonVerified } from './storage.js';
-import { activityPeriod, resolveDailyRhythm } from './daily_rhythm.js';
+import { activityPeriod, resolveDailyRhythm, classifyWeather } from './daily_rhythm.js';
 import { reconcileDailyEpisode, projectDailyEpisodeActivity } from '../lib/daily-episode.js';
 import { reconcileEventEvidence } from '../lib/event-evidence.js';
+import { advancePersonalActions, applyPersonalActionDecision, mergePersonalActions } from '../lib/action-lifecycle.js';
 import { normalizeRelationalIntegrity } from '../lib/relational-integrity.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
@@ -437,6 +438,16 @@ export async function saveDiary(diary) {
   });
 }
 
+export async function mergeCloudPersonalActions(remote = []) {
+  return mutateDiary(diary=>{
+    const merged=mergePersonalActions(diary.innerLife?.personalActions,remote);
+    const before=JSON.stringify(diary.innerLife?.personalActions || []);
+    if (before===JSON.stringify(merged)) return {changed:false,count:merged.length};
+    diary.innerLife=normalizeInnerLife({...diary.innerLife,personalActions:merged});
+    return {changed:true,count:merged.length};
+  });
+}
+
 export async function addEvent(text, opts = {}) {
   const normalizedText = cleanText(text, 1800);
   if (!normalizedText) return false;
@@ -662,6 +673,10 @@ function computeLegacyCompatibleInnerLife(currentInput = {}, env = {}, now = Dat
     part, dayType: current.dayType || 'weekday', sleepPhase: current.sleepPhase || 'awake', sleepDebtMinutes: current.sleepDebtMinutes || 0,
     relationship: context.relationship, emotionalState: context.emotionalState, mood: context.mood, now, activityChanged: expired
   });
+  current.outdoorConditions = classifyWeather(env?.weather).outdoor;
+  current.personalActions = advancePersonalActions(current.personalActions, now, {
+    ...current,chatting:Number(current.lastUserAt)>0 && now-Number(current.lastUserAt)<15*60000
+  });
   current.lastUserAt = now;
   current.interactionCount = finiteNumber(current.interactionCount, 0) + 1;
   return normalizeInnerLife(current);
@@ -708,7 +723,11 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
     sleepInterruptions: rhythm.sleep.interruptions,
     lateConversationMinutes: rhythm.sleep.lateConversationMinutes,
     wakeReason: rhythm.sleep.wakeReason,
-    sleepCarryover: rhythm.sleep.carryover
+    sleepCarryover: rhythm.sleep.carryover,
+    outdoorConditions: rhythm.weather.outdoor
+  });
+  current.personalActions = advancePersonalActions(current.personalActions, now, {
+    ...current,chatting:hasUserMessage&&Number(current.lastUserAt)>0&&now-Number(current.lastUserAt)<15*60000
   });
 
   if (expired) {
@@ -744,6 +763,15 @@ function computeInnerLife(currentInput = {}, env = {}, userText = '', now = Date
   // Causal episode is authoritative over an unverified schedule-derived activity.
   // This is a state projection, not a new deterministic decision about what Rin must say.
   Object.assign(current, projectDailyEpisodeActivity(current, episode, now));
+  // A self-chosen, active action is more specific than a schedule-suggested beat.
+  // Explicit reported evidence still takes precedence.
+  const activePersonalAction = [...current.personalActions].reverse().find(x=>x.status==='in_progress');
+  if (activePersonalAction && current.source!=='causal_daily_episode') {
+    current.activity = activePersonalAction.goal;
+    current.activityGoal = activePersonalAction.goal;
+    current.focus = activePersonalAction.motive;
+    current.source = 'rin_personal_action';
+  }
 
   evolvePersistentLifeState(current, {
     part,
@@ -891,6 +919,12 @@ export async function commitTurnState({
     }
 
     if (innerLife && typeof innerLife === 'object') diary.innerLife = normalizeInnerLife(clone(innerLife));
+    // Only a committed Mind turn can establish/change an action. No optimistic updates.
+    if (stateTransition?.personalActionDecision) {
+      diary.innerLife.personalActions = applyPersonalActionDecision(
+        diary.innerLife.personalActions, stateTransition.personalActionDecision,
+        {now,requestId:wantedRequest,innerLife:diary.innerLife});
+    }
 
     const mood = applyMoodDecay(diary.mood, now);
     if (stateTransition?.moodState && typeof stateTransition.moodState === 'object') {
