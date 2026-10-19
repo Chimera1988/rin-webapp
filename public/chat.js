@@ -468,6 +468,7 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
               workMode: String(state.workMode || 'normal').slice(0, 24),
               activitySetting: String(state.activitySetting || 'unknown').slice(0, 24),
               weatherGrounded: state.weatherGrounded === true,
+              outdoorConditions: String(state.outdoorConditions || 'unknown').slice(0, 12),
               weatherContext: String(state.weatherContext || '').slice(0, 220),
               energy: numberOr(state.energy),
               mentalLoad: numberOr(state.mentalLoad, 42),
@@ -494,6 +495,7 @@ async function buildMemoryPayload({ innerLifeOverride = null } = {}) {
               lastUserAt: numberOr(state.lastUserAt),
               interactionCount: numberOr(state.interactionCount, 0),
               dailyEpisode: state.dailyEpisode || null,
+              personalActions: Array.isArray(state.personalActions) ? state.personalActions.slice(-10) : [],
               recentActivities: Array.isArray(state.recentActivities)
                 ? state.recentActivities.slice(-8).map(item => String(item || '').slice(0, 180)).filter(Boolean)
                 : []
@@ -649,7 +651,7 @@ setInterval(() => { void memoryJobRunner.drain(); }, 30_000);
 const cloudMemorySync=createCloudMemorySync({
   getDiary:async()=>{const lib=await ensureMemoryReady();return lib?.loadDiary?.()||null;},
   headers:()=>authenticatedHeaders({'Content-Type':'application/json'}),
-  storage:localStorage,log:msg=>dbg(msg)
+  storage:localStorage,log:msg=>dbg(msg),restoreActionLedger:true
 });
 setTimeout(()=>{void cloudMemorySync.sync();void cloudMemorySync.backfill();},15_000);
 setInterval(()=>{void cloudMemorySync.sync();void cloudMemorySync.backfill();},180_000);
@@ -769,6 +771,7 @@ function buildTurnDebugSnapshot(data = null, committed = null) {
   };
 }
 
+let lastActionDebugMarker='';
 async function commitSuccessfulTurnState({ memoryModule, userMessage = null, requestId = null, data, preparedInnerLife }) {
   const transition = data?.stateTransition || null;
   const decision = data?.turnDecision || null;
@@ -781,6 +784,16 @@ async function commitSuccessfulTurnState({ memoryModule, userMessage = null, req
   });
 
 
+  if (committed?.applied) {
+    const action=committed.innerLife?.personalActions?.at(-1);
+    if(action && Number(action.updatedAt)>=Number(action.decidedAt)) {
+      const marker=`${action.id}/${action.updatedAt}`;
+      if(marker!==lastActionDebugMarker) {
+        lastActionDebugMarker=marker;
+        dbg(`personal action: kind=${action.kind}; status=${action.status}; goal=${action.goal}; outcome=${action.outcome?.code||'-'}; source=simulated_character_world`);
+      }
+    }
+  }
   if (committed?.mood) {
     const questionReason = String(decision?.question?.reason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
     const questionPressure = String(data?.cognition?.reciprocity?.reciprocalQuestionReason || '-').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -1006,6 +1019,7 @@ async function acceptBackgroundDelivery(pending) {
       await refreshRinEnv({refreshWeather:false});
       const freshInnerLife = await memoryModule?.prepareInnerLife?.(currentEnv || {},'',schedule?.innerLife||{},{history:toApiHistory(history)});
       await commitSuccessfulTurnState({memoryModule,requestId:pending.requestId,data:{stateTransition:pending.stateTransition,turnDecision:null},preparedInnerLife:freshInnerLife || pending.innerLife});
+      void cloudMemorySync.sync();
     } else dbg('background message arrived after newer user interaction; stale stateTransition intentionally skipped');
     await deliverCommittedAssistantTurn(prepared);
     if (!initiationState.recordAttempt(pending.dateKey,pending.windowId)) dbg('background initiation attempt sync failed');
@@ -3147,6 +3161,7 @@ async function processUserBatch(messageIds = []) {
       preparedInnerLife
     });
     stateCommitted = true;
+    void cloudMemorySync.sync();
     markUserBatchComplete(ids);
 
     const kind = await deliverCommittedAssistantTurn(preparedDelivery, {
