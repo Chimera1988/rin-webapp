@@ -1,5 +1,6 @@
 import { normalizeDailyEpisode } from './daily-episode.js';
 import { normalizeEventEvidence } from './event-evidence.js';
+import { normalizePersonalActions } from './action-lifecycle.js';
 export const INNER_LIFE_SCHEMA = 'rin-inner-life-v5';
 export const INNER_LIFE_REALITY_MODES = new Set(['simulated_character_world', 'grounded']);
 export const INNER_LIFE_SLEEP_PHASES = new Set(['awake', 'winding_down', 'drowsy', 'sleeping', 'interrupted_sleep', 'waking']);
@@ -36,6 +37,7 @@ export function normalizeInnerLife(input = {}) {
     workMode,
     activitySetting,
     weatherGrounded: source.weatherGrounded === true,
+    outdoorConditions: ['normal','adapt','avoid'].includes(source.outdoorConditions) ? source.outdoorConditions : 'unknown',
     weatherContext: clean(source.weatherContext, 220),
     energy: clamp(source.energy, 0, 100, 60),
     mentalLoad: clamp(source.mentalLoad, 0, 100, 42),
@@ -63,6 +65,7 @@ export function normalizeInnerLife(input = {}) {
     interactionCount: Math.max(0, Math.round(numberOr(source.interactionCount, 0))),
     dailyEpisode: normalizeDailyEpisode(source.dailyEpisode, Math.max(numberOr(source.dailyEpisode?.evidenceAt,0),numberOr(source.lastStateAt,0))),
     eventEvidence: normalizeEventEvidence(source.eventEvidence, Math.max(numberOr(source.lastStateAt,0), numberOr(source.eventEvidence?.items?.at(-1)?.at,0))),
+    personalActions: normalizePersonalActions(source.personalActions),
     recentActivities: (Array.isArray(source.recentActivities) ? source.recentActivities : [])
       .map(item => clean(item, 180))
       .filter(Boolean)
