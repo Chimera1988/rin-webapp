@@ -1,7 +1,8 @@
-import { normalizeStoredMessage } from './chat_store.js';
+import { loadChatHistory, normalizeStoredMessage } from './chat_store.js';
 
 const BATCH=70;
 const RETRY_MS=15000;
+const RECONNECT_MS=30000;
 const GOOD_STATUS=new Set(['complete']);
 const cleanBatch = messages => (Array.isArray(messages)?messages:[]).filter(m=>
   m?.id && GOOD_STATUS.has(m.status) && ['text','voice','sticker','silence'].includes(m.kind) &&
@@ -61,6 +62,9 @@ export function createCloudArchive({fetchFn=fetch,headers=()=>({}),log=()=>{},ti
   let enabled=false;
   let pending=new Map();
   let timerId=null;
+  let reconnectTimerId=null;
+  let reconnecting=false;
+  let reconnectFailures=0;
   let busy=false;
   let cursor=null;
   let hasMore=false;
@@ -116,16 +120,48 @@ export function createCloudArchive({fetchFn=fetch,headers=()=>({}),log=()=>{},ti
     hasMore=value.hasMore===true;
     return {messages:value.messages,cursor,hasMore};
   }
+  // A slow/offline startup must not disable cloud archival for the entire PWA session.
+  // Recover independently from the initial history-page read and replay completed
+  // messages from the existing local cache (without touching Rin's diary or state).
+  function scheduleReconnect(){
+    if (enabled || reconnecting || reconnectTimerId!==null) return;
+    const delay=Math.min(RECONNECT_MS*Math.pow(2,Math.min(reconnectFailures,2)),120000);
+    reconnectTimerId=timer(async()=>{
+      reconnectTimerId=null;
+      if (enabled || reconnecting) return;
+      reconnecting=true;
+      try {
+        const response=await request('/api/archive?mode=status');
+        if (!response.ok) throw new Error(`status_http_${response.status}`);
+        const status=await response.json();
+        if (status?.ok!==true) throw new Error('invalid_archive_status');
+        enabled=true;
+        reconnectFailures=0;
+        // The startup path may have discarded enqueue() calls while disconnected.
+        // Rescan the local cache rather than relying on transient in-memory batches.
+        try { enqueue(loadChatHistory(localStorage)); }
+        catch (error) { log(`archive local replay unavailable: ${error?.message||error}`); }
+        log('cloud archive reconnected; local history sync resumed');
+      } catch (error) {
+        reconnectFailures++;
+        log(`archive reconnect postponed: ${error?.message||error}`);
+      } finally {
+        reconnecting=false;
+        if (!enabled) scheduleReconnect();
+      }
+    },delay);
+    if (typeof reconnectTimerId?.unref === 'function') reconnectTimerId.unref();
+  }
   async function start(){
     try{
       const res=await request('/api/archive?mode=status');
-      if (!res.ok){log(`archive unavailable: HTTP ${res.status}`);return null;}
+      if (!res.ok){log(`archive unavailable: HTTP ${res.status}`);scheduleReconnect();return null;}
       const status=await res.json();
       if (status.audioReady!==true) log('archive ready for text; private audio store is not connected');
       enabled=true;
       const first=await page(null);
       return first;
-    }catch(error){log(`archive startup skipped: ${error.message}`);enabled=false;return null;}
+    }catch(error){log(`archive startup skipped: ${error.message}`);enabled=false;scheduleReconnect();return null;}
   }
   return {
     start,enqueue,page,flush,
