@@ -1,4 +1,4 @@
-// Rin 2.6.21: persistent, bounded SELF-CHOSEN simulated-world actions.
+// Rin 2.6.22: persistent, bounded SELF-CHOSEN simulated-world actions.
 // Rin Mind alone chooses the task and may cancel/defer/report it. This module
 // advances *world state*, not Rin's goals or relationships. No physical action
 // or external-world effect is implied by an in-world outcome.
@@ -37,7 +37,9 @@ export function normalizePersonalAction(raw=null) {
   const goal=clean(raw.goal,190);
   if (!/^[a-z0-9][a-z0-9_-]{4,114}$/u.test(id)||!kind||!ALL.has(status)||!goal||!decidedAt) return null;
   const outcome=raw.outcome&&typeof raw.outcome==='object'&&TERMINAL.has(status)
-    ? {code:clean(raw.outcome.code,35)||status,summary:clean(raw.outcome.summary,320),source:'simulated_character_world'} : null;
+    ? {code:clean(raw.outcome.code,35)||status,summary:clean(raw.outcome.summary,320),
+       goal:clean(raw.outcome.goal,190),motive:clean(raw.outcome.motive,220),nextStep:clean(raw.outcome.nextStep,190)||null,
+       source:'simulated_character_world'} : null;
   return {
     id,kind,goal,motive:clean(raw.motive,220),status,decidedAt,updatedAt,
     plannedStartAt:finite(raw.plannedStartAt,decidedAt),startedAt:finite(raw.startedAt),
@@ -85,12 +87,76 @@ function domainBlocked(kind,innerLife={}) {
   if (kind==='walk' && !['normal','adapt'].includes(innerLife?.outdoorConditions)) return true;
   return false;
 }
+// Contextual in-world outcomes: never claim a tool ran, a physical delivery
+// occurred, or an item was purchased. Use the exact self-chosen goal as the
+// provenance instead of a generic "she did something" vignette.
+function goalSpecificResult(action, partial) {
+  const goal=clean(action.goal,190);
+  const motive=clean(action.motive,145);
+  const kind=action.kind;
+  let summary='';
+  let nextStep=null;
+  if(kind==='work' && /(?:редактор|обратн.{0,18}связ|комментар|правк)/iu.test(goal)) {
+    summary=partial?'Разобрала часть редакторского материала; сложные места оставила для отдельного прохода.':'Разобрала редакторский материал и сформулировала основные замечания к тексту.';
+    nextStep=partial?'Вернуться к оставшимся замечаниям':null;
+  } else if(kind==='work' && /(?:перевод|абзац|фрагмент|текст)/iu.test(goal)) {
+    summary=partial?'Продвинулась в работе над текстом, но не закрыла весь намеченный фрагмент.':'Закончила выбранный фрагмент работы над текстом.';
+    nextStep=partial?'Продолжить работу с незавершённым фрагментом':null;
+  } else if(kind==='meal' && /(?:приготов|ужин|обед|завтрак)/iu.test(goal)) {
+    summary=partial?'Времени на задуманный приём пищи хватило не на всё; Рин упростила первоначальный план.':'Уделила время приготовлению еды и закончила запланированную бытовую задачу.';
+    nextStep=partial?'Вернуться к оставшейся части плана, если это всё ещё нужно':null;
+  } else if(kind==='reading') {
+    summary=partial?'Почитала выбранное произведение, но остановилась раньше, чем собиралась.':'Уделила время выбранному чтению и дошла до естественной остановки.';
+    nextStep=partial?'Продолжить чтение при желании':null;
+  } else if(kind==='walk') {
+    summary=partial?'Прогулка оказалась короче запланированной; Рин вернулась раньше.':'Прогулялась и вернулась к домашним делам.';
+  } else if(kind==='home') {
+    summary=partial?'Разобралась с частью выбранного домашнего дела, а остальное отложила.':'Закончила выбранное домашнее дело.';
+  } else if(kind==='creative') {
+    summary=partial?'Проверила несколько вариантов идеи, но оставила её незавершённой.':'Поработала над своей идеей и сохранила промежуточный результат.';
+    nextStep=partial?'Вернуться к идее, если захочется':null;
+  } else {
+    summary=OUTCOMES[kind][partial?1:0];
+  }
+  return {summary,goal,motive,nextStep};
+}
 function resultFor(action) {
-  const roll=hash(`${action.id}:outcome`)%10;
-  if (roll===0) return {status:'interrupted',code:'interrupted',summary:'Обстоятельства изменились, и Рин прервала своё занятие, не объявляя его завершённым.'};
+  const roll=hash(`${action.id}:${action.goal}:outcome`)%10;
+  if(roll===0) return {status:'interrupted',code:'interrupted',summary:'Обстоятельства изменились; Рин не закончила задуманное.',goal:action.goal,motive:action.motive,nextStep:'Решить, стоит ли возвращаться к плану'};
   const partial=roll<=3;
-  const samples=OUTCOMES[action.kind];
-  return {status:partial?'partial':'completed',code:partial?'partial':'complete',summary:samples[partial?1:0]};
+  return {status:partial?'partial':'completed',code:partial?'partial':'complete',...goalSpecificResult(action,partial)};
+}
+
+// A concrete, first-person choice already spoken by Rin is still her choice
+// when the structured mind field was "none". This is intentionally much
+// narrower than a general intent detector. User requests, assumptions, jokes,
+// narration and vague "thinking about" never create an autonomous task.
+export function inferRinDeclaredPersonalAction(assistantText='',userText='') {
+  const raw=clean(assistantText,1200);
+  if(!raw || /(?:если бы|представь|вообрази|в сказке|как будто|я бы|может быть)/iu.test(raw))return null;
+  // Do not reinterpret an explicit imperative addressed to Rin as her choice.
+  if(/(?:^|[.!?]\s*)(?:иди|сходи|пойди|зайди|прочитай|приготовь|сделай|погуляй|начни|закончи)(?=$|[^\p{L}\p{N}])/iu.test(clean(userText,600)))return null;
+  const chunks=raw.split(/(?<=[.!?…])\s+|\n+/u).map(v=>v.trim()).filter(Boolean);
+  const owned=chunks.find(s=>
+    /(?:^|[^\p{L}\p{N}])(?:я\s+)?(?:сама\s+)?(?:решила|собираюсь|планирую|хочу|намерена|пойду|начну|займусь|вернусь)\s+[^.!?]{3,155}/iu.test(s)
+    && !/(?:\bне\s+(?:решила|собираюсь|планирую|хочу|пойду|начну|займусь|вернусь)|пока не решила|не уверена|возможно|если получится)/iu.test(s));
+  if(!owned)return null;
+  const patterns=[
+    ['work',/(?:вернусь\s+к\s+(?:работе|материалу|тексту|переводу|правкам)|займусь\s+(?:правками|переводом|текстом)|(?:редактировать|доработать|закончить)\s+(?:текст|перевод|материал)|дать\s+автору\s+[^.!?]*обратную\s+связь)/iu],
+    ['reading',/(?:читать|почитать|книг[ауи]|дочитать)/iu],
+    ['meal',/(?:приготовить|готовить|сделать)\s+(?:ужин|обед|завтрак|еду|себе\s+поесть)/iu],
+    ['walk',/(?:погулять|прогуляться|на\s+прогулку)/iu],
+    ['home',/(?:уборкой|убраться|разобрать\s+(?:полку|шкаф|вещи)|по\s+дому)/iu],
+    ['rest',/(?:отдохнуть|отдыхать|на\s+перерыв)/iu],
+    ['music',/(?:послушать\s+(?:музыку|альбом|песню)|слушать\s+музыку)/iu],
+    ['creative',/(?:написать\s+(?:набросок|рассказ|стих)|порисовать|поработать\s+над\s+идеей)/iu]
+  ];
+  const entry=patterns.find(([,re])=>re.test(owned));
+  if(!entry)return null;
+  const context=chunks.find(s=>s!==owned && /(?:осталось|чтобы|хочу\s+успеть|план|идея|цель)/iu.test(s));
+  const goal=clean(context && entry[0]==='work' ? `${owned} ${context}`:owned,190);
+  const motive=clean(context && context!==owned ? context : 'Рин сама обозначила конкретное намерение в своей реплике.',190);
+  return normalizePersonalActionDecision({operation:'start',kind:entry[0],goal,motive});
 }
 export function advancePersonalActions(input=[],now=Date.now(),innerLife={}) {
   const at=finite(now);
@@ -125,7 +191,8 @@ function completeAction(action,now) {
   const outcome=resultFor(action);
   const end=Math.max(action.startedAt||action.plannedStartAt,action.plannedFinishAt);
   return {...action,status:outcome.status,finishedAt:end,updatedAt:now,
-    outcome:{code:outcome.code,summary:outcome.summary,source:'simulated_character_world'}};
+    outcome:{code:outcome.code,summary:outcome.summary,goal:clean(outcome.goal,190),
+       motive:clean(outcome.motive,220),nextStep:clean(outcome.nextStep,190)||null,source:'simulated_character_world'}};
 }
 
 export function applyPersonalActionDecision(input=[],decision=null,{now=Date.now(),requestId='',innerLife={}}={}) {
@@ -161,6 +228,6 @@ export function personalActionPrompt(input=[]) {
   const toTell=[...list].reverse().find(x=>TERMINAL.has(x.status)&&x.outcome?.summary&&!x.disclosureRequestId);
   const lines=[];
   if(active)lines.push(`ЛИЧНОЕ ДЕЙСТВИЕ РИН: ${active.kind}, «${active.goal}»; стадия=${active.status}; причина=${active.motive}; плановое завершение=${new Date(active.plannedFinishAt).toISOString()}. Не объявляй завершение без результата.`);
-  if(toTell)lines.push(`ЗАФИКСИРОВАННЫЙ ИТОГ ЕЁ ВИРТУАЛЬНОГО ДНЯ: ${toTell.status}, «${toTell.goal}»; ${toTell.outcome.summary}. Это уже записано ДО текущей реплики. Рин может сама решить рассказать об этом, только если естественно в разговоре; тогда mind.personalAction.operation=report. Не выдавай виртуальную симуляцию за физически проверенный факт.`);
+  if(toTell)lines.push(`ЗАФИКСИРОВАННЫЙ ИТОГ ЕЁ ВИРТУАЛЬНОГО ДНЯ: ${toTell.status}, «${toTell.goal}» (причина: ${toTell.motive}); ${toTell.outcome.summary}${toTell.outcome.nextStep ? ` Незавершённый шаг: ${toTell.outcome.nextStep}.` : ''} Это уже записано ДО текущей реплики. Рин может сама решить рассказать об этом, только если естественно в разговоре; тогда mind.personalAction.operation=report. Не выдавай виртуальную симуляцию за физически проверенный факт.`);
   return lines.join('\n');
 }
