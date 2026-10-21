@@ -9,7 +9,7 @@ import { disallowedBoundaryUse, integrateRinRepairChoice } from '../lib/cognitio
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
 import { buildKernelState, compactKernelState } from '../lib/cognition/kernel-state.js';
-import { buildDecisionStateTransition, normalizeTurnDecision } from '../lib/cognition/turn-decision.js';
+import { buildDecisionStateTransition, guardUnsupportedRepairDecision, normalizeTurnDecision } from '../lib/cognition/turn-decision.js';
 import { validateRealization, validateTurnDecisionConstraints } from '../lib/cognition/turn-validator.js';
 import { buildRealityBoundary } from '../lib/cognition/reality-boundary.js';
 import { isStickerIntentResolvable, selectStickerForIntent } from '../lib/cognition/sticker-selector.js';
@@ -641,7 +641,10 @@ export default async function handler(req, res) {
       fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn }),
       longRequested: isLong
     });
-    mindTurn.decision = stabilized.decision;
+    mindTurn.decision = guardUnsupportedRepairDecision(stabilized.decision, {
+      userText:userTurn, literalCorrection:Boolean(behaviorState.literalCorrection?.explicit),
+      relationalIntegrity:kernelState.relationalIntegrity
+    });
     mindTurn.realization = stabilized.realization;
 
     // In both relationship_safety and relationship_repair a fixed horizon is
@@ -805,7 +808,8 @@ export default async function handler(req, res) {
       affectiveTurn,
       decision: mindTurn.decision,
       mind: mindTurn.mind,
-      userText: userTurn
+      userText: userTurn,
+      assistantText: (deliveryPlan.segments || []).filter(item=>item.type==='text').map(item=>item.text).join(' ')
     });
     const plannedReply = (deliveryPlan.segments || []).filter(item=>item.type==='text').map(item=>item.text).join(' ');
     stateTransition.relationalIntegrity = integrateRinRepairChoice(kernelState.relationalIntegrity, plannedReply);
