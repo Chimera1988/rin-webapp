@@ -3,6 +3,7 @@
 const safeObject = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 const safeArray = (value, max) => Array.isArray(value) ? value.slice(-max) : [];
 import { normalizePersonalActions } from '../lib/action-lifecycle.js';
+import { correctKnownMemoryEvents } from '../lib/memory-attribution.js';
 const SECRET_KEY = /(?:password|passwd|api[_-]?key|secret|token|credential|access[_-]?pin|private[_-]?key)/iu;
 function safeFactMap(value, depth = 0) {
   if (depth > 8) return {};
@@ -23,7 +24,7 @@ export function snapshotBody(diary = {}) {
     client_updated_at_ms: Number.isSafeInteger(Number(source._updated_at)) && source._updated_at != null
       ? Number(source._updated_at) : null,
     facts: safeFactMap(source.facts),
-    events: safeArray(source.events, 120),
+    events: correctKnownMemoryEvents(safeArray(source.events, 120)),
     summaries: safeArray(source.summaries, 12),
     shared_moments: safeArray(relationship.sharedMoments, 20),
     shared_symbols: safeArray(relationship.sharedSymbols, 12),

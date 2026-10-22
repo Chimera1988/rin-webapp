@@ -14,6 +14,7 @@ import { activityPeriod, resolveDailyRhythm, classifyWeather } from './daily_rhy
 import { reconcileDailyEpisode, projectDailyEpisodeActivity } from '../lib/daily-episode.js';
 import { reconcileEventEvidence } from '../lib/event-evidence.js';
 import { advancePersonalActions, applyPersonalActionDecision, mergePersonalActions } from '../lib/action-lifecycle.js';
+import { correctKnownMemoryAttribution } from '../lib/memory-attribution.js';
 import { normalizeRelationalIntegrity } from '../lib/relational-integrity.js';
 
 // Единое клиентское хранилище профиля и долговременной памяти Рин.
@@ -202,6 +203,7 @@ function normalizeFactRoot(value) {
 }
 
 function normalizeEvent(item = {}, index = 0) {
+  item = correctKnownMemoryAttribution(item);
   const text = cleanText(item.text, 1800);
   if (!text) return null;
   const key = cleanText(item.key, 80) || contentKey(`${item.type || 'note'}:${text}`);
@@ -420,9 +422,13 @@ async function mutateDiary(mutator) {
     // after a restart despite having been excluded from the in-memory diary.
     const actionLedgerSanitized = JSON.stringify(stored?.innerLife?.personalActions || [])
       !== JSON.stringify(diary.innerLife?.personalActions || []);
+    // Persist a known attribution correction at the next normal diary mutation,
+    // so stale raw localStorage cannot reintroduce the old interpretation.
+    const memoryAttributionSanitized = JSON.stringify(stored?.events || [])
+      !== JSON.stringify(diary.events || []);
     const before = JSON.stringify(diary);
     const result = await mutator(diary);
-    const changed = !hadStoredDiary || actionLedgerSanitized || JSON.stringify(diary) !== before;
+    const changed = !hadStoredDiary || actionLedgerSanitized || memoryAttributionSanitized || JSON.stringify(diary) !== before;
     const saved = changed ? writeDiarySync(diary) : diary;
     return result === undefined ? clone(saved) : result;
   }));
