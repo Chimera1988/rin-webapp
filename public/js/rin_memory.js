@@ -413,10 +413,16 @@ async function withDiaryMutationLock(task) {
 async function mutateDiary(mutator) {
   const operation = diaryMutationQueue.then(() => withDiaryMutationLock(async () => {
     const hadStoredDiary = safeGet(LS_DIARY_KEY) !== null;
-    const diary = readDiarySync();
+    const stored = storageReadJson(getStorage(), LS_DIARY_KEY, emptyDiary());
+    const diary = normalizeDiary(stored);
+    // Re-save whenever normalization discarded an invalid personal action.
+    // Otherwise a rejected plan can remain in raw localStorage and reappear
+    // after a restart despite having been excluded from the in-memory diary.
+    const actionLedgerSanitized = JSON.stringify(stored?.innerLife?.personalActions || [])
+      !== JSON.stringify(diary.innerLife?.personalActions || []);
     const before = JSON.stringify(diary);
     const result = await mutator(diary);
-    const changed = !hadStoredDiary || JSON.stringify(diary) !== before;
+    const changed = !hadStoredDiary || actionLedgerSanitized || JSON.stringify(diary) !== before;
     const saved = changed ? writeDiarySync(diary) : diary;
     return result === undefined ? clone(saved) : result;
   }));
