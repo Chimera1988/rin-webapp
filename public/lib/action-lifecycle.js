@@ -1,4 +1,4 @@
-// Rin 2.6.22: persistent, bounded SELF-CHOSEN simulated-world actions.
+// Rin 2.6.23: persistent, bounded SELF-CHOSEN simulated-world actions.
 // Rin Mind alone chooses the task and may cancel/defer/report it. This module
 // advances *world state*, not Rin's goals or relationships. No physical action
 // or external-world effect is implied by an in-world outcome.
@@ -17,6 +17,15 @@ const finite = (value, fallback=0) => Number.isSafeInteger(Number(value)) && Num
 const hash = value => {let h=2166136261;for(const c of String(value)){h ^= c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;};
 const MINUTES = Object.freeze({reading:40,meal:35,walk:65,home:50,work:85,rest:50,music:40,creative:75});
 const LABELS = Object.freeze({reading:'чтение',meal:'приготовление еды',walk:'прогулка',home:'домашнее дело',work:'работа над текстом',rest:'личный отдых',music:'музыка',creative:'творческое занятие'});
+// Distinguish reading from *counting/considering*: "начну считать, что..." is
+// a figure of speech, not the verb "читать". This also quarantines the
+// already-saved 22 October false plan when old cloud snapshots are restored.
+const SPURIOUS_READING_GOAL = /(?<![\p{L}\p{N}])(?:начну|буду|стану)\s+считать(?=$|[^\p{L}\p{N}])/iu;
+const hasSpuriousReadingGoal = (kind, goal) => kind === 'reading' && SPURIOUS_READING_GOAL.test(goal);
+// Require real word boundaries for hypothetical markers. Without this, the
+// substring "я бы" inside "хотя бы" hides a genuine personal decision.
+const HYPOTHETICAL_MARKER = /(?<![\p{L}\p{N}])(?:если\s+бы|представь|вообрази|в\s+сказке|как\s+будто|я\s+бы|может\s+быть)(?![\p{L}\p{N}])/iu;
+const READING_ACTIVITY = /(?<![\p{L}\p{N}])(?:читать|почитать|дочитать|прочитать|перечитать|читаю|почитаю|прочту|чтением|чтение)(?![\p{L}\p{N}])/iu;
 const OUTCOMES = Object.freeze({
   reading:['Уделила время чтению и остановилась на удобной паузе.','Прочитала часть намеченного, но решила не торопиться.'],
   meal:['Закончила готовить и разобралась с ужином.','Получилось не совсем так, как планировала, но поесть удалось.'],
@@ -36,6 +45,7 @@ export function normalizePersonalAction(raw=null) {
   const decidedAt=finite(raw.decidedAt),updatedAt=finite(raw.updatedAt,decidedAt);
   const goal=clean(raw.goal,190);
   if (!/^[a-z0-9][a-z0-9_-]{4,114}$/u.test(id)||!kind||!ALL.has(status)||!goal||!decidedAt) return null;
+  if (hasSpuriousReadingGoal(kind,goal)) return null;
   const outcome=raw.outcome&&typeof raw.outcome==='object'&&TERMINAL.has(status)
     ? {code:clean(raw.outcome.code,35)||status,summary:clean(raw.outcome.summary,320),
        goal:clean(raw.outcome.goal,190),motive:clean(raw.outcome.motive,220),nextStep:clean(raw.outcome.nextStep,190)||null,
@@ -77,7 +87,7 @@ export function normalizePersonalActionDecision(raw=null) {
   const kind=PERSONAL_ACTION_KINDS.includes(raw?.kind)?raw.kind:null;
   const goal=clean(raw?.goal,190);
   const motive=clean(raw?.motive,220);
-  return operation==='start'&&(!kind||goal.length<5||motive.length<4)
+  return operation==='start'&&(!kind||goal.length<5||motive.length<4||hasSpuriousReadingGoal(kind,goal))
     ? {operation:'none',kind:null,goal:null,motive:null}
     : {operation,kind,goal:goal||null,motive:motive||null};
 }
@@ -133,7 +143,7 @@ function resultFor(action) {
 // narration and vague "thinking about" never create an autonomous task.
 export function inferRinDeclaredPersonalAction(assistantText='',userText='') {
   const raw=clean(assistantText,1200);
-  if(!raw || /(?:если бы|представь|вообрази|в сказке|как будто|я бы|может быть)/iu.test(raw))return null;
+  if(!raw || HYPOTHETICAL_MARKER.test(raw))return null;
   // Do not reinterpret an explicit imperative addressed to Rin as her choice.
   if(/(?:^|[.!?]\s*)(?:иди|сходи|пойди|зайди|прочитай|приготовь|сделай|погуляй|начни|закончи)(?=$|[^\p{L}\p{N}])/iu.test(clean(userText,600)))return null;
   const chunks=raw.split(/(?<=[.!?…])\s+|\n+/u).map(v=>v.trim()).filter(Boolean);
@@ -143,13 +153,13 @@ export function inferRinDeclaredPersonalAction(assistantText='',userText='') {
   if(!owned)return null;
   const patterns=[
     ['work',/(?:вернусь\s+к\s+(?:работе|материалу|тексту|переводу|правкам)|займусь\s+(?:правками|переводом|текстом)|(?:редактировать|доработать|закончить)\s+(?:текст|перевод|материал)|дать\s+автору\s+[^.!?]*обратную\s+связь)/iu],
-    ['reading',/(?:читать|почитать|книг[ауи]|дочитать)/iu],
+    ['reading',READING_ACTIVITY],
     ['meal',/(?:приготовить|готовить|сделать)\s+(?:ужин|обед|завтрак|еду|себе\s+поесть)/iu],
     ['walk',/(?:погулять|прогуляться|на\s+прогулку)/iu],
     ['home',/(?:уборкой|убраться|разобрать\s+(?:полку|шкаф|вещи)|по\s+дому)/iu],
     ['rest',/(?:отдохнуть|отдыхать|на\s+перерыв)/iu],
     ['music',/(?:послушать\s+(?:музыку|альбом|песню)|слушать\s+музыку)/iu],
-    ['creative',/(?:написать\s+(?:набросок|рассказ|стих)|порисовать|поработать\s+над\s+идеей)/iu]
+    ['creative',/(?:(?:написать|писать)\s+(?:книгу|роман|набросок|рассказ|стих)|порисовать|поработать\s+над\s+идеей)/iu]
   ];
   const entry=patterns.find(([,re])=>re.test(owned));
   if(!entry)return null;
