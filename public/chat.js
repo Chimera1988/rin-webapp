@@ -985,6 +985,56 @@ function scheduleNextCalendarDayRefresh(){
 scheduleNextCalendarDayRefresh();
 
 
+/* === Autonomous messages: persisted server preference, local guard for open-chat mode === */
+const AUTO_INITIATIONS_KEY = 'rin-auto-initiations-enabled-v1';
+let autoInitiationsEnabled = localStorage.getItem(AUTO_INITIATIONS_KEY) !== '0';
+const autoInitiationsToggle = document.getElementById('autoInitiationsEnabled');
+const autoInitiationsStatus = document.getElementById('autoInitiationsStatus');
+function updateAutoInitiationsUi(message = '') {
+  if (autoInitiationsToggle) autoInitiationsToggle.checked = autoInitiationsEnabled;
+  if (autoInitiationsStatus) autoInitiationsStatus.textContent = message;
+}
+async function autoInitiationsRequest(action, enabled) {
+  const response = await fetchWithTimeout('/api/push', {
+    method:'POST',
+    headers:authenticatedHeaders({'Content-Type':'application/json'}),
+    body:JSON.stringify(action === 'status' ? {action} : {action,enabled}),
+    cache:'no-store'
+  }, 16000);
+  const data = await response.json().catch(()=>({}));
+  if (!response.ok) throw new Error(data.code || `HTTP_${response.status}`);
+  return data;
+}
+async function initializeAutoInitiations() {
+  updateAutoInitiationsUi();
+  try {
+    const data = await autoInitiationsRequest('status');
+    autoInitiationsEnabled = data.autoInitiationsEnabled !== false;
+    localStorage.setItem(AUTO_INITIATIONS_KEY,autoInitiationsEnabled?'1':'0');
+    updateAutoInitiationsUi();
+  } catch (error) {
+    // Do not overwrite the saved preference if the server is temporarily unavailable.
+    updateAutoInitiationsUi('Не удалось проверить настройку на сервере.');
+    dbg(`auto initiations status failed: ${error?.message||error}`);
+  }
+}
+if (autoInitiationsToggle) {
+  autoInitiationsToggle.addEventListener('change',async () => {
+    const desired = autoInitiationsToggle.checked;
+    autoInitiationsToggle.disabled = true;
+    updateAutoInitiationsUi('Сохранение…');
+    try {
+      const data = await autoInitiationsRequest('initiative-setting',desired);
+      autoInitiationsEnabled = data.autoInitiationsEnabled === true;
+      localStorage.setItem(AUTO_INITIATIONS_KEY,autoInitiationsEnabled?'1':'0');
+      updateAutoInitiationsUi(autoInitiationsEnabled?'Автоинициации включены.':'Автоинициации отключены.');
+    } catch (error) {
+      updateAutoInitiationsUi('Не удалось сохранить настройку. Попробуй ещё раз.');
+      dbg(`auto initiations update failed: ${error?.message||error}`);
+    } finally {autoInitiationsToggle.disabled = false;}
+  });
+}
+
 /* === Web Push: minimal background context, local memory remains authoritative === */
 let pushController = null;
 async function pushSnapshot() {
@@ -999,6 +1049,7 @@ async function pushSnapshot() {
   };
 }
 async function acceptBackgroundDelivery(pending) {
+  if (!autoInitiationsEnabled) return false;
   if (!pending?.id || !pending?.requestId || !pending?.deliveryPlan) return false;
   if (activeRequests > 0 || hasBlockingTurn(history)) return false;
   // Retry-safe: a lost acknowledgement must not create the message or evolve state twice.
@@ -2212,6 +2263,7 @@ export const RIN_CHAT_READY = new Promise(resolve => { resolveChatReady = resolv
   await resumePendingAssistantDeliveries();
   resolveChatReady?.(true);
   resolveChatReady = null;
+  await initializeAutoInitiations();
   await initPushController();
   if (!history.length) await greet();
 
@@ -2223,7 +2275,7 @@ export const RIN_CHAT_READY = new Promise(resolve => { resolveChatReady = resolv
 })();
 
 async function greet() {
-  if (!canGreet({ history, greetingActive, activeRequests })) return false;
+  if (!autoInitiationsEnabled || !canGreet({ history, greetingActive, activeRequests })) return false;
   greetingActive = true;
   try {
     const part = currentEnv?.partOfDay;
@@ -2740,6 +2792,7 @@ function markBatchFailed(messageIds = [], code = 'CHAT_REQUEST_FAILED', { persis
 }
 
 async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = {}) {
+  if (!autoInitiationsEnabled) return false;
   if (activeRequests > 0 || hasBlockingTurn(history)) return false;
   const requestId = newRequestId();
   const epochAtStart = inputEpoch;
@@ -2800,24 +2853,24 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
       return false;
     }
 
-    // User input has priority over a proactive turn until its first segment commits.
-    if (inputEpoch !== epochAtStart) {
+    // User input and the preference switch have priority over a proactive turn.
+    if (!autoInitiationsEnabled || inputEpoch !== epochAtStart) {
       dbg(`proactive prepared turn cancelled by user input: request=${requestId}`);
       return false;
     }
 
     preparedDelivery = await prepareAssistantDelivery({ data, requestId, userText: '', proactiveType: type });
     firstSegmentIsVoice = Boolean(preparedDelivery?.segments?.[0]?.audioUrl);
-    if (inputEpoch !== epochAtStart) return false;
+    if (!autoInitiationsEnabled || inputEpoch !== epochAtStart) return false;
 
     const waitResult = preparedDelivery.type === 'silence'
-      ? await humanDeliveryScheduler.waitBeforeSilence({ userChars: 0, messageCount: 1, onPresence, shouldCancel: () => inputEpoch !== epochAtStart })
+      ? await humanDeliveryScheduler.waitBeforeSilence({ userChars: 0, messageCount: 1, onPresence, shouldCancel: () => !autoInitiationsEnabled || inputEpoch !== epochAtStart })
       : await humanDeliveryScheduler.waitBeforeFirstSegment({
           userChars: 0,
           messageCount: 1,
           firstSegment: preparedDelivery.segments[0],
           onPresence,
-          shouldCancel: () => inputEpoch !== epochAtStart
+          shouldCancel: () => !autoInitiationsEnabled || inputEpoch !== epochAtStart
         });
     if (waitResult.cancelled) {
       dbg(`proactive delivery cancelled before commit: request=${requestId}; phase=${waitResult.phase}`);
@@ -2848,6 +2901,7 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
 }
 
 async function tryInitiateBySchedule() {
+  if (!autoInitiationsEnabled) return false;
   if (pushController?.isEnabled()) return false;
   if (!canAutoInitiate({ history, greetingActive, activeRequests })) return false;
   const savedMemory = await buildMemoryPayload();
@@ -3150,6 +3204,7 @@ async function processUserBatch(messageIds = []) {
 
     // This is the semantic point of no return: state is committed immediately
     // before the first user-visible segment, never seconds earlier.
+    if (!autoInitiationsEnabled) return false;
     updatePresenceForDelivery(presenceTurn, 'online', typingRowRef);
     persistPreparedDeliveryOrThrow(preparedDelivery);
     preparedPersisted = true;

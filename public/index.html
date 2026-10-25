@@ -347,6 +347,12 @@
         </div>
         <p class="settings-intro">Рин сможет самостоятельно написать, даже когда приложение закрыто.</p>
         <div class="settings-detail-card">
+          <label class="settings-control-row">
+            <div><strong>Автоинициации</strong><small>Разрешить Рин писать первой. При выключении связанные push-уведомления тоже не отправляются.</small></div>
+            <span class="switch"><input id="autoInitiationsEnabled" type="checkbox" checked aria-label="Автоинициации Рин" /><span></span></span>
+          </label>
+          <p id="autoInitiationsStatus" class="settings-backup-status" role="status" aria-live="polite"></p>
+          <div class="settings-divider"></div>
           <div class="settings-control-row"><div><strong>Push-уведомления</strong><small>Для iPhone нужно открыть Рин через иконку на экране «Домой» и разрешить уведомления.</small></div></div>
           <div class="settings-divider"></div>
           <div class="settings-push-actions">
