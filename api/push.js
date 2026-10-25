@@ -13,12 +13,20 @@ export default async function handler(req,res) {
   if (!await applySecurityLimit(req, res, 'api')) return;
   if (!await requireSession(req, res)) { auditRejectedSession('push'); return; }
   const action = String(body.action||'');
-  if (!['status','enable','sync','pull','ack','disable','test'].includes(action)) return res.status(400).json({code:'INVALID_PUSH_ACTION'});
+  if (!['status','enable','sync','pull','ack','disable','test','initiative-setting'].includes(action)) return res.status(400).json({code:'INVALID_PUSH_ACTION'});
   try {
     const redis = await pushRedis();
     if (action === 'status') {
       const enabled = Boolean(await readProtected(redis,'subscription'));
-      return res.status(200).json({enabled,publicKey:process.env.RIN_PUSH_VAPID_PUBLIC||'',schema:PUSH_SCHEMA});
+      const autoInitiationsEnabled = (await redis.get(pushKey('auto-initiations-enabled'))) !== '0';
+      return res.status(200).json({enabled,autoInitiationsEnabled,publicKey:process.env.RIN_PUSH_VAPID_PUBLIC||'',schema:PUSH_SCHEMA});
+    }
+    if (action === 'initiative-setting') {
+      if (typeof body.enabled !== 'boolean') return res.status(400).json({code:'INVALID_INITIATIVE_SETTING'});
+      await redis.set(pushKey('auto-initiations-enabled'),body.enabled?'1':'0');
+      // Remove unsent autonomous messages when disabling, without touching the push subscription.
+      if (!body.enabled) await deleteProtected(redis,'pending');
+      return res.status(200).json({autoInitiationsEnabled:body.enabled});
     }
     if (action === 'enable') {
       const subscription = validateSubscription(body.subscription);

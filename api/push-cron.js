@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { secureEqual, scheduledOpportunity, nextAttemptState, freshEnvironment, createDeliveryId, pushNotificationText, deliveryQueue, appendBackgroundMessages } from '../lib/push/core.js';
-import { pushRedis, readProtected, writeProtected, acquirePushLease, DELIVERY_TTL_SECONDS } from '../lib/push/redis.js';
+import { pushRedis, readProtected, writeProtected, acquirePushLease, pushKey, deleteProtected, DELIVERY_TTL_SECONDS } from '../lib/push/redis.js';
 import { createBackgroundTurn } from '../lib/push/virtual-chat.js';
 import { sendRinPush } from '../lib/push/send.js';
 import { normalizeScheduleConfig } from '../public/js/rin_lore.js';
@@ -8,6 +8,7 @@ import { advanceInnerLifeForBackground, projectBackgroundTransition } from '../p
 
 const SCHEDULE_PATH = new URL('../public/data/rin_schedule.json',import.meta.url);
 export async function processPushOpportunity({redis, schedule, now = Date.now(), draw = Math.random, generate = createBackgroundTurn, notify = sendRinPush} = {}) {
+  if ((await redis.get(pushKey('auto-initiations-enabled'))) === '0') return {status:'disabled'};
   const sub = await readProtected(redis,'subscription');
   const snapshot = await readProtected(redis,'snapshot');
   const attempts = await readProtected(redis,'attempts') || {};
@@ -51,9 +52,14 @@ export async function processPushOpportunity({redis, schedule, now = Date.now(),
   if (!segments.length || !segments.some(s=>s.type==='text' || s.type==='sticker')) return {status:'no_segments'};
   if ((await readProtected(redis,'snapshot'))?.updatedAt !== snapshot.updatedAt || JSON.stringify(deliveryQueue(await readProtected(redis,'pending')).map(d=>d.id)) !== JSON.stringify(pending.map(d=>d.id))) return {status:'stale_after_generate'};
   const delivery = {id:createDeliveryId(requestId),requestId,proactiveType:'scheduled',createdAt:now,sourceLastTs:Math.max(0,...modelSnapshot.history.map(m=>Number(m?.ts||0))), stateTransition:response.stateTransition||null,innerLife:currentMemory.innerLife||null,deliveryPlan:response.deliveryPlan,reply:response.reply||'',notificationText:pushNotificationText(response),dateKey:opp.dateKey,windowId:opp.windowId};
+  if ((await redis.get(pushKey('auto-initiations-enabled'))) === '0') return {status:'disabled'};
   await writeProtected(redis,'pending',[...pending,delivery],DELIVERY_TTL_SECONDS);
   const latest = await readProtected(redis,'attempts') || {};
   await writeProtected(redis,'attempts',nextAttemptState({...latest,[opp.dateKey]:{...latest[opp.dateKey],sent:latest[opp.dateKey]?.sent||0,windows:(latest[opp.dateKey]?.windows||[]).filter(w=>w!==opp.windowId)}},opp,true));
+  if ((await redis.get(pushKey('auto-initiations-enabled'))) === '0') {
+    await deleteProtected(redis,'pending');
+    return {status:'disabled'};
+  }
   try { await notify(sub,delivery); }
   catch (error) { console.error('[rin-push] transport failed; delivery retained:',error?.statusCode||error?.message||error); return {status:'queued_without_push'}; }
   return {status:'queued_and_notified'};
