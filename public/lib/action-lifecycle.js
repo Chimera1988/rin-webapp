@@ -143,29 +143,33 @@ function resultFor(action) {
 // narration and vague "thinking about" never create an autonomous task.
 export function inferRinDeclaredPersonalAction(assistantText='',userText='') {
   const raw=clean(assistantText,1200);
-  if(!raw || HYPOTHETICAL_MARKER.test(raw))return null;
+  if(!raw)return null;
   // Do not reinterpret an explicit imperative addressed to Rin as her choice.
   if(/(?:^|[.!?]\s*)(?:иди|сходи|пойди|зайди|прочитай|приготовь|сделай|погуляй|начни|закончи)(?=$|[^\p{L}\p{N}])/iu.test(clean(userText,600)))return null;
   const chunks=raw.split(/(?<=[.!?…])\s+|\n+/u).map(v=>v.trim()).filter(Boolean);
-  const owned=chunks.find(s=>
-    /(?:^|[^\p{L}\p{N}])(?:я\s+)?(?:сама\s+)?(?:решила|собираюсь|планирую|хочу|намерена|пойду|начну|займусь|вернусь)\s+[^.!?]{3,155}/iu.test(s)
-    && !/(?:\bне\s+(?:решила|собираюсь|планирую|хочу|пойду|начну|займусь|вернусь)|пока не решила|не уверена|возможно|если получится)/iu.test(s));
+  const firmChoice = s => !HYPOTHETICAL_MARKER.test(s)
+    && !/(?:(?<![\p{L}\p{N}])не\s+(?:решила|собираюсь|планирую|хочу|пойду|начну|займусь|вернусь|буду|сделаю|поставлю)|пока не решила|не уверена|возможно|если получится|может,?\s|может\s+быть)/iu.test(s);
+  const authored = s => /(?:^|[^\p{L}\p{N}])(?:я\s+)?(?:сама\s+)?(?:решила|собираюсь|планирую|хочу|намерена|пойду|начну|займусь|вернусь|буду|сделаю|поставлю|приберу|приберусь)(?![\p{L}\p{N}])/iu.test(s)
+    || /(?:^|[.!?]\s*)на\s+(?:ужин|обед|завтрак)\s+сделаю(?![\p{L}\p{N}])/iu.test(s);
+  const owned=chunks.find(s=>firmChoice(s)&&authored(s)&&!/[?？]\s*$/u.test(s));
   if(!owned)return null;
   const patterns=[
     ['work',/(?:вернусь\s+к\s+(?:работе|материалу|тексту|переводу|правкам)|займусь\s+(?:правками|переводом|текстом)|(?:редактировать|доработать|закончить)\s+(?:текст|перевод|материал)|дать\s+автору\s+[^.!?]*обратную\s+связь)/iu],
     ['reading',READING_ACTIVITY],
-    ['meal',/(?:приготовить|готовить|сделать)\s+(?:ужин|обед|завтрак|еду|себе\s+поесть)/iu],
+    ['meal',/(?:приготовить|готовить|сделать)\s+(?:ужин|обед|завтрак|еду|себе\s+поесть)|(?:сделаю|приготовлю|готовлю)\s+(?:омлет|суп|салат|рис|лапшу|пасту|яйца|ужин|обед|завтрак|поесть)|на\s+(?:ужин|обед|завтрак)\s+(?:сделаю|приготовлю|буду\s+готовить)/iu],
     ['walk',/(?:погулять|прогуляться|на\s+прогулку)/iu],
-    ['home',/(?:уборкой|убраться|разобрать\s+(?:полку|шкаф|вещи)|по\s+дому)/iu],
+    ['home',/(?:уборкой|убраться|прибраться|прибрать(?:ся)?|навести\s+порядок|разобрать\s+(?:полку|шкаф|вещи)|по\s+дому)/iu],
     ['rest',/(?:отдохнуть|отдыхать|на\s+перерыв)/iu],
-    ['music',/(?:послушать\s+(?:музыку|альбом|песню)|слушать\s+музыку)/iu],
+    ['music',/(?:послушать\s+(?:музыку|альбом|песню)|слушать\s+музыку|поставлю\s+(?:что[- ]нибудь\s+)?(?:из\s+музыки|музыку|альбом|песню|у\s+[^.!?]{3,70})|включу\s+(?:музыку|песню|альбом))/iu],
     ['creative',/(?:(?:написать|писать)\s+(?:книгу|роман|набросок|рассказ|стих)|порисовать|поработать\s+над\s+идеей)/iu]
   ];
   const entry=patterns.find(([,re])=>re.test(owned));
   if(!entry)return null;
+  const otherFirmPlan=chunks.find(s=>s!==owned && firmChoice(s) && /(?:сделаю|приготовлю|приберу|поставлю|займусь|собираюсь|хочу)/iu.test(s));
   const context=chunks.find(s=>s!==owned && /(?:осталось|чтобы|хочу\s+успеть|план|идея|цель)/iu.test(s));
   const goal=clean(context && entry[0]==='work' ? `${owned} ${context}`:owned,190);
-  const motive=clean(context && context!==owned ? context : 'Рин сама обозначила конкретное намерение в своей реплике.',190);
+  // A second household plan is context, not proof of an additional completed task.
+  const motive=clean(otherFirmPlan ? `Следующее намерение, не подтверждённое выполнением: ${otherFirmPlan}` : context && context!==owned ? context : 'Рин сама обозначила конкретное намерение в своей реплике.',190);
   return normalizePersonalActionDecision({operation:'start',kind:entry[0],goal,motive});
 }
 export function advancePersonalActions(input=[],now=Date.now(),innerLife={}) {
@@ -183,9 +187,9 @@ export function advancePersonalActions(input=[],now=Date.now(),innerLife={}) {
         plannedFinishAt:at+(10+MINUTES[item.kind])*60000,updatedAt:at,deferredUntil:0};
     }
     if(item.status==='planned' && at>=item.plannedStartAt){
-      // Focused tasks wait until the active chat settles instead of pretending
-      // they happened while Rin was continuously answering messages.
-      if(innerLife.chatting===true && ['reading','work','creative'].includes(item.kind)) return {
+      // Focused tasks and hands-on chores wait until active chat settles;
+      // do not claim she cooked or cleaned while continuously messaging.
+      if(innerLife.chatting===true && ['reading','work','creative','home','meal'].includes(item.kind)) return {
         ...item,plannedStartAt:at+10*60000,plannedFinishAt:at+(10+MINUTES[item.kind])*60000,updatedAt:at
       };
       if(sleepBlocked(innerLife)||domainBlocked(item.kind,innerLife)) return {...item,status:'deferred',
