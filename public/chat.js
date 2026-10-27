@@ -36,6 +36,7 @@ import { createDebugLogBuffer } from './js/debug_compact.js';
 import { collectRecentArchiveWindow, createCloudArchive, mergeArchiveHistory } from './js/cloud_archive.js';
 import { chatDayLabel, localDayKey } from './js/chat_day_groups.js';
 import { createVoicePlayer } from './js/voice_player.js';
+import { detectExplicitVoiceRequest, selectRequestedVoiceSegment } from './lib/voice-request.js';
 
 /* public/chat.js — фронт чата Рин, согласованный с твоим index.html (профиль из persona_ui/rin_memory) */
 
@@ -1013,7 +1014,6 @@ async function initializeAutoInitiations() {
     localStorage.setItem(AUTO_INITIATIONS_KEY,autoInitiationsEnabled?'1':'0');
     updateAutoInitiationsUi();
   } catch (error) {
-    // Do not overwrite the saved preference if the server is temporarily unavailable.
     updateAutoInitiationsUi('Не удалось проверить настройку на сервере.');
     dbg(`auto initiations status failed: ${error?.message||error}`);
   }
@@ -2415,6 +2415,11 @@ async function prepareAssistantDelivery({ data, requestId, userText = '', proact
   }
 
   const rawSegments = Array.isArray(plan?.segments) ? plan.segments.slice(0, 3) : [];
+  const voiceRequest = detectExplicitVoiceRequest(userText);
+  const selectedVoice = selectRequestedVoiceSegment(rawSegments, voiceRequest, { enabled: lsSpeakEnabled() });
+  if (voiceRequest.requested && lsSpeakEnabled() && !selectedVoice) {
+    showChatToast('Нет подходящей короткой фразы для озвучивания. Рин ответит текстом.', 3200);
+  }
   if (!rawSegments.length) {
     const error = new Error('Empty delivery plan');
     error.code = 'EMPTY_DELIVERY_PLAN';
@@ -2439,7 +2444,17 @@ async function prepareAssistantDelivery({ data, requestId, userText = '', proact
         error.code = 'EMPTY_MODEL_RESPONSE';
         throw error;
       }
-      const audioData = shouldVoiceFor(text) ? await getTTSUrl(text, data, segmentId) : null;
+      // An explicit request takes priority over the random voice rate and
+      // produces at most one voice bubble per semantic turn.
+      const requestedSpeech = selectedVoice?.index === index ? selectedVoice.speech : null;
+      const ordinaryVoice = !voiceRequest.requested && shouldVoiceFor(text);
+      const audioData = requestedSpeech
+        ? await getTTSUrl(requestedSpeech, data, segmentId)
+        : ordinaryVoice ? await getTTSUrl(text, data, segmentId) : null;
+      if (requestedSpeech && !audioData) {
+        dbg(`voice request fallback to text: segment=${segmentId}; lang=${selectedVoice.language}`);
+        showChatToast('Голосовое сейчас недоступно. Рин ответит текстом.', 3200);
+      }
       const audioUrl=audioData?.url || null;
       const message = createChatMessage({
         id: segmentId,
@@ -2838,7 +2853,8 @@ async function requestAssistantInitiative({ type = 'scheduled', reason = '' } = 
         proactive: true,
         weatherEvidence: verifiedWeatherEvidence(currentEnv),
         followThrough: selfFollowThrough(history, Date.now(), schedule?.timezone || 'Europe/Moscow'),
-        sticker: stickerClientPreferences()
+        sticker: stickerClientPreferences(),
+        voice: { enabled: lsSpeakEnabled() }
       }
     });
     let data = {};
@@ -3115,7 +3131,8 @@ async function processUserBatch(messageIds = []) {
         weatherIntent: asksWeather,
         weatherEvidence: verifiedWeatherEvidence(currentEnv),
         followThrough: selfFollowThrough(history, Date.now(), schedule?.timezone || 'Europe/Moscow'),
-        sticker: stickerClientPreferences()
+        sticker: stickerClientPreferences(),
+        voice: { enabled: lsSpeakEnabled() }
       }
     });
     let data = {};
@@ -3204,7 +3221,6 @@ async function processUserBatch(messageIds = []) {
 
     // This is the semantic point of no return: state is committed immediately
     // before the first user-visible segment, never seconds earlier.
-    if (!autoInitiationsEnabled) return false;
     updatePresenceForDelivery(presenceTurn, 'online', typingRowRef);
     persistPreparedDeliveryOrThrow(preparedDelivery);
     preparedPersisted = true;
