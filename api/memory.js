@@ -1,3 +1,4 @@
+import { gameMemoryGuard, gameRevealFactGrounded } from '../lib/cognition/game-session.js';
 import { requireSession } from '../lib/server/session.js';
 import { applySecurityLimit, auditRejectedSession } from '../lib/server/security-gate.js';
 import { contentKey } from '../lib/chat-contract.js';
@@ -161,6 +162,25 @@ export function sanitizeMemoryResult(value, context = {}) {
   const grounded = groundBirthdayFacts(result, context);
   if (facts.favoritePersonBirthday === '2023-10-20')
     grounded.factRetractions.push({ path: 'user.favoritePersonBirthday' });
+  // A proposed fact inside 'two truths and a lie' is deliberately unverified.
+  // Never promote either alternative to user.facts or a factual event until
+  // the user explicitly reveals which statement was true. Defense in depth:
+  // this applies even when the extraction model ignores its instructions.
+  const gameAssessment = gameMemoryGuard(context);
+  if (gameAssessment.suppressFacts) {
+    grounded.facts = [];
+    grounded.events = [];
+    grounded.factRetractions = [];
+    grounded.sharedMoments = [];
+    grounded.sharedSymbols = [];
+  } else if (gameAssessment.reason === 'game_reveal') {
+    grounded.facts = grounded.facts.filter(fact => gameRevealFactGrounded(fact.value, context.userText));
+    // The user might only confirm Rin's guess; it must not create factual
+    // events, retractions or relationship symbols from earlier fictional claims.
+    grounded.events = [];
+    grounded.factRetractions = [];
+    grounded.sharedSymbols = [];
+  }
   return grounded;
 }
 
@@ -179,6 +199,8 @@ sharedSymbols — ещё более редкий слой приватной с�
 Если пользователь прямо исправляет ранее сохранённый факт о себе, верни старый путь в factRetractions и новую версию в facts. Не выводи factRetractions для догадок ассистента, которых не было в facts.
 
 Не выдавай завтрашний выходной за постоянный вид работы пользователя. Не выдумывай год рождения, если назван только день и месяц.
+
+Если сейчас идёт игра «Два факта и одна выдумка», предположительные утверждения одного участника НЕ являются фактами. Пока он сам не раскрыл выдумку, не записывай ни одну из альтернатив в user.facts, events, предпочтения, привычки и биографию. Подтверждение от пользователя после догадки можно считать отдельным источником, но не переносить неподтверждённые остальные заявления.
 
 Если в переписке Рин ВПЕРВЫЕ конкретно выбрала для своего настоящего занятия существующую книгу, песню, фильм или другое произведение, это допустимый новый выбор, а не выдуманная старая биография. Если он имеет значение для продолжения (например, Рин начала чтение), сохрани ИМЕННО факт выбора/плана как эпизод со scope=life_choice и kind=rin_reflection или rin_action_planned и дословной цитатой её сообщения. Нельзя утверждать, что Рин закончила произведение или что давно его любит. Избегай повтора эпизода для каждого упоминания того же названия. Если такой выбор не зафиксирован, не добавляй его в память задним числом.
 

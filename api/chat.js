@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { rinCalendarForPrompt } from '../lib/cognition/temporal-grounding.js';
 import { guardUnsupportedSharedCompletion } from '../public/lib/event-evidence.js';
 import { inspectExpressionNovelty } from '../lib/cognition/expression-novelty.js';
+import { inspectGameSession, enforceGameReply, guardImmediateContradictions, reduceStaleMotif, repeatedMotifCandidates } from '../lib/cognition/game-session.js';
 import { disallowedBoundaryUse, integrateRinRepairChoice } from '../lib/cognition/relational-integrity.js';
 import { analyzeConversation } from '../lib/conversation-brain.js';
 import { buildAffectiveTurn } from '../lib/cognition/emotional-state.js';
@@ -466,6 +467,7 @@ export default async function handler(req, res) {
     const fallbackCurrent = trigger ? null : currentUserTurn(fullHistory, requestId);
     if (!trigger && !group.length && fallbackCurrent) group.push(fallbackCurrent);
     const userTurn = trigger ? '' : groupUserText(group);
+    const gameSession = trigger ? null : inspectGameSession(fullHistory, userTurn);
     if (!trigger && !userTurn) return res.status(400).json({ error: 'A user message is required', code: 'INVALID_HISTORY' });
 
     if (!await applySecurityLimit(req, res, 'chat')) return;
@@ -572,7 +574,8 @@ export default async function handler(req, res) {
       currentWorkMode: kernelState.innerLife?.workMode
     });
     const expressionNovelty = inspectExpressionNovelty(fullHistory);
-    const mindState = { ...kernelState, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates, calendarGrounding, expressionNovelty, proactiveHandoff: brain.proactiveHandoff };
+    const staleJokeMotifs = trigger ? [] : repeatedMotifCandidates(fullHistory, userTurn);
+    const mindState = { ...kernelState, gameSession, staleJokeMotifs, behaviorState, driveState, sharedSymbolState, realityBoundary, stickerCandidates, calendarGrounding, expressionNovelty, proactiveHandoff: brain.proactiveHandoff };
     const prompt = buildRinMindPrompt({
       profile,
       state: mindState,
@@ -639,7 +642,7 @@ export default async function handler(req, res) {
       driveState,
       scene: kernelState.scene,
       fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn }),
-      longRequested: isLong
+      longRequested: isLong, gameSession
     });
     mindTurn.decision = guardUnsupportedRepairDecision(stabilized.decision, {
       userText:userTurn, literalCorrection:Boolean(behaviorState.literalCorrection?.explicit),
@@ -725,7 +728,7 @@ export default async function handler(req, res) {
             visualReplyCandidates: kernelState.visualReplyCandidates,
             behaviorState, driveState, scene: kernelState.scene,
             fallbackText: buildDeterministicConversationFallback({ behaviorState, userText: userTurn }),
-            longRequested: isLong
+            longRequested: isLong, gameSession
           });
           // Never import a second model decision.
           const revisedValidation = advisoryRealizationValidation(cleaned.realization, {
@@ -763,6 +766,17 @@ export default async function handler(req, res) {
         recentHistory: kernelState?.recentHistory || [],
         currentUserText: kernelState?.userText || ''
       });
+    }
+
+    // The language model owns Rin's choices; local game constraints own explicit
+    // counters/turn-taking. Keep these guards after any semantic rewrite, before
+    // delivery and memory/state commit, so replay/retry stays deterministic.
+    if (gameSession) mindTurn = enforceGameReply(gameSession, mindTurn);
+    if (!trigger) for (const segment of mindTurn.realization?.segments || []) {
+      if (segment.type !== 'text') continue;
+      segment.text = guardImmediateContradictions(segment.text, userTurn);
+      if (!gameSession || gameSession.type !== 'word_chain')
+        segment.text = reduceStaleMotif(segment.text, fullHistory, userTurn);
     }
 
     // Enforce a clearly rejected user-directed nickname even if the model repeats it.
