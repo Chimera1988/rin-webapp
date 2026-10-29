@@ -13,8 +13,10 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TI
   const startedAt = Date.now();
   const maxWait = Math.max(1, Number(timeoutMs) || DEFAULT_TIMEOUT_MS);
   let exceeded = false;
-  const timedOut = () => {
-    if (requestDeadlineExceeded(startedAt, maxWait)) {
+  const timedOut = (timerFired = false) => {
+    // Timer callbacks may run slightly before Date.now() crosses the deadline
+    // due to millisecond rounding. A fired timer itself is sufficient evidence.
+    if (timerFired || requestDeadlineExceeded(startedAt, maxWait)) {
       exceeded = true;
       controller.abort(new DOMException('Client request timeout', 'AbortError'));
     }
@@ -25,7 +27,7 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TI
   // iOS can suspend timers while the PWA is in the background. Recheck elapsed
   // wall time on resume; never accept a stale response as a fresh committed turn.
   const onResume = () => timedOut();
-  const timer = setTimeout(timedOut, maxWait);
+  const timer = setTimeout(() => timedOut(true), maxWait);
   const hasDocument = typeof document !== 'undefined';
   const hasWindow = typeof window !== 'undefined';
   if (hasDocument) document.addEventListener('visibilitychange', onResume);
