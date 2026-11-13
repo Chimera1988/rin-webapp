@@ -1,0 +1,236 @@
+name: Rin - Natural Dialogue and Faster Replies
+
+# Save as .github/workflows/rin-natural-dialogue.yml
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rin-natural-dialogue-main
+  cancel-in-progress: false
+
+jobs:
+  improve-rin:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout main safely
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify audit baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 09035f41aa1d9f2f80312e7d57259def53af2a54 HEAD || {
+            echo 'Required Rin behavior-audit commit is missing. No changes made.'
+            exit 1
+          }
+          test -z "$(git status --porcelain)"
+      - name: Apply targeted changes to Rin
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'RIN_FLOW_PY'
+          from pathlib import Path
+          
+          ROOT = Path.cwd()
+          
+          
+          def replace_once(path, before, after):
+              file = ROOT / path
+              original = file.read_text(encoding='utf-8')
+              amount = original.count(before)
+              if amount != 1:
+                  raise SystemExit(f'STOP: {path}: expected unique anchor, got {amount}. No commit performed.')
+              file.write_text(original.replace(before, after, 1), encoding='utf-8')
+              print('Updated:', path)
+          
+          
+          behavior = ROOT / 'lib/cognition/behavior-state.js'
+          if 'RIN_CONVERSATION_FLOW_V1' in behavior.read_text(encoding='utf-8'):
+              print('RIN_CONVERSATION_FLOW_V1 already applied: skipping changes.')
+          else:
+              # 1. Concrete signal that a task has been completed, and that a short
+              # acknowledgement should not replay the previous action.
+              behavior_helper = r'''// RIN_CONVERSATION_FLOW_V1: conversation facts, not a second agent or extra LLM call.
+          function topicProgressSnapshot(userText = '', history = []) {
+            const text = clean(userText, 1200);
+            const completed = /(?:^|[^\p{L}\p{N}_])(?:я|мы)\s+(?:(?:его|е[её]|это|вс[её]|проект|работу|задачу)\s+)?(?:уже\s+)?(?:закончил(?:и)?|завершил(?:и)?|доделал(?:и)?)(?=$|[^\p{L}\p{N}_])|(?:^|[^\p{L}\p{N}_])(?:проект|работа|задача)\s+(?:уже\s+)?(?:заверш[её]н|завершена|закончен|закончена|готов|готова)(?=$|[^\p{L}\p{N}_])|(?:^|[^\p{L}\p{N}_])я\s+же\s+(?:говорил|говорю|сказал)[^.!?]{0,65}(?:закончил|завершил|доделал)(?=$|[^\p{L}\p{N}_])/iu.test(text)
+              && !/(?:^|[^\p{L}\p{N}_])(?:не|пока\s+не|ещ[её]\s+не)\s+(?:закончил|завершил|доделал)(?=$|[^\p{L}\p{N}_])/iu.test(text);
+            const reasserted = /(?:^|[^\p{L}\p{N}_])(?:я\s+же\s+(?:говорил|говорю|сказал)|я\s+ведь\s+(?:говорил|сказал)|уже\s+(?:говорил|сказал)|я\s+это\s+уже\s+говорил)/iu.test(text);
+            const acknowledgementOnly = /^(?:ага|да|угу|хорошо|ладно|ок|окей|понятно|согласен|договорились|точно|верно|ну\s+да)[\s.!?…)]*$/iu.test(text);
+            const previousAssistant = clean(previousAssistantTurnText(history), 280);
+            return {
+              completed,
+              reasserted,
+              acknowledgementOnly,
+              previousAssistant,
+              guidance: completed
+                ? 'Пользователь сообщает, что дело УЖЕ завершено. Прими это как факт; не предлагай снова доделывать, не возвращайся к советам об отдыхе без запроса.'
+                : acknowledgementOnly
+                  ? 'Это короткое подтверждение, а не новый запрос. Не повторяй уже сказанную мысль, выполненное действие или ту же шутку; допустима короткая реакция либо естественная пауза.'
+                  : 'Сверяй текущую реплику с последними действиями и словами Рин; не пересоздавай уже состоявшееся событие.'
+            };
+          }
+          
+          '''
+              replace_once('lib/cognition/behavior-state.js',
+                           'function emojiSnapshot(userText = \'\', history = []) {',
+                           behavior_helper + 'function emojiSnapshot(userText = \'\', history = []) {')
+              replace_once('lib/cognition/behavior-state.js',
+                           '  const sceneClosure = inspectSceneClosure(history, text, brain);',
+                           '  const sceneClosure = inspectSceneClosure(history, text, brain);\n  const topicProgress = topicProgressSnapshot(text, history);')
+              replace_once('lib/cognition/behavior-state.js',
+                           '    literalCorrection,\n    emoji,',
+                           '    literalCorrection,\n    topicProgress,\n    emoji,')
+          
+              # 2. Get the signal into the compact model state, and give situational
+              # instructions without overwriting Rin's identity, memory or intimacy.
+              replace_once('lib/cognition/rin-mind.js',
+                           '    behavior: {\n      questionRestraint: behavior?.question?.restraint ?? 0,',
+                           '''    behavior: {
+                topicProgress: behavior?.topicProgress ? {
+                  completed: Boolean(behavior.topicProgress.completed),
+                  reasserted: Boolean(behavior.topicProgress.reasserted),
+                  acknowledgementOnly: Boolean(behavior.topicProgress.acknowledgementOnly),
+                  previousAssistant: clean(behavior.topicProgress.previousAssistant, 280)
+                } : null,
+                questionRestraint: behavior?.question?.restraint ?? 0,''')
+          
+              # The model remains free to sustain a welcome scene, but must stop
+              # paraphrasing the same beat or resurrecting a corrected interpretation.
+              replace_once('lib/cognition/rin-mind.js',
+                           "    '- Недавно завершённые intent в state.recentIntents — это закрытые линии с cooldown. Не создавай ту же цель заново только потому, что следующий ход похож; новый intent нужен лишь при реально новом мотиве или новой фазе сцены.',",
+                           "    '- Недавно завершённые intent в state.recentIntents — это закрытые линии с cooldown. Не создавай ту же цель заново только потому, что следующий ход похож; новый intent нужен лишь при реально новом мотиве или новой фазе сцены.',\n    '- Если пользователь уже сообщил, что задача закончена, признай результат с первого раза. Не переводить достижение в длительную терапию, советы об отдыхе или бесконечную шутку о ещё одной правке; новый разговорный мотив должен появиться из его новых слов, а не из незавершённого старого intent.',")
+          
+              replace_once('lib/cognition/rin-mind.js',
+                           "    '- behavior.novelty.motifPressure и behavior.novelty.pressure отражают смысловой повтор sceneMotif. Это мягкое давление, не команда сменить тему; длинный удачный флирт или другую удачную сцену можно продолжать; при высоком motifPressure лучше разнообразить функцию следующего beat, а не просто перефразировать тот же mystery/challenge.',",
+                           "    '- behavior.novelty.motifPressure и behavior.novelty.pressure отражают смысловой повтор sceneMotif. Это мягкое давление, не команда сменить тему; длинный удачный флирт или другую удачную сцену можно продолжать; при высоком motifPressure лучше разнообразить функцию следующего beat, а не просто перефразировать тот же mystery/challenge.',\n    '- CONTINUITY OF ACTION: уже названное совершённым действие не выполняй вторично из-за простого «хорошо». Если только пообещала приготовить чай, следующая сцена может содержать его приготовление; если уже сказала «наливаю», не наливай тот же чай ещё раз. То же касается поцелуев, жестов, работы, планов и шуток. При прямом запросе повторить действие повтор разрешён. Сравни с последними реальными словами в shortTermDialogue.',\n    '- Самостоятельность не означает бесконечно разыгрывать одну и ту же проверку/поддразнивание. В живой удачной игре можно сделать новый конкретный ход, сменить ракурс, поделиться собственной реакцией, предложить отдых или просто остаться в моменте; не своди любую реплику к ещё одному вопросу, взгляду или улыбке.',")
+          
+              marker = "    behavior?.sceneClosure?.strong\n"
+              new_dynamic = '''    behavior?.topicProgress?.completed
+                ? `- ЗАВЕРШЁННОЕ ДЕЛО: пользователь прямо сказал, что закончил. ${behavior.topicProgress.reasserted ? 'Это повторная поправка: признай факт один раз и прекрати развивать прежнее ошибочное предположение.' : 'Считай дело завершённым и переключайся по его новому смыслу.'} Не советуй заново доделывать и не возвращайся к одной шутке о недоделках без повода.`
+                : '',
+              behavior?.topicProgress?.acknowledgementOnly
+                ? `- КОРОТКОЕ ПОДТВЕРЖДЕНИЕ: последнее сообщение Рин было «${clean(behavior.topicProgress.previousAssistant, 200)}». Не повторяй описанное там действие, обещание или реплику только потому, что пользователь ответил «хорошо/ага». Если ответ не добавляет смысла, не нужно разыгрывать тот же шаг снова.`
+                : '',
+              Number(behavior?.novelty?.motifPressure || 0) >= 70
+                ? `- СИЛЬНЫЙ ПОВТОР СЦЕНЫ: motifPressure=${Number(behavior.novelty.motifPressure)}/100. Не повторяй действие или шутку через синонимы. Сохрани настроение и свободу Рин, но предложи действительно новый beat только если текущая реплика его требует. Не обрывай взаимный флирт механически.`
+                : '',
+          '''
+              replace_once('lib/cognition/rin-mind.js', marker, new_dynamic + marker)
+          
+              # 3. The existing protection against premature closure must not negate
+              # Rin's explicit choice to close after the user repeatedly corrected her.
+              replace_once('lib/cognition/intent-policy.js',
+                           "const liveScene = !sceneChanged && frameAlignment === 'aligned' && healthyEngagement && lowSaturation && !behaviorState?.space?.strong;",
+                           "const liveScene = !sceneChanged && frameAlignment === 'aligned' && healthyEngagement && lowSaturation && !behaviorState?.space?.strong\n          && !(behaviorState?.topicProgress?.completed && behaviorState?.topicProgress?.reasserted);")
+          
+              # 4. Keep the chat input aggregation and cancellation logic intact. The
+              # model/network cannot be accelerated here; only post-generation pacing.
+              replace_once('public/js/delivery_scheduler.js',
+                           '  const base = 550 + Math.min(1500, chars * 7) + Math.min(500, (count - 1) * 180);\n  const normal = Math.round(clamp(base + sample(random, -160, 260), 450, 2400));\n  return denseConversation ? Math.round(clamp(normal * 0.55, 260, 1250)) : normal;',
+                           '  const base = 500 + Math.min(1150, chars * 5) + Math.min(350, (count - 1) * 120);\n  const normal = Math.round(clamp(base + sample(random, -110, 200), 450, 2000));\n  return denseConversation ? Math.round(clamp(normal * 0.60, 260, 1050)) : normal;')
+              replace_once('public/js/delivery_scheduler.js',
+                           '    const normal = sample(random, 450, 950);\n    return denseConversation ? Math.round(clamp(normal * 0.6, 280, 620)) : normal;',
+                           '    const normal = sample(random, 380, 750);\n    return denseConversation ? Math.round(clamp(normal * 0.6, 250, 500)) : normal;')
+              replace_once('public/js/delivery_scheduler.js',
+                           '''  if (length <= 24) [min, max] = [800, 1700];
+            else if (length <= 80) [min, max] = [1500, 3200];
+            else if (length <= 160) [min, max] = [2600, 5000];
+            else if (length <= 300) [min, max] = [4200, 7600];
+            else [min, max] = [6500, 10500];
+            const normal = sample(random, min, max);
+            return denseConversation ? Math.round(clamp(normal * 0.55, 500, 5800)) : normal;''',
+                           '''  if (length <= 24) [min, max] = [800, 1350];
+            else if (length <= 80) [min, max] = [1100, 2350];
+            else if (length <= 160) [min, max] = [1650, 3400];
+            else if (length <= 300) [min, max] = [2450, 4700];
+            else [min, max] = [3500, 6800];
+            const normal = sample(random, min, max);
+            return denseConversation ? Math.round(clamp(normal * 0.62, 450, 4200)) : normal;''')
+              replace_once('public/js/delivery_scheduler.js',
+                           "  if (denseConversation) return nextKind === 'sticker' ? sample(random, 240, 520) : sample(random, 320, 760);\n  return nextKind === 'sticker' ? sample(random, 350, 850) : sample(random, 520, 1200);",
+                           "  if (denseConversation) return nextKind === 'sticker' ? sample(random, 180, 380) : sample(random, 240, 550);\n  return nextKind === 'sticker' ? sample(random, 290, 650) : sample(random, 520, 900);")
+          
+              # 5. Regression checks use observable contracts, not fabricated model output.
+              test_file = ROOT / 'tests/rin-conversation-flow.test.mjs'
+              if test_file.exists():
+                  raise SystemExit(f'STOP: test file already exists: {test_file}')
+              test_file.write_text('''import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { buildBehaviorState } from '../lib/cognition/behavior-state.js';
+          import { computeHumanReadDelay, computeHumanComposeDelay } from '../public/js/delivery_scheduler.js';
+          
+          const history = [
+            { role: 'user', content: 'Проект закончил', requestId: 'u1' },
+            { role: 'assistant', content: 'Тогда наливаю чай в обе чашки.', requestId: 'r1' }
+          ];
+          
+          test('explicitly finished work is never interpreted as still pending', () => {
+            const state = buildBehaviorState({ userText: 'Я его закончил)', history });
+            assert.equal(state.topicProgress.completed, true);
+            assert.equal(state.topicProgress.reasserted, false);
+            assert.equal(buildBehaviorState({ userText: 'Я не закончил проект', history }).topicProgress.completed, false);
+          });
+          
+          test('repeated correction is retained as a strong task-closure signal', () => {
+            const state = buildBehaviorState({ userText: 'Я же говорю, что закончил его', history });
+            assert.equal(state.topicProgress.completed, true);
+            assert.equal(state.topicProgress.reasserted, true);
+          });
+          
+          test('short acknowledgement carries previous action without inventing a new request', () => {
+            const state = buildBehaviorState({ userText: 'Хорошо)', history });
+            assert.equal(state.topicProgress.acknowledgementOnly, true);
+            assert.match(state.topicProgress.previousAssistant, /наливаю чай/u);
+          });
+          
+          test('post-generation pacing is bounded and quicker while retaining presence phases', () => {
+            const high = () => 1;
+            assert.ok(computeHumanReadDelay({ userChars: 200, random: high }) <= 2000);
+            assert.ok(computeHumanComposeDelay({ chars: 140, random: high }) <= 3400);
+            assert.ok(computeHumanComposeDelay({ chars: 300, random: high, denseConversation: true }) <= 4200);
+          });
+          ''', encoding='utf-8')
+              print('Added:', test_file.relative_to(ROOT))
+          RIN_FLOW_PY
+      - name: Validate JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check lib/cognition/behavior-state.js
+          node --check lib/cognition/intent-policy.js
+          node --check lib/cognition/rin-mind.js
+          node --check public/js/delivery_scheduler.js
+          node --check tests/rin-conversation-flow.test.mjs
+          git diff --check
+      - name: Run all regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run check
+      - name: Commit changes only after green tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo 'Already applied; nothing to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/cognition/behavior-state.js lib/cognition/rin-mind.js lib/cognition/intent-policy.js public/js/delivery_scheduler.js tests/rin-conversation-flow.test.mjs
+          git diff --cached --check
+          git commit -m 'Improve Rin dialogue continuity, scene variety and reply pacing'
+          git push origin HEAD:main
