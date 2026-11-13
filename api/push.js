@@ -18,7 +18,7 @@ export default async function handler(req,res) {
     const redis = await pushRedis();
     if (action === 'status') {
       const enabled = Boolean(await readProtected(redis,'subscription'));
-      const autoInitiationsEnabled = (await redis.get(pushKey('auto-initiations-enabled'))) !== '0';
+      const autoInitiationsEnabled = (await redis.get(pushKey('auto-initiations-enabled'))) === '1';
       return res.status(200).json({enabled,autoInitiationsEnabled,publicKey:process.env.RIN_PUSH_VAPID_PUBLIC||'',schema:PUSH_SCHEMA});
     }
     if (action === 'initiative-setting') {

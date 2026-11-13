@@ -17,7 +17,7 @@ import {
   updateMessage
 } from './js/chat_store.js';
 import { RIN_RELEASE_ID } from './js/release.js';
-import { createMemoryJobRunner, enqueueMemoryJob } from './js/memory_job_queue.js';
+import { createMemoryJobRunner, enqueueMemoryJob, requestsMemoryRevision } from './js/memory_job_queue.js';
 import { createCloudMemorySync } from './js/cloud_memory_sync.js';
 import { activeInitiationWindow, canAutoInitiate, canGreet, initiationWindowKey, resolveInitiationPolicy } from './js/conversation_policy.js';
 import { createInitiationStateStore } from './js/initiation_state.js';
@@ -556,7 +556,7 @@ function shouldAnalyzeConversationForMemory(userText = '') {
       && /(?:у\s+меня\s+тоже|мой\s+день\s+рождения)/iu.test(userContext);
   }
   const trivial = /^(?:привет|доброе утро|добрый день|добрый вечер|ну пока|до завтра|спокойной ночи|спасибо|ага|да|нет|ок(?:ей)?|хорошо|понятно|мм+|ха+|[\p{Emoji_Presentation}\p{Extended_Pictographic}\s.!?]+)$/iu.test(text);
-  return !trivial && (meaningful || substantial || periodicCatchUp || strongEpisode || ownBirthdayAnswer);
+  return !trivial && (meaningful || substantial || periodicCatchUp || strongEpisode || ownBirthdayAnswer || requestsMemoryRevision(text));
 }
 
 // A late cloud-archive upload must not silently discard a qualified episode.
@@ -988,7 +988,7 @@ scheduleNextCalendarDayRefresh();
 
 /* === Autonomous messages: persisted server preference, local guard for open-chat mode === */
 const AUTO_INITIATIONS_KEY = 'rin-auto-initiations-enabled-v1';
-let autoInitiationsEnabled = localStorage.getItem(AUTO_INITIATIONS_KEY) !== '0';
+let autoInitiationsEnabled = localStorage.getItem(AUTO_INITIATIONS_KEY) === '1';
 const autoInitiationsToggle = document.getElementById('autoInitiationsEnabled');
 const autoInitiationsStatus = document.getElementById('autoInitiationsStatus');
 function updateAutoInitiationsUi(message = '') {
@@ -1010,7 +1010,7 @@ async function initializeAutoInitiations() {
   updateAutoInitiationsUi();
   try {
     const data = await autoInitiationsRequest('status');
-    autoInitiationsEnabled = data.autoInitiationsEnabled !== false;
+    autoInitiationsEnabled = data.autoInitiationsEnabled === true;
     localStorage.setItem(AUTO_INITIATIONS_KEY,autoInitiationsEnabled?'1':'0');
     updateAutoInitiationsUi();
   } catch (error) {

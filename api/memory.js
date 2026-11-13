@@ -1,3 +1,4 @@
+import { factPathParts } from '../public/lib/memory-fact-contract.js';
 import { gameMemoryGuard, gameRevealFactGrounded } from '../lib/cognition/game-session.js';
 import { requireSession } from '../lib/server/session.js';
 import { applySecurityLimit, auditRejectedSession } from '../lib/server/security-gate.js';
@@ -92,7 +93,7 @@ export function sanitizeMemoryResult(value, context = {}) {
   for (const item of list(value?.facts, 5)) {
     const path = clean(item?.path, 100);
     const memoryValue = clean(item?.value, 500);
-    if (/^user\.[a-zA-Z0-9_.-]+$/.test(path) && memoryValue) {
+    if (factPathParts(path, { userOnly: true }).length > 0 && memoryValue) {
       result.facts.push({ path, value: memoryValue, confidence: confidence(item?.confidence) || 0.7 });
     }
   }
@@ -149,7 +150,7 @@ export function sanitizeMemoryResult(value, context = {}) {
   result.episodicCandidates = list(value?.episodicCandidates, 3);
   for (const item of list(value?.factRetractions, 5)) {
     const path = clean(item?.path, 100);
-    if (/^user\.[a-zA-Z0-9_.-]+$/.test(path)) result.factRetractions.push({ path });
+    if (factPathParts(path, { userOnly: true }).length > 0) result.factRetractions.push({ path });
   }
   // A day off or Rin's own routine is not a stable employment arrangement
   // for the user. Keep dated plans in episode memory instead.
@@ -220,7 +221,7 @@ ${JSON.stringify(existingMemory || {}).slice(0, 3600)}
 ${JSON.stringify((Array.isArray(recentHistory) ? recentHistory.slice(-20) : []).map(item => ({...item, content: clean(item.content, 390)}))).slice(0, 11500)}
 
 НОВАЯ РЕПЛИКА ПОЛЬЗОВАТЕЛЯ:
-${clean(userText, 1600)}
+${clean(userText, 16000)}
 
 ОТВЕТ АССИСТЕНТА:
 ${clean(assistantText, 1400)}
@@ -286,7 +287,7 @@ export default async function handler(req, res) {
   if (body?.action === 'episode_capture_retry') return captureEpisodesRetry(body, res);
   if (!OPENAI_API_KEY) return res.status(503).json({ error: 'Memory service is not configured', code: 'MEMORY_NOT_CONFIGURED' });
 
-  const userText = clean(body.userText, 2000);
+  const userText = clean(body.userText, 16000);
   const assistantText = clean(body.assistantText, 2000);
   if (!userText || !assistantText) return res.status(200).json(createEmptyMemoryResult());
 

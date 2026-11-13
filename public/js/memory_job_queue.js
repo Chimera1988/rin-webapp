@@ -1,11 +1,16 @@
 import { storageReadJson, storageWriteJsonVerified } from './storage.js';
 export const MEMORY_JOB_QUEUE_KEY = 'rin-memory-jobs-v1';
 
+// Explicit memory corrections/deletions matter even in a short message.
+export function requestsMemoryRevision(text = '') {
+  return /(?:забудь|не\s+(?:запоминай|сохраняй)|(?:удали|убери)\s+(?:из\s+памяти|факт|сведения)|поправка|уточнение|я\s+больше\s+не|(?:теперь\s+я|я\s+теперь))/iu.test(String(text));
+}
+
 const clean = (value, max = 2000) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 function normalizeJob(value = {}) {
   const id = clean(value.id, 120);
-  const userText = clean(value.userText);
+  const userText = clean(value.userText, 16000);
   const assistantText = clean(value.assistantText);
   if (!id || !userText || !assistantText) return null;
   return {

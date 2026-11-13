@@ -168,7 +168,7 @@ test('invalid structured model output degrades locally instead of making a seman
     assert.equal(calls, 1);
     assert.equal(res.body.promptMetrics.modelFallback, true);
     assert.equal(res.body.promptMetrics.semanticRetries, 0);
-    assert.ok(res.body.reply.length > 0);
+    assert.match(res.body.reply, /сбоя/u);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -212,4 +212,62 @@ test('explicit prompt caching is enabled only for GPT-5.6+ and keeps rollback mo
 
   const rollback = chat.buildMindMessages(prompt, 'gpt-4.1');
   assert.deepEqual(rollback, [{ role: 'system', content: 'stable\n\ndynamic' }]);
+});
+
+test('full long current turn and code line breaks reach the model through the HTTP handler', async () => {
+  const previous=globalThis.fetch;
+  const text='Разбери этот код:\nconst answer = 42;\n'+ 'Деталь '.repeat(900)+'ФИНАЛЬНЫЙ_ВОПРОС';
+  let calls=0;
+  globalThis.fetch=async(_url,options)=>{
+    calls++;
+    const body=JSON.parse(options.body);
+    const dynamic=body.messages.at(-1).content;
+    assert.ok(dynamic.includes('ФИНАЛЬНЫЙ_ВОПРОС'));
+    assert.ok(dynamic.includes('код:\\nconst answer = 42;\\n'));
+    return openAiResponse(mindTurn('Сначала посмотрю на условие.'));
+  };
+  try {
+    const res=createRes();await chat.default(userRequest({requestId:'audit-long',text}),res);
+    assert.equal(res.statusCode,200);assert.equal(calls,1);
+  } finally {globalThis.fetch=previous;}
+});
+
+test('honest identity statements without punctuation do not trigger paid repair or fallback', async () => {
+  const previous=globalThis.fetch;
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;return openAiResponse(mindTurn('Я программа, а Рин — мой образ для общения.'));};
+  try {
+    for(const text of ['Расскажи честно, кто ты','Ты бот?','Не притворяйся человеком']) {
+      const res=createRes();await chat.default(userRequest({requestId:`audit-truth-${calls}`,text}),res);
+      assert.equal(res.statusCode,200);
+      assert.equal(res.body.promptMetrics.semanticRetries,0);
+      assert.equal(res.body.promptMetrics.modelFallback,false);
+      assert.match(res.body.reply,/Я программа/u);
+    }
+    assert.equal(calls,3);
+  } finally {globalThis.fetch=previous;}
+});
+
+test('memory queue and extraction preserve a correction at the end of a long user turn', async () => {
+  const {MemoryStorage}=await import('./helpers/runtime.js');
+  const {enqueueMemoryJob,loadMemoryJobs}=await import('../public/js/memory_job_queue.js');
+  const memory=await import('../api/memory.js?audit-long-memory');
+  const storage=new MemoryStorage();
+  const userText='Описание дня. '.repeat(450)+'Поправка: я теперь живу в Казани.';
+  enqueueMemoryJob({id:'long-correction',userText,assistantText:'Запомнила поправку.'},storage);
+  const job=loadMemoryJobs(storage)[0];
+  assert.ok(job.userText.endsWith('живу в Казани.'));
+  const previous=globalThis.fetch;
+  let observed='';
+  globalThis.fetch=async(_url,options)=>{
+    observed=JSON.parse(options.body).messages.at(-1).content;
+    return openAiResponse({facts:[{path:'user.city',value:'Казань',confidence:1}]});
+  };
+  try {
+    const res=createRes();
+    await memory.default(createReq({headers:{'x-rin-pin':'1357'},body:job}),res);
+    assert.equal(res.statusCode,200);
+    assert.ok(observed.includes('Поправка: я теперь живу в Казани.'));
+    assert.equal(res.body.facts[0].value,'Казань');
+  } finally {globalThis.fetch=previous;}
 });

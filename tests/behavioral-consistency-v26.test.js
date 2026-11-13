@@ -129,5 +129,6 @@ test('v2.6.0 debug exposes semantic and agency signals; no extra LLM retry impos
   assert.match(source,/sceneActionCount:/);
   assert.match(client,/exprPressure=/);
   assert.match(client,/sceneActions=/);
-  assert.match(source,/semanticRetries: 0/);
+  assert.match(source,/let semanticRetries = 0/);
+  assert.match(source,/validationHardReasons.length && !modelFallback/);
 });

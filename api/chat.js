@@ -28,6 +28,7 @@ import {
   parseRinMind
 } from '../lib/cognition/rin-mind.js';
 import {
+  cleanMessageText,
   currentUserTurn,
   isExplicitFarewell,
   normalizeReplySnapshot,
@@ -55,7 +56,7 @@ const RIN_WEEKLY_RHYTHM = (() => {
 const normalize = (value, max = 500) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 export function detectLongMode(userText) {
-  const text = normalize(userText, 4000).toLowerCase();
+  const text = normalize(userText, 16000).toLowerCase();
   return /(подробно|очень подробно|развернуто|развёрнуто|во всех деталях|полный разбор|объясни пошагово|расскажи подробнее|продолжай|расскажи ещё|можешь продолжить|сравни|проанализируй|составь план|пошаговая инструкция|технически объясни|разбери по пунктам)/iu.test(text);
 }
 
@@ -107,7 +108,7 @@ function currentUserGroup(history = [], requestId = '') {
 }
 
 function groupUserText(group = []) {
-  return group.map(item => normalize(item?.content, 2000)).filter(Boolean).join('\n');
+  return cleanMessageText(group.map(item => cleanMessageText(item?.content, 8000)).filter(Boolean).join('\n'), 16000);
 }
 
 function explicitReplyFromGroup(group = [], history = []) {
@@ -199,8 +200,8 @@ export function buildMindMessages(prompt = null, model = '') {
   ];
 }
 
-// Transport retry is intentionally the only automatic model retry left in the pipeline.
-// Semantic/style validation never launches another paid model call.
+// Transport permits one retry. A hard factual/delivery violation may also trigger
+// one bounded realization repair below; conversational style never does.
 export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null, reasoning_effort = null, prompt_cache_options = null, prompt_cache_key = null }) {
   const body = { model, messages };
   const isGpt6 = /^gpt-6(?:[.-]|$)/iu.test(String(model || ''));
@@ -295,7 +296,7 @@ function makeFallbackMindTurn({ userText = '', behaviorState = null } = {}) {
     mind: {
       felt: 'сохраняет контакт после технически неиспользуемого model output',
       wants: 'ответить без повторного платного inference',
-      restraint: 'не выдавать внутреннюю ошибку пользователю',
+      restraint: 'честно обозначить сбой без выдуманного содержательного ответа',
       socialIntent: 'stable_fallback',
       sceneMotif: 'direct_exchange',
       closenessMode: 'everyday',
@@ -368,15 +369,8 @@ function fallbackOnHardDecision({ mindTurn, validation, userText, behaviorState 
 
 function advisoryRealizationValidation(realization = null, context = {}) {
   const base = validateRealization(realization, context);
-  // When explicitly asked about AI/system nature, truth must not be treated as
-  // an accidental persona/meta leak. Never bypass unrelated factual hard flags.
-  const identityQuestionText = String(context.currentUserText || '');
-  const directTechnicalQuestion = /\?/u.test(identityQuestionText) && (
-    /(?:^|[^\p{L}])(?:ты|рин)\s+(?:же\s+|ведь\s+|не\s+|действительно\s+){0,3}(?:бот|робот|ии|ai|искусственн|модел|программ|виртуальн|человек|настоящая)/iu.test(identityQuestionText)
-    || /(?:как|чем)\s+(?:же\s+)?(?:ты|рин).{0,55}(?:устроен|работаешь|являешься)/iu.test(identityQuestionText)
-  );
-  const effectiveHardWarnings = (base.hardWarnings || []).filter(reason =>
-    !(directTechnicalQuestion && reason === 'meta_identity_leak'));
+  // Identity wording is advisory: truthful self-description must never trigger a rewrite.
+  const effectiveHardWarnings = base.hardWarnings || [];
   return {
     ...base,
     hardWarnings: effectiveHardWarnings,

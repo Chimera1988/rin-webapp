@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-13",
+  "baselineRevision": "ee9e8caea39be3be5f72b45b0e65162e9ace4659",
+  "implementationRevision": "96f9c08a5fd37154f5a466e6640884d484d778cf",
+  "node": "v24.22.1",
+  "offlineScenarios": {
+    "before": 31,
+    "after": 48,
+    "total": 48,
+    "sameInputs": true
+  },
+  "nodeTestFileResults": {
+    "before": {
+      "pass": 87,
+      "fail": 3,
+      "total": 90
+    },
+    "after": {
+      "pass": 91,
+      "fail": 0,
+      "total": 91
+    }
+  },
+  "npmRunCheck": "pass",
+  "syntax": {
+    "pass": true,
+    "jsFiles": 219
+  },
+  "gitDiffCheck": "pass",
+  "buildSmoke": {
+    "before": "blocked: pre-existing public/avatar.jpg missing",
+    "after": "blocked: pre-existing public/avatar.jpg missing"
+  },
+  "browser": "blocked: sandbox loopback EPERM; escalated Chromium rin.test navigation returned No approved upstream IPv4 address",
+  "liveOpenAI": "not run: OPENAI_API_KEY absent",
+  "liveDatabaseRedisPush": "not run: no test service configuration",
+  "notes": "Test-file counts are the runner summary, not counts of individual assertions; dialogue quality ratings are not measured.",
+  "artifactSha256": {
+    "rin-audit-before.json": "92268db6fcf4be66754cf0f9fe6c421f6151d9c36dde994e1449e9dce0724c14",
+    "rin-audit-after.json": "1bd4b9d77ed9c14571f24fc5a2796df8fdda7e4f38963917d446f18f77568a66"
+  }
+}

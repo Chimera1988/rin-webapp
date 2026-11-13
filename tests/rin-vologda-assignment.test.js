@@ -21,7 +21,7 @@ test('the current Vologda trip uses Europe/Moscow time and Vologda weather locat
   assert.equal(schedule.innerLife.weeklyRhythm.profiles.saturday.workDefault, false);
   assert.equal(schedule.innerLife.weeklyRhythm.profiles.sunday.workDefault, false);
   assert.equal(schedule.maxDailyInitiations, 2);
-  assert.equal(schedule.windows[0].from, '08:00');
+  assert.equal(schedule.windows[0].from, '10:00');
 });
 
 test('local day boundary follows Vologda, not Japan, for daily rhythm and weekends', async () => {

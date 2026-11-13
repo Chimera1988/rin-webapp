@@ -8,7 +8,7 @@ import { readProtected, writeProtected, pushKey } from '../lib/push/redis.js';
 
 const KEY = randomBytes(32);
 function mockRedis() {
-  const map = new Map();
+  const map = new Map([[pushKey('auto-initiations-enabled'), '1']]);
   return {
     map,
     async set(k,v,opts={}) { if (opts.nx && map.has(k)) return null;map.set(k,v);return 'OK'; },

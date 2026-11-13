@@ -18,7 +18,7 @@ test('public schedule is one validated source for initiative, timezone, location
   assert.equal(schedule.schema, 'rin-schedule-v3');
   assert.equal(schedule.timezone, 'Europe/Moscow');
   assert.deepEqual(schedule.windows.map(item => item.id), ['morning', 'day_ping', 'evening']);
-  assert.deepEqual(schedule.windows.map(item => item.probability), [0.55, 0.28, 0.5]);
+  assert.deepEqual(schedule.windows.map(item => item.probability), [1, 0.28, 0.5]);
   assert.equal(schedule.probabilitySemantics, 'one_draw_per_window_when_eligible');
   assert.equal(policy.innerLife.activityMinMinutes, 35);
   assert.equal(policy.innerLife.activityMaxMinutes, 104);

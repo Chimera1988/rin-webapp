@@ -155,8 +155,9 @@ requireText(apiChat, [
   [/buildRinMindPrompt\s*\(/, 'Rin Mind prompt construction is missing.'],
   [/parseRinMind\s*\(/, 'Rin Mind structured output parsing is missing.'],
   [/stabilizeTurn\s*\(/, 'Deterministic stabilization is missing.'],
-  [/semanticRetries\s*:\s*0/, 'Semantic retry budget must remain zero.'],
-  [/calls\s*:\s*\{\s*mind\s*:\s*1\s*,\s*kernel\s*:\s*0\s*,\s*realization\s*:\s*0/s, 'Token telemetry must expose one semantic call.'],
+  [/let semanticRetries = 0/, 'Ordinary turns must start without semantic retries.'],
+  [/validationHardReasons.length && !modelFallback/, 'Realization repair must be gated by hard violations.'],
+  [/calls\s*:\s*\{\s*mind\s*:\s*1 \+ semanticRetries/s, 'Token telemetry must include hard-violation repair.'],
   [/retrieveCanonicalLore\(canonCue\)/, 'Canonical lore must be retrieved server-side.'],
   [/RETRYABLE_OPENAI_STATUSES/, 'Transport retry classification is missing.'],
   [/buildMindCacheKey/, 'Stable Rin Mind cache-contract key is missing.'],
@@ -164,7 +165,7 @@ requireText(apiChat, [
 ], 'api/chat.js');
 
 const semanticCalls = (apiChat.match(/await\s+openaiChat\s*\(/g) || []).length;
-if (semanticCalls !== 1) fail(`api/chat.js must contain exactly one semantic OpenAI invocation; found ${semanticCalls}.`);
+if (semanticCalls !== 2) fail(`api/chat.js must contain the primary call and one bounded hard-violation repair call; found ${semanticCalls}.`);
 forbidText(apiChat, [
   [/OPENAI_REALIZATION_MODEL/, 'Legacy realization model routing must not return.'],
   [/buildRealizationRetryPrompt/, 'Paid realization repair loop must not return.'],

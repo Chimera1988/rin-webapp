@@ -1,3 +1,4 @@
+import { factPathParts } from '../lib/memory-fact-contract.js';
 import {
   defaultRelationshipState,
   emotionalStateFromLegacyTrace,
@@ -972,7 +973,7 @@ export async function commitTurnState({
 }
 
 export async function upsertFact(path, value) {
-  const parts = String(path || '').split('.').map(item => item.trim()).filter(Boolean);
+  const parts = factPathParts(path);
   if (!parts.length) return false;
   return mutateDiary(diary => {
     let cursor = diary.facts;
@@ -988,7 +989,7 @@ export async function upsertFact(path, value) {
 }
 
 export async function removeFact(path) {
-  const parts = String(path || '').split('.').map(item => item.trim()).filter(Boolean);
+  const parts = factPathParts(path);
   if (!parts.length || parts[0] !== 'user') return false;
   return mutateDiary(diary => {
     let cursor = diary.facts;
@@ -1004,7 +1005,7 @@ export async function removeFact(path) {
 }
 
 export async function getFact(path, fallback = undefined) {
-  const parts = String(path || '').split('.').map(item => item.trim()).filter(Boolean);
+  const parts = factPathParts(path);
   if (!parts.length) return fallback;
   let cursor = (await loadDiary()).facts;
   for (const part of parts) {
@@ -1031,7 +1032,7 @@ export async function applyMemoryExtraction(extracted = {}, { jobId = '', now = 
     const retractedFactPaths = [];
     for (const retraction of Array.isArray(extracted?.factRetractions) ? extracted.factRetractions : []) {
       const path = cleanText(retraction?.path, 240);
-      const parts = path.split('.').map(item => item.trim()).filter(Boolean);
+      const parts = factPathParts(path, { userOnly: true });
       if (parts.length < 2 || parts[0] !== 'user') continue;
       let cursor = diary.facts;
       for (let index = 0; index < parts.length - 1; index += 1) {
@@ -1049,8 +1050,8 @@ export async function applyMemoryExtraction(extracted = {}, { jobId = '', now = 
       const path = cleanText(fact?.path, 240);
       const value = cleanText(fact?.value, 2000);
       const confidence = Number(fact?.confidence);
-      if (!path.startsWith('user.') || !value || (Number.isFinite(confidence) && confidence < 0.75)) continue;
-      const parts = path.split('.').map(item => item.trim()).filter(Boolean);
+      if (!factPathParts(path, { userOnly: true }).length || !value || !Number.isFinite(confidence) || confidence < 0.75) continue;
+      const parts = factPathParts(path, { userOnly: true });
       let cursor = diary.facts;
       let updated = false;
       for (let index = 0; index < parts.length; index += 1) {
