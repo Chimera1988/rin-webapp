@@ -6,31 +6,31 @@ const sample = (random, min, max) => Math.round(min + clamp(random(), 0, 1) * (m
 export function computeHumanReadDelay({ userChars = 0, messageCount = 1, denseConversation = false, random = Math.random } = {}) {
   const chars = Math.max(0, Number(userChars) || 0);
   const count = Math.max(1, Number(messageCount) || 1);
-  const base = 550 + Math.min(1500, chars * 7) + Math.min(500, (count - 1) * 180);
-  const normal = Math.round(clamp(base + sample(random, -160, 260), 450, 2400));
-  return denseConversation ? Math.round(clamp(normal * 0.55, 260, 1250)) : normal;
+  const base = 500 + Math.min(1150, chars * 5) + Math.min(350, (count - 1) * 120);
+  const normal = Math.round(clamp(base + sample(random, -110, 200), 450, 2000));
+  return denseConversation ? Math.round(clamp(normal * 0.60, 260, 1050)) : normal;
 }
 
 export function computeHumanComposeDelay({ chars = 0, kind = 'text', denseConversation = false, random = Math.random } = {}) {
   if (kind === 'sticker') {
-    const normal = sample(random, 450, 950);
-    return denseConversation ? Math.round(clamp(normal * 0.6, 280, 620)) : normal;
+    const normal = sample(random, 380, 750);
+    return denseConversation ? Math.round(clamp(normal * 0.6, 250, 500)) : normal;
   }
   const length = Math.max(0, Number(chars) || 0);
   let min;
   let max;
-  if (length <= 24) [min, max] = [800, 1700];
-  else if (length <= 80) [min, max] = [1500, 3200];
-  else if (length <= 160) [min, max] = [2600, 5000];
-  else if (length <= 300) [min, max] = [4200, 7600];
-  else [min, max] = [6500, 10500];
+  if (length <= 24) [min, max] = [800, 1350];
+  else if (length <= 80) [min, max] = [1100, 2350];
+  else if (length <= 160) [min, max] = [1650, 3400];
+  else if (length <= 300) [min, max] = [2450, 4700];
+  else [min, max] = [3500, 6800];
   const normal = sample(random, min, max);
-  return denseConversation ? Math.round(clamp(normal * 0.55, 500, 5800)) : normal;
+  return denseConversation ? Math.round(clamp(normal * 0.62, 450, 4200)) : normal;
 }
 
 export function computeInterSegmentDelay({ nextKind = 'text', denseConversation = false, random = Math.random } = {}) {
-  if (denseConversation) return nextKind === 'sticker' ? sample(random, 240, 520) : sample(random, 320, 760);
-  return nextKind === 'sticker' ? sample(random, 350, 850) : sample(random, 520, 1200);
+  if (denseConversation) return nextKind === 'sticker' ? sample(random, 180, 380) : sample(random, 240, 550);
+  return nextKind === 'sticker' ? sample(random, 290, 650) : sample(random, 520, 900);
 }
 
 async function waitCancelable(ms, { shouldCancel = () => false, setTimer = setTimeout } = {}) {
