@@ -1,0 +1,140 @@
+name: Rin dialogue and memory read-only audit
+
+on:
+  push:
+    paths:
+      - '.github/workflows/Rin-Dialogue-Memory-ReadOnly-Audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  existing-tests:
+    name: Existing offline tests (strict)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Rin source
+        uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run repository's existing checks
+        run: npm run check
+      - name: Summary
+        if: always()
+        run: |
+          echo '## Existing Rin tests' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This job only reads source and executes offline tests. No application code, database, deployment, or user data is changed.' >> "$GITHUB_STEP_SUMMARY"
+
+  focused-regression-probes:
+    name: Focused behavior probes (exploratory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out Rin source
+        uses: actions/checkout@v4
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Prepare temporary tests (runner only)
+        shell: bash
+        run: |
+          cat > .rin-audit-probes.test.mjs <<'RIN_AUDIT_TESTS'
+          import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { buildBehaviorState } from './lib/cognition/behavior-state.js';
+          import { normalizeTurnDecision } from './lib/cognition/turn-decision.js';
+          import { stabilizeTurn } from './lib/cognition/turn-stabilizer.js';
+          import { selectAutobiography } from './lib/memory-foundation/retrieval.js';
+
+          const evt = (role, content, index) => ({
+            id: `${role}-${index}`, requestId: `r-${index}`,
+            role, kind: 'text', status: 'complete', content,
+            ts: 1794632400000 + index * 1000
+          });
+
+          test('baseline: recognizes explicit completion', () => {
+            const state = buildBehaviorState({ userText: 'Я его закончил)' });
+            assert.equal(state.topicProgress.completed, true);
+          });
+
+          test('baseline: negation does not finish a task', () => {
+            const state = buildBehaviorState({ userText: 'Я не закончил проект' });
+            assert.equal(state.topicProgress.completed, false);
+          });
+
+          test('REGRESSION CANDIDATE: completed project remains closed in the next related turn', () => {
+            const history = [
+              evt('user', 'Я его закончил)', 1),
+              evt('assistant', 'Здорово, проект завершён.', 2)
+            ];
+            const state = buildBehaviorState({
+              userText: 'Ооо, я так целую неделю работал 😅',
+              history
+            });
+            assert.equal(state.topicProgress.completed, true,
+              'The prior explicit completion should be considered for the follow-up about the same project');
+          });
+
+          test('baseline: explicit no-questions boundary is recognized', () => {
+            const state = buildBehaviorState({ userText: 'Без вопросов, просто поговори со мной' });
+            assert.equal(state.question.strongNoQuestion, true);
+          });
+
+          test('REGRESSION CANDIDATE: no-question boundary reaches the emitted text', () => {
+            const behaviorState = buildBehaviorState({ userText: 'Не задавай мне вопросов' });
+            const decision = normalizeTurnDecision({
+              act: 'answer_directly', focus: 'короткий ответ', stance: 'спокойно',
+              question: { mode: 'none', reason: null },
+              replyLink: { targetEventId: null, reason: null },
+              delivery: { mode: 'single_text', responseDepth: 'short',
+                segments: [{ type: 'text', purpose: 'reply', stickerIntent: null, maxChars: 300 }] },
+              intentTransition: { operation: 'none' },
+              openLoops: { open: [], resolveIds: [] },
+              realityMode: 'grounded'
+            });
+            const stabilized = stabilizeTurn({
+              decision,
+              realization: { segments: [{ text: 'Я рядом. Что тебя сегодня радует?' }] },
+              behaviorState
+            });
+            const emittedText = (stabilized.realization?.segments || []).map(x => x.text).join(' ');
+            assert.doesNotMatch(emittedText, /\?/u,
+              'The final delivery text must honor an explicit no-question boundary');
+          });
+
+          test('baseline: corrected autobiographical memory is prioritized over an old plan', () => {
+            const rows = [
+              { record_id: 'old-plan', kind: 'rin_action_planned',
+                statement: 'Рин планировала подготовить текст',
+                source_message_id: 'm1', source_kind: 'rin_self_report',
+                event_time_ms: 1794632400000, review_status: 'candidate', relevance: 0.5 },
+              { record_id: 'correction', kind: 'correction',
+                statement: 'Подготовка текста была отменена',
+                source_message_id: 'm2', source_kind: 'user_statement',
+                event_time_ms: 1794632401000, review_status: 'candidate', relevance: 0.5 }
+            ];
+            const selected = selectAutobiography(rows, { userText: 'подготовка текста', nowMs: 1794632500000 });
+            assert.equal(selected[0]?.kind, 'correction');
+          });
+          RIN_AUDIT_TESTS
+          node --check .rin-audit-probes.test.mjs
+      - name: Run exploratory probes (failures are reported, never deployed)
+        id: probes
+        continue-on-error: true
+        run: node --test .rin-audit-probes.test.mjs
+      - name: Read-only audit summary
+        if: always()
+        run: |
+          echo '## Rin targeted behavior audit' >> "$GITHUB_STEP_SUMMARY"
+          if [ '${{ steps.probes.outcome }}' = 'failure' ]; then
+            echo '**Exploratory test failures found.** This is an expected possible outcome: candidate behavior gaps need investigation; nothing has been changed in the running Rin application.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Inspect the exploratory probes step for exact failing expectations.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'All exploratory expectations passed. This still does not prove the quality of generated conversations.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo 'No code was committed, no secrets accessed, no deployment was initiated.' >> "$GITHUB_STEP_SUMMARY"
