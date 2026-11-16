@@ -37,6 +37,7 @@ import {
   selectModelHistory
 } from '../lib/chat-contract.js';
 import { fetchWithTimeout, publicError, readJsonBody, requireMethod } from '../lib/server/http.js';
+import { buildResponsesRequest, readResponsesResult } from '../lib/cognition/rin-responses-transport.js';
 import { buildServerProfile } from '../lib/server/canonical-profile.js';
 import { retrieveCanonicalLore } from '../lib/server/canon-retrieval.js';
 import { retrieveAutobiographicalMemory, recallIntent } from '../lib/memory-foundation/retrieval.js';
@@ -202,6 +203,44 @@ export function buildMindMessages(prompt = null, model = '') {
 
 // Transport permits one retry. A hard factual/delivery violation may also trigger
 // one bounded realization repair below; conversational style never does.
+
+// Experimental Responses transport. Original Chat Completions remains available via RIN_CHAT_TRANSPORT=chat.
+export async function openaiResponsesChat({ model, prompt, history = [], requestId = '', userTurn = '', trigger = null,
+  temperature, max_tokens, reasoning_effort, extraInput = [] }) {
+  const payload = buildResponsesRequest({ model, prompt, history, requestId, userTurn, trigger,
+    temperature, max_tokens, reasoning_effort, extraInput });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response;
+    try {
+      response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, 45_000);
+    } catch (error) {
+      if (error?.name === 'AbortError' || String(error?.message || '').toLowerCase().includes('timeout')) throw error;
+      if (attempt === 0) { await wait(OPENAI_RETRY_DELAY_MS); continue; }
+      throw upstreamError('OpenAI Responses network request failed', 'UPSTREAM_NETWORK_ERROR');
+    }
+    const raw = await response.text();
+    if (!response.ok) {
+      const status = Number(response.status) || 0;
+      if (attempt === 0 && RETRYABLE_OPENAI_STATUSES.has(status)) {
+        const retryAfter = Number(response.headers?.get?.('retry-after'));
+        await wait(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(1000, retryAfter * 1000) : OPENAI_RETRY_DELAY_MS);
+        continue;
+      }
+      throw upstreamError(`OpenAI Responses ${status}`, upstreamCodeForStatus(status), status);
+    }
+    let data;
+    try { data = JSON.parse(raw); }
+    catch { throw upstreamError('OpenAI Responses invalid JSON', 'UPSTREAM_UNAVAILABLE', 502); }
+    const result = readResponsesResult(data, model);
+    result.requestAttempts = attempt + 1;
+    return result;
+  }
+}
+
 export async function openaiChat({ model, messages, temperature, max_tokens, response_format = null, reasoning_effort = null, prompt_cache_options = null, prompt_cache_key = null }) {
   const body = { model, messages };
   const isGpt6 = /^gpt-6(?:[.-]|$)/iu.test(String(model || ''));
@@ -453,6 +492,10 @@ export default async function handler(req, res) {
     const requestId = normalize(body.requestId, 100);
     if (!requestId) return res.status(400).json({ error: 'A request id is required', code: 'INVALID_REQUEST_ID' });
 
+    // User-selected session mode; background jobs and requests without a valid choice remain original.
+    const requestedMode = String(body?.client?.experimentMode || '').trim();
+    const experimentMode = !body.trigger && ['original', 'dialogue', 'freedom'].includes(requestedMode) ? requestedMode : 'original';
+    const useResponses = experimentMode !== 'original';
     const trigger = normalizeProactiveTrigger(body.trigger);
     const fullHistory = selectModelHistory(body.history || [], trigger ? {} : { includeRequestId: requestId });
     // Deterministic cognition may inspect fullHistory, but the model receives a much smaller compact state.
@@ -574,13 +617,24 @@ export default async function handler(req, res) {
       profile,
       state: mindState,
       client: { ...(body.client || {}), longRequested: isLong },
-      trigger
+      trigger,
+      dialogueInMessages: useResponses,
+      experimentStyle: experimentMode === 'freedom' ? 'lean' : 'full'
     });
 
-    const explicitPromptCache = supportsExplicitPromptCache(MIND_MODEL);
+    const explicitPromptCache = !useResponses && supportsExplicitPromptCache(MIND_MODEL);
     const promptCacheKey = explicitPromptCache ? buildMindCacheKey(prompt.stableSystem, MIND_MODEL, prompt.responseFormat) : null;
     modelStartedAt = Date.now();
-    const completion = await openaiChat({
+    const completion = useResponses ? await openaiResponsesChat({
+      model: MIND_MODEL,
+      prompt,
+      history: fullHistory,
+      requestId,
+      userTurn,
+      trigger,
+      reasoning_effort: MIND_REASONING_EFFORT,
+      ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
+    }) : await openaiChat({
       model: MIND_MODEL,
       messages: buildMindMessages(prompt, MIND_MODEL),
       response_format: prompt.responseFormat,
@@ -699,7 +753,20 @@ export default async function handler(req, res) {
       semanticRetries = 1;
       try {
         const retryStartedAt = Date.now();
-        const repaired = await openaiChat({
+        const repaired = useResponses ? await openaiResponsesChat({
+          model: MIND_MODEL,
+          prompt,
+          history: fullHistory,
+          requestId,
+          userTurn,
+          trigger,
+          reasoning_effort: MIND_REASONING_EFFORT,
+          extraInput: [
+            { role: 'assistant', content: completion.content },
+            { role: 'developer', content: `Исправь только realization.segments прежнего JSON, не меняя mind и decision. Reasons: ${validationHardReasons.join(', ').slice(0, 260)}` }
+          ],
+          ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
+        }) : await openaiChat({
           model: MIND_MODEL,
           messages: [...buildMindMessages(prompt, MIND_MODEL),
             { role: 'assistant', content: completion.content },
@@ -968,6 +1035,8 @@ export default async function handler(req, res) {
       long: isLong,
       promptMetrics: {
         promptVersion: 'rin-mind-v2.5.0-conversation-presence-natural-closure-latency',
+        transport: useResponses ? 'responses-roles-stateless' : 'chat-completions',
+        expressionProfile: experimentMode,
         inputTokens: usage.prompt_tokens,
         cachedInputTokens: usage.cached_tokens,
         cacheWriteTokens: usage.cache_write_tokens,

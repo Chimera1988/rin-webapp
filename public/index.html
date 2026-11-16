@@ -179,6 +179,13 @@
             <span class="settings-menu-copy"><strong>Уведомления</strong><small>Самостоятельные сообщения Рин на iPhone</small></span>
             <span class="settings-chevron">›</span>
           </button>
+          <button class="settings-menu-item" type="button" data-settings-target="experiments">
+            <span class="settings-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5zM9 9h6M9 12h6M9 15h4"/></svg>
+            </span>
+            <span class="settings-menu-copy"><strong>Экспериментальные режимы</strong><small>Сравнение связности и свободы речи Рин</small></span>
+            <span class="settings-chevron">›</span>
+          </button>
           <button class="settings-menu-item" type="button" data-settings-target="debug">
             <span class="settings-icon">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7h8M9 4l1 3m5-3-1 3M7 11H4m16 0h-3M7 16H4m16 0h-3M8 8v8a4 4 0 0 0 8 0V8z"/></svg>
@@ -387,6 +394,27 @@
           </div>
           <p id="debugCopyStatus" class="settings-backup-status" role="status" aria-live="polite"></p>
           <div id="debugLog" class="diary-log settings-debug-log"></div>
+        </div>
+      </section>
+
+      <section class="settings-page" data-settings-page="experiments">
+        <div class="settings__head settings__head--sub">
+          <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+          <div class="settings__title">Эксперименты</div>
+          <span></span>
+        </div>
+        <p class="settings-intro">Три режима общения в одной переписке. Выбор действует для новых ответов и сохраняется на этом устройстве.</p>
+        <div class="settings-detail-card">
+          <div class="settings-control-row"><div><strong>Режим диалога</strong><small>Меняет обработку следующих сообщений, но не удаляет историю или память.</small></div></div>
+          <div class="settings-segmented" role="group" aria-label="Режим диалога Рин">
+            <button type="button" data-rin-experiment-mode="original" aria-pressed="true">Обычная</button>
+            <button type="button" data-rin-experiment-mode="dialogue" aria-pressed="false">Dialogue</button>
+            <button type="button" data-rin-experiment-mode="freedom" aria-pressed="false">Freedom</button>
+          </div>
+          <p id="rinExperimentStatus" class="settings-backup-status" role="status" aria-live="polite"></p>
+          <div class="settings-divider"></div>
+          <p class="settings-backup-status"><strong>Обычная</strong> — действующий Chat Completions. <strong>Dialogue</strong> — Responses API, текущие инструкции и реплики с ролями. <strong>Freedom</strong> — Responses API с менее предписывающим промптом.</p>
+          <p class="settings-backup-status">Экспериментальные режимы не меняют облачный архив и биографию Рин. Автосообщения по расписанию остаются в обычном режиме. При сбое верни «Обычная».</p>
         </div>
       </section>
 

@@ -54,10 +54,16 @@ const LS_SPEAK_ENABLED  = 'rin-speak-enabled';   // '1' | '0'
 const LS_SPEAK_RATE     = 'rin-speak-rate';      // 0..50 (%)
 const LS_WP_OPACITY     = 'rin-wallpaper-opacity'; // 0..100
 const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'
+const LS_RIN_EXPERIMENT_MODE = 'rin-experiment-mode-v1'; // original | dialogue | freedom
 const DEFAULT_DEBUG_ENABLED = true;
 const localSettings = createLocalSettings(localStorage);
 const safeLocalGet = localSettings.get;
 const safeLocalSet = localSettings.set;
+const RIN_EXPERIMENT_MODES = new Set(['original','dialogue','freedom']);
+function readRinExperimentMode(){
+  const value = safeLocalGet(LS_RIN_EXPERIMENT_MODE);
+  return RIN_EXPERIMENT_MODES.has(value) ? value : 'original';
+}
 
 
 /* DOM */
@@ -1143,6 +1149,25 @@ settingsTargets.forEach(button => {
 settingsBackBtns.forEach(button => {
   button.addEventListener('click', () => showSettingsPage('main'));
 });
+const rinModeButtons = [...document.querySelectorAll('[data-rin-experiment-mode]')];
+function syncRinExperimentMode(){
+  const mode = readRinExperimentMode();
+  for(const button of rinModeButtons){
+    const selected = button.dataset.rinExperimentMode === mode;
+    button.classList.toggle('is-active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  }
+  const status = document.getElementById('rinExperimentStatus');
+  if(status) status.textContent = mode === 'original' ? 'Включён обычный режим Рин.' :
+    `Включён ${mode === 'dialogue' ? 'Dialogue' : 'Freedom'}. Следующее сообщение обработается выбранным способом.`;
+}
+rinModeButtons.forEach(button=>button.addEventListener('click',()=>{
+  const mode = button.dataset.rinExperimentMode;
+  if(!RIN_EXPERIMENT_MODES.has(mode)) return;
+  safeLocalSet(LS_RIN_EXPERIMENT_MODE, mode);
+  syncRinExperimentMode();
+}));
+syncRinExperimentMode();
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   if (messageSelectionActive) {
@@ -2334,7 +2359,7 @@ async function requestChatTurn(payload = {}) {
   return fetchWithTimeout('/api/chat', {
     method: 'POST',
     headers: authenticatedHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ ...payload, client: { ...(payload.client || {}), experimentMode: readRinExperimentMode() } })
   }, 52_000);
 }
 
