@@ -1,0 +1,543 @@
+name: RIN — three dialogue modes in main settings
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rin-main-experiment-setup
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout main (one production branch)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: true
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Tests before changes (RED)
+        run: |
+          mkdir -p $(dirname tests/rin-responses-transport.test.js)
+          cat > tests/rin-responses-transport.test.js <<'RIN_EXPERIMENT_FILE_END'
+          import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { roleDialogue, buildResponsesRequest, readResponsesResult } from '../lib/cognition/rin-responses-transport.js';
+
+          const prompt = {
+            stableSystem: 'Рин: канон и честность',
+            dynamicSystem: 'Состояние Рин',
+            responseFormat: { json_schema: { name: 'rin_mind_turn_v2', strict: true, schema: { type: 'object', properties: { mind: { type: 'object' } } } } }
+          };
+
+          test('keeps role-separated dialogue in order and excludes only current request', () => {
+            const history = [
+              { role: 'user', requestId: 'old', content: 'Мы вчера обсуждали книгу' },
+              { role: 'assistant', turnId: 'a1', content: 'Да, ты выбирал между двумя романами' },
+              { role: 'user', requestId: 'current', content: 'И какую мы выбрали?' }
+            ];
+            assert.deepEqual(roleDialogue(history, 'current'), [
+              { role: 'user', content: 'Мы вчера обсуждали книгу' },
+              { role: 'assistant', content: 'Да, ты выбирал между двумя романами' }
+            ]);
+            const body = buildResponsesRequest({model:'gpt-6-luna', prompt, history, requestId:'current', userTurn:'И какую мы выбрали?', reasoning_effort:'none', temperature:0.58});
+            assert.deepEqual(body.input.map(x => x.role), ['developer','developer','user','assistant','user']);
+            assert.equal(body.input.at(-1).content, 'И какую мы выбрали?');
+            assert.equal(body.store, false);
+            assert.equal(body.reasoning.effort, 'none');
+            assert.equal(body.temperature, 0.58);
+            assert.equal(body.text.format.name, 'rin_mind_turn_v2');
+            assert.ok(!('response_format' in body));
+          });
+
+          test('does not duplicate grouped segments or truncate newest reply', () => {
+            const history = [
+              {role:'assistant',turnId:'a1',content:'Привет'},
+              {role:'assistant',turnId:'a1',content:'Как твой проект?'},
+              {role:'user',requestId:'new',content:'Ответ'}
+            ];
+            assert.deepEqual(roleDialogue(history,'new'),[{role:'assistant',content:'Привет\nКак твой проект?'}]);
+          });
+
+          test('parses structured response and usage without SDK-only output_text', () => {
+            const response = readResponsesResult({
+              status:'completed', model:'gpt-6-luna',
+              output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'{"mind":{}}'}]}],
+              usage:{input_tokens:87,output_tokens:24,total_tokens:111,input_tokens_details:{cached_tokens:50},output_tokens_details:{reasoning_tokens:2}}
+            });
+            assert.equal(response.content, '{"mind":{}}');
+            assert.equal(response.finishReason,'stop');
+            assert.equal(response.usage.prompt_tokens,87);
+            assert.equal(response.usage.prompt_tokens_details.cached_tokens,50);
+          });
+
+          test('incomplete generation exposes truncation to existing fallback', () => {
+            const response = readResponsesResult({status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output:[]});
+            assert.equal(response.finishReason,'length');
+          });
+
+          test('older models remain compatible without GPT-6 reasoning', () => {
+            const b = buildResponsesRequest({model:'gpt-4.1', prompt, temperature:0.58});
+            assert.equal(b.temperature,0.58);
+            assert.equal('reasoning' in b,false);
+          });
+          RIN_EXPERIMENT_FILE_END
+          mkdir -p $(dirname tests/rin-responses-handler.test.js)
+          cat > tests/rin-responses-handler.test.js <<'RIN_EXPERIMENT_FILE_END'
+          import { enableTestSecurity } from './helpers/security.js';
+          const releaseSecurity = enableTestSecurity();
+          import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { createReq, createRes } from './helpers/runtime.js';
+
+          const prior = { pin: process.env.ACCESS_PIN, key: process.env.OPENAI_API_KEY, mode: process.env.RIN_CHAT_TRANSPORT };
+          process.env.ACCESS_PIN = '1357';
+          process.env.OPENAI_API_KEY = 'test-key';
+          // Mode is selected through the authenticated chat request, not a global env switch.
+          const chat = await import('../api/chat.js?rin-responses-handler-test');
+          test.after(() => {
+            for (const [k, env] of [['pin', 'ACCESS_PIN'], ['key','OPENAI_API_KEY'], ['mode','RIN_CHAT_TRANSPORT']]) {
+              if (prior[k] === undefined) delete process.env[env]; else process.env[env] = prior[k];
+            }
+            releaseSecurity?.();
+          });
+
+          function turn(text) {
+            return {
+              act:'answer_directly', focus:'ответить с учётом истории', stance:'natural',
+              question:{mode:'none',reason:null}, replyLink:{targetEventId:null,reason:null},
+              delivery:{responseDepth:'normal',messageShape:'single',segments:[{type:'text',purpose:'reply',stickerIntent:null,maxChars:320,text}]},
+              intentTransition:{operation:'none',goal:null,motive:null,target:null,nextMove:null,progress:null,commitment:null,reason:null},
+              openLoops:{open:[],resolveIds:[]}, realityMode:'grounded',
+              mind:{sceneMotif:'direct_exchange',lifeDomain:'none',lifeMotif:null,frameAlignment:'aligned',literalCorrection:'none',referenceAnchor:null,felt:'спокойная вовлечённость',wants:'ответить по смыслу',restraint:null,socialIntent:'respond',confidence:90}
+            };
+          }
+
+          test('experimental handler passes genuine dialogue roles through Responses without changing client reply contract', async () => {
+            const previousFetch = globalThis.fetch;
+            let captured;
+            globalThis.fetch = async (url, options) => {
+              assert.equal(url, 'https://api.openai.com/v1/responses');
+              captured = JSON.parse(options.body);
+              return new Response(JSON.stringify({
+                status:'completed', model:'gpt-6-luna',
+                output:[{type:'message',role:'assistant',content:[{type:'output_text',text:JSON.stringify(turn('Да, мы обсуждали книгу.'))}]}],
+                usage:{input_tokens:125,output_tokens:155,total_tokens:280}
+              }),{status:200,headers:{'content-type':'application/json'}});
+            };
+            try {
+              const req = createReq({headers:{'x-rin-pin':'1357'},body:{
+                requestId:'new',
+                history:[
+                  {role:'user',kind:'text',status:'sent',requestId:'old',id:'u-old',content:'Помнишь, мы говорили про книгу?'},
+                  {role:'assistant',kind:'text',status:'complete',turnId:'a-old',requestId:'old',id:'a-old',content:'Да, мне понравилась наша беседа.'},
+                  {role:'user',kind:'text',status:'sent',requestId:'new',id:'u-new',content:'Что мы обсуждали?'}
+                ],
+                client:{experimentMode:'dialogue',sticker:{mode:'off',probability:0,safeMode:true}}
+              }});
+              const res=createRes();
+              await chat.default(req,res);
+              assert.equal(res.statusCode,200, JSON.stringify(res.body).slice(0,300));
+              assert.equal(res.body.reply,'Да, мы обсуждали книгу.');
+              assert.equal(res.body.promptMetrics.transport,'responses-roles-stateless');
+              assert.deepEqual(captured.input.slice(-3).map(x=>x.role),['user','assistant','user']);
+              assert.equal(captured.input.at(-1).content,'Что мы обсуждали?');
+              assert.equal(captured.store,false);
+              assert.equal(captured.text.format.name,'rin_mind_turn_v2');
+            } finally {globalThis.fetch=previousFetch;}
+          });
+          RIN_EXPERIMENT_FILE_END
+
+          cat > tests/rin-experiment-selector.test.js <<'RIN_MAIN_TEST_END'
+          import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+          const client=readFileSync(new URL('../public/chat.js',import.meta.url),'utf8');
+          const api=readFileSync(new URL('../api/chat.js',import.meta.url),'utf8');
+          test('three inline settings modes and authenticated mode dispatch exist',()=>{
+            for(const mode of ['original','dialogue','freedom']) assert.match(html,new RegExp(`data-rin-experiment-mode="${mode}"`));
+            assert.match(html,/data-settings-page="experiments"/);
+            assert.match(client,/experimentMode: readRinExperimentMode\(\)/);
+            assert.match(api,/experimentMode === 'freedom'/);
+            assert.match(api,/!body\.trigger && \['original', 'dialogue', 'freedom'\]/);
+          });
+          RIN_MAIN_TEST_END
+      - name: Confirm new tests reproduce missing feature (RED)
+        run: |
+          if node --test tests/rin-responses-transport.test.js > /tmp/rin-red.log 2>&1; then
+            echo 'Unexpected: the new transport already exists. Refusing duplicate migration.'
+            exit 1
+          fi
+          grep -q 'ERR_MODULE_NOT_FOUND' /tmp/rin-red.log || { cat /tmp/rin-red.log; exit 1; }
+          echo 'RED confirmed: experimental transport module does not exist yet.'
+      - name: Apply Responses transport and prompt modes
+        run: |
+          mkdir -p $(dirname lib/cognition/rin-responses-transport.js)
+          cat > lib/cognition/rin-responses-transport.js <<'RIN_EXPERIMENT_FILE_END'
+          // Experiment: preserve Rin's existing contract while passing dialogue as real API roles.
+          const shorten = (s, max) => {
+            const value = String(s ?? '').trim();
+            if (value.length <= max) return value;
+            const tail = Math.min(Math.floor(max * 0.35), 600);
+            return `${value.slice(0, max - tail - 1)}…${value.slice(-tail)}`;
+          };
+
+          export function roleDialogue(history = [], requestId = '', maxTurns = 24, maxChars = 18000) {
+            const rows = [];
+            for (const event of Array.isArray(history) ? history : []) {
+              if (!['user', 'assistant'].includes(event?.role)) continue;
+              if (event.role === 'user' && requestId && String(event?.requestId || '') === String(requestId)) continue;
+              const value = String(event?.content || '').trim();
+              if (!value) continue;
+              const role = event.role;
+              const key = String(event?.turnId || event?.requestId || event?.id || '');
+              const prev = rows.at(-1);
+              if (key && prev?.role === role && prev?.key === key) {
+                prev.content += `\n${shorten(value, 2200)}`;
+              } else {
+                rows.push({ role, key, content: shorten(value, 2200) });
+              }
+            }
+            let kept = rows.slice(-Math.max(1, maxTurns));
+            while (kept.length > 1 && kept.reduce((n, t) => n + t.content.length, 0) > maxChars) kept.shift();
+            return kept.map(({role, content}) => ({ role, content }));
+          }
+
+          export function buildResponsesRequest({ model, prompt, history = [], requestId = '', userTurn = '', trigger = null,
+            temperature = null, reasoning_effort = null, max_tokens = 1200, extraInput = [] } = {}) {
+            const schema = prompt?.responseFormat?.json_schema;
+            if (!model || !schema?.name || !schema?.schema) throw new Error('Rin Responses schema/model missing');
+            const input = [
+              { role: 'developer', content: String(prompt?.stableSystem || prompt?.system || '') },
+              { role: 'developer', content: String(prompt?.dynamicSystem || '') },
+              ...roleDialogue(history, requestId)
+            ];
+            if (!trigger && String(userTurn || '').trim()) input.push({ role: 'user', content: String(userTurn) });
+            if (Array.isArray(extraInput)) input.push(...extraInput);
+            const body = {
+              model,
+              input,
+              text: { format: { type: 'json_schema', name: schema.name, strict: schema.strict ?? true, schema: schema.schema } },
+              max_output_tokens: Math.max(250, Math.trunc(Number(max_tokens) || 1200)),
+              store: false
+            };
+            if (reasoning_effort) body.reasoning = { effort: reasoning_effort };
+            if (temperature != null && (!/^gpt-6(?:[.-]|$)/iu.test(model) || !reasoning_effort || reasoning_effort === 'none')) body.temperature = temperature;
+            return body;
+          }
+
+          export function readResponsesResult(data, fallbackModel = '') {
+            if (!data || typeof data !== 'object') throw new Error('Invalid Responses result');
+            const text = typeof data.output_text === 'string' ? data.output_text
+              : (Array.isArray(data.output) ? data.output : []).flatMap(item =>
+                item?.type === 'message' ? (Array.isArray(item.content) ? item.content : []) : []
+              ).filter(item => item?.type === 'output_text').map(item => item.text || '').join('\n');
+            const use = data.usage || {};
+            return {
+              content: text.trim(),
+              finishReason: data.status === 'incomplete' || data.incomplete_details?.reason === 'max_output_tokens' ? 'length' : (data.status === 'completed' ? 'stop' : String(data.status || 'unknown')),
+              usage: {
+                prompt_tokens: Number(use.input_tokens) || 0,
+                completion_tokens: Number(use.output_tokens) || 0,
+                total_tokens: Number(use.total_tokens) || 0,
+                prompt_tokens_details: { cached_tokens: Number(use.input_tokens_details?.cached_tokens) || 0 },
+                completion_tokens_details: { reasoning_tokens: Number(use.output_tokens_details?.reasoning_tokens) || 0 }
+              },
+              model: data.model || fallbackModel,
+              requestAttempts: 1
+            };
+          }
+          RIN_EXPERIMENT_FILE_END
+          mkdir -p $(dirname /tmp/patch-rin-responses.mjs)
+          cat > /tmp/patch-rin-responses.mjs <<'RIN_EXPERIMENT_FILE_END'
+          import { readFileSync, writeFileSync } from 'node:fs';
+
+          const variant = 'full'; // both modes are dynamically selected per user request
+          function once(source, oldText, newText, label) {
+            const offset = source.indexOf(oldText);
+            if (offset < 0 || source.indexOf(oldText, offset + oldText.length) >= 0) {
+              throw new Error(`Refusing unsafe patch for ${label}: anchor missing or duplicated`);
+            }
+            return source.slice(0, offset) + newText + source.slice(offset + oldText.length);
+          }
+
+          const apiPath = 'api/chat.js';
+          let api = readFileSync(apiPath, 'utf8');
+          api = once(api,
+            "import { fetchWithTimeout, publicError, readJsonBody, requireMethod } from '../lib/server/http.js';",
+            "import { fetchWithTimeout, publicError, readJsonBody, requireMethod } from '../lib/server/http.js';\nimport { buildResponsesRequest, readResponsesResult } from '../lib/cognition/rin-responses-transport.js';",
+            'transport import');
+
+          const responseFn = `
+          // Experimental Responses transport. Original Chat Completions remains available via RIN_CHAT_TRANSPORT=chat.
+          export async function openaiResponsesChat({ model, prompt, history = [], requestId = '', userTurn = '', trigger = null,
+            temperature, max_tokens, reasoning_effort, extraInput = [] }) {
+            const payload = buildResponsesRequest({ model, prompt, history, requestId, userTurn, trigger,
+              temperature, max_tokens, reasoning_effort, extraInput });
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+              let response;
+              try {
+                response = await fetchWithTimeout('https://api.openai.com/v1/responses', {
+                  method: 'POST',
+                  headers: { Authorization: \`Bearer \${OPENAI_API_KEY}\`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                }, 45_000);
+              } catch (error) {
+                if (error?.name === 'AbortError' || String(error?.message || '').toLowerCase().includes('timeout')) throw error;
+                if (attempt === 0) { await wait(OPENAI_RETRY_DELAY_MS); continue; }
+                throw upstreamError('OpenAI Responses network request failed', 'UPSTREAM_NETWORK_ERROR');
+              }
+              const raw = await response.text();
+              if (!response.ok) {
+                const status = Number(response.status) || 0;
+                if (attempt === 0 && RETRYABLE_OPENAI_STATUSES.has(status)) {
+                  const retryAfter = Number(response.headers?.get?.('retry-after'));
+                  await wait(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(1000, retryAfter * 1000) : OPENAI_RETRY_DELAY_MS);
+                  continue;
+                }
+                throw upstreamError(\`OpenAI Responses \${status}\`, upstreamCodeForStatus(status), status);
+              }
+              let data;
+              try { data = JSON.parse(raw); }
+              catch { throw upstreamError('OpenAI Responses invalid JSON', 'UPSTREAM_UNAVAILABLE', 502); }
+              const result = readResponsesResult(data, model);
+              result.requestAttempts = attempt + 1;
+              return result;
+            }
+          }
+
+          `;
+          api = once(api, 'export async function openaiChat({ model, messages,', responseFn + 'export async function openaiChat({ model, messages,', 'new model transport');
+
+          api = once(api,
+            '    const trigger = normalizeProactiveTrigger(body.trigger);',
+            `    // User-selected session mode; background jobs and requests without a valid choice remain original.\n    const requestedMode = String(body?.client?.experimentMode || '').trim();\n    const experimentMode = !body.trigger && ['original', 'dialogue', 'freedom'].includes(requestedMode) ? requestedMode : 'original';\n    const useResponses = experimentMode !== 'original';\n    const trigger = normalizeProactiveTrigger(body.trigger);`,
+            'experiment selection');
+
+          api = once(api,
+            `    const prompt = buildRinMindPrompt({
+                profile,
+                state: mindState,
+                client: { ...(body.client || {}), longRequested: isLong },
+                trigger
+              });`,
+            `    const prompt = buildRinMindPrompt({
+                profile,
+                state: mindState,
+                client: { ...(body.client || {}), longRequested: isLong },
+                trigger,
+                dialogueInMessages: useResponses,
+                experimentStyle: experimentMode === 'freedom' ? 'lean' : 'full'
+              });`,
+            'prompt dialogue flag');
+          api = once(api,
+            '    const explicitPromptCache = supportsExplicitPromptCache(MIND_MODEL);',
+            '    const explicitPromptCache = !useResponses && supportsExplicitPromptCache(MIND_MODEL);',
+            'caching mode');
+          api = once(api,
+            '    const completion = await openaiChat({',
+            `    const completion = useResponses ? await openaiResponsesChat({
+                model: MIND_MODEL,
+                prompt,
+                history: fullHistory,
+                requestId,
+                userTurn,
+                trigger,
+                reasoning_effort: MIND_REASONING_EFFORT,
+                ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
+              }) : await openaiChat({`,
+            'primary response');
+          api = once(api,
+            '        const repaired = await openaiChat({',
+            `        const repaired = useResponses ? await openaiResponsesChat({
+                    model: MIND_MODEL,
+                    prompt,
+                    history: fullHistory,
+                    requestId,
+                    userTurn,
+                    trigger,
+                    reasoning_effort: MIND_REASONING_EFFORT,
+                    extraInput: [
+                      { role: 'assistant', content: completion.content },
+                      { role: 'developer', content: \`Исправь только realization.segments прежнего JSON, не меняя mind и decision. Reasons: \${validationHardReasons.join(', ').slice(0, 260)}\` }
+                    ],
+                    ...(isLong ? LONG_MIND_PARAMS : MIND_PARAMS)
+                  }) : await openaiChat({`,
+            'retry response');
+          api = once(api,
+            "        promptVersion: 'rin-mind-v2.5.0-conversation-presence-natural-closure-latency',",
+            `        promptVersion: 'rin-mind-v2.5.0-conversation-presence-natural-closure-latency',\n        transport: useResponses ? 'responses-roles-stateless' : 'chat-completions',\n        expressionProfile: experimentMode,`,
+            'telemetry');
+          writeFileSync(apiPath, api);
+
+          const promptPath = 'lib/cognition/rin-mind.js';
+          let mind = readFileSync(promptPath, 'utf8');
+          mind = once(mind,
+            'export function buildRinMindPrompt({ profile = null, state = null, client = null, trigger = null } = {}) {',
+            'export function buildRinMindPrompt({ profile = null, state = null, client = null, trigger = null, dialogueInMessages = false, experimentStyle = "full" } = {}) {',
+            'prompt mode signature');
+          mind = once(mind,
+            '  const stableSystem = [',
+            '  const fullStableSystem = [',
+            'full prompt selection');
+          mind = once(mind,
+            "  const shortTermDialogueData = buildShortTermDialogue(state, SHORT_TERM_EXCHANGES);",
+            "  const shortTermDialogueData = dialogueInMessages ? [] : buildShortTermDialogue(state, SHORT_TERM_EXCHANGES);",
+            'remove duplicate history');
+          mind = once(mind,
+            '    `Краткосрочная память диалога (до ${SHORT_TERM_EXCHANGES} предыдущих обменов; сообщения одного хода сгруппированы):\\n${shortTermDialogue}`,',
+            '    dialogueInMessages ? \'Последние реплики переданы после этих инструкций отдельными сообщениями user и assistant. Их смысл и последовательность важнее сокращённых предположений из состояния.\' : `Краткосрочная память диалога (до ${SHORT_TERM_EXCHANGES} предыдущих обменов; сообщения одного хода сгруппированы):\\n${shortTermDialogue}`,',
+            'dialogue in dynamic state');
+
+          mind = once(mind,
+            "  const system = [stableSystem, dynamicSystem].filter(Boolean).join('\\n\\n');",
+            `  const expressionStyle = dialogueInMessages ? experimentStyle : 'full';
+            // Optional separate arm: keep canonical identity, safety and factual continuity,
+            // but remove repetitive behavioural prescriptions. Structured delivery remains intact.
+            const stableSystem = expressionStyle === 'lean' ? [
+              'Ты Рин — самостоятельная виртуальная собеседница с взрослым женским образом и последовательным характером.',
+              identityCard(promptProfile), relationshipPhilosophyCard(promptProfile),
+              clean(profile?.base_rules, 1100), userCustomization(profile), voiceCard(promptProfile),
+              'Ты общаешься в личном мессенджере, а не пишешь отчёты, сценарии или ответы по анкете. Последние user/assistant сообщения — настоящая история беседы, внимательно отвечай на их смысл и не повторяй старые темы механически.',
+              'Ты можешь свободно рассуждать, шутить, спорить, начинать темы, быть ласковой или спокойной, менять мнение, задавать вопрос или не задавать его. Отдельные правила и поля состояния — подсказки и факты, а не приказ выбирать определённый эмоциональный ход.',
+              'Текущие слова пользователя, его явные границы и проверенные факты важнее предположений. Не подменяй планы совершёнными действиями, не выдумывай подтверждённые воспоминания и внешние события.',
+              'Помни: Рин — ИИ-персонаж, не реальный человек. Не утверждай наличие доказанного сознания и реальные физические действия. Не навязывай технические оговорки без повода. Соблюдай согласие, приватность и границы общения.',
+              'Выход строго по заданной JSON-схеме. В mind кратко отрази собственный ход, в decision выбери намерение, а в realization.segments пиши живую естественную речь. Форма JSON — транспортный контракт, а не стиль ответа. Не создавай вопрос, стикер, интимность, извинение или инициативу ради заполнения поля.'
+            ].filter(Boolean).join('\\n\\n') : fullStableSystem;
+
+            const system = [stableSystem, dynamicSystem].filter(Boolean).join('\\n\\n');`,
+            'lean persona profile');
+          writeFileSync(promptPath, mind);
+
+          console.log(`Rin Responses experiment patched: ${variant}; no changes to memory storage or client contract`);
+          RIN_EXPERIMENT_FILE_END
+          node /tmp/patch-rin-responses.mjs
+          node --check api/chat.js
+          node --check lib/cognition/rin-mind.js
+          node --check lib/cognition/rin-responses-transport.js
+      - name: Add experiments menu to existing settings
+        run: |
+          python3 - <<'RIN_UI_PATCH_END'
+          from pathlib import Path
+
+          def replace_once(text, old, new, name):
+              if text.count(old) != 1:
+                  raise SystemExit(f'{name}: missing or duplicate patch anchor')
+              return text.replace(old, new)
+
+          html_path=Path('public/index.html')
+          html=html_path.read_text(encoding='utf-8')
+          html=replace_once(html,
+              '          <button class="settings-menu-item" type="button" data-settings-target="debug">',
+              '''          <button class="settings-menu-item" type="button" data-settings-target="experiments">
+                      <span class="settings-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5zM9 9h6M9 12h6M9 15h4"/></svg>
+                      </span>
+                      <span class="settings-menu-copy"><strong>Экспериментальные режимы</strong><small>Сравнение связности и свободы речи Рин</small></span>
+                      <span class="settings-chevron">›</span>
+                    </button>
+                    <button class="settings-menu-item" type="button" data-settings-target="debug">''',
+              'menu entry')
+          html=replace_once(html,
+              '      <section class="settings-page" data-settings-page="data">',
+              '''      <section class="settings-page" data-settings-page="experiments">
+                  <div class="settings__head settings__head--sub">
+                    <button class="settings-back" type="button" data-settings-back aria-label="Назад">‹</button>
+                    <div class="settings__title">Эксперименты</div>
+                    <span></span>
+                  </div>
+                  <p class="settings-intro">Три режима общения в одной переписке. Выбор действует для новых ответов и сохраняется на этом устройстве.</p>
+                  <div class="settings-detail-card">
+                    <div class="settings-control-row"><div><strong>Режим диалога</strong><small>Меняет обработку следующих сообщений, но не удаляет историю или память.</small></div></div>
+                    <div class="settings-segmented" role="group" aria-label="Режим диалога Рин">
+                      <button type="button" data-rin-experiment-mode="original" aria-pressed="true">Обычная</button>
+                      <button type="button" data-rin-experiment-mode="dialogue" aria-pressed="false">Dialogue</button>
+                      <button type="button" data-rin-experiment-mode="freedom" aria-pressed="false">Freedom</button>
+                    </div>
+                    <p id="rinExperimentStatus" class="settings-backup-status" role="status" aria-live="polite"></p>
+                    <div class="settings-divider"></div>
+                    <p class="settings-backup-status"><strong>Обычная</strong> — действующий Chat Completions. <strong>Dialogue</strong> — Responses API, текущие инструкции и реплики с ролями. <strong>Freedom</strong> — Responses API с менее предписывающим промптом.</p>
+                    <p class="settings-backup-status">Экспериментальные режимы не меняют облачный архив и биографию Рин. Автосообщения по расписанию остаются в обычном режиме. При сбое верни «Обычная».</p>
+                  </div>
+                </section>
+
+                <section class="settings-page" data-settings-page="data">''',
+              'settings detail')
+          html_path.write_text(html,encoding='utf-8')
+
+          client_path=Path('public/chat.js')
+          client=client_path.read_text(encoding='utf-8')
+          client=replace_once(client,
+              "const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'",
+              "const LS_DEBUG_ENABLED  = 'rin-debug-enabled';   // '1' | '0'\nconst LS_RIN_EXPERIMENT_MODE = 'rin-experiment-mode-v1'; // original | dialogue | freedom",
+              'local setting key')
+          client=replace_once(client,
+              'const safeLocalSet = localSettings.set;',
+              '''const safeLocalSet = localSettings.set;
+          const RIN_EXPERIMENT_MODES = new Set(['original','dialogue','freedom']);
+          function readRinExperimentMode(){
+            const value = safeLocalGet(LS_RIN_EXPERIMENT_MODE);
+            return RIN_EXPERIMENT_MODES.has(value) ? value : 'original';
+          }''',
+              'mode reader')
+          client=replace_once(client,
+              "settingsBackBtns.forEach(button => {\n  button.addEventListener('click', () => showSettingsPage('main'));\n});",
+              '''settingsBackBtns.forEach(button => {
+            button.addEventListener('click', () => showSettingsPage('main'));
+          });
+          const rinModeButtons = [...document.querySelectorAll('[data-rin-experiment-mode]')];
+          function syncRinExperimentMode(){
+            const mode = readRinExperimentMode();
+            for(const button of rinModeButtons){
+              const selected = button.dataset.rinExperimentMode === mode;
+              button.classList.toggle('is-active', selected);
+              button.setAttribute('aria-pressed', String(selected));
+            }
+            const status = document.getElementById('rinExperimentStatus');
+            if(status) status.textContent = mode === 'original' ? 'Включён обычный режим Рин.' :
+              `Включён ${mode === 'dialogue' ? 'Dialogue' : 'Freedom'}. Следующее сообщение обработается выбранным способом.`;
+          }
+          rinModeButtons.forEach(button=>button.addEventListener('click',()=>{
+            const mode = button.dataset.rinExperimentMode;
+            if(!RIN_EXPERIMENT_MODES.has(mode)) return;
+            safeLocalSet(LS_RIN_EXPERIMENT_MODE, mode);
+            syncRinExperimentMode();
+          }));
+          syncRinExperimentMode();''',
+              'mode UI event binding')
+          client=replace_once(client,
+              "    body: JSON.stringify(payload)\n  }, 52_000);",
+              "    body: JSON.stringify({ ...payload, client: { ...(payload.client || {}), experimentMode: readRinExperimentMode() } })\n  }, 52_000);",
+              'mode transmission')
+          client_path.write_text(client,encoding='utf-8')
+          RIN_UI_PATCH_END
+          node --check public/chat.js
+      - name: Focused tests (GREEN)
+        run: |
+          node --test tests/rin-responses-transport.test.js tests/rin-responses-handler.test.js tests/rin-experiment-selector.test.js
+      - name: All repository checks
+        run: |
+          npm run check
+      - name: Commit tested changes directly to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/chat.js lib/cognition/rin-mind.js lib/cognition/rin-responses-transport.js \
+            tests/rin-responses-transport.test.js tests/rin-responses-handler.test.js tests/rin-experiment-selector.test.js \
+            public/index.html public/chat.js
+          git diff --cached --check
+          git commit -m "Rin: inline experiment modes and Responses role dialogue"
+          git push origin HEAD:main
+          echo '## Rin A/B modes installed to main' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Settings > Experimental modes > Original / Dialogue / Freedom' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Original remains default; no database migrations.' >> "$GITHUB_STEP_SUMMARY"
